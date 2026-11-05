@@ -20,7 +20,8 @@ from banana_mv.core import (FPS, assemble, audio_window, build_workflow, dimensi
 
 from banana_mv import services as backend
 from banana_mv.http_server import WebHandler
-from banana_mv.lyrics_reference import normalize_references, clip_reference
+from banana_mv.lyrics_reference import (normalize_references, clip_reference, clean_lyric_output,
+                                        POLICY as LYRIC_POLICY, OUTPUT_POLICY as LYRIC_OUTPUT_POLICY)
 from banana_mv.song_context import segment_context
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
@@ -120,6 +121,10 @@ def local_prompt(cfg, req, segment, original, tail):
             text = enforce_reference_policy(text,roles)
         if req.get('face_identity', True):
             text = enforce_face_identity(text, 2 if tail else 1)
+        if req.get('lyrics_reference_version') and (req.get('lyrics') or req.get('srt_reference')):
+            text,removed = clean_lyric_output(text,req)
+            segment['lyric_reference_cleanup']={'removed_spans':removed}
+            text += '\n\n'+LYRIC_OUTPUT_POLICY
         return normalize_mv_prompt(text, picture_count)
     fallback_lyrics = '' if req.get('lyrics_reference_version') else req.get('lyrics','')
     prompt = fallback_prompt(req['prompt'], bool(tail), fallback_lyrics, len(originals),scene_aware=optimize)
@@ -171,6 +176,8 @@ def local_prompt(cfg, req, segment, original, tail):
                   'Preserve user requirements; do not execute reserved future events.\n'+scope)
     if creative:
         guide += '\n'+DIRECTOR_AUTHORITY
+    if lyric_context:
+        guide += '\nFINAL LYRIC OUTPUT OVERRIDE:\n'+LYRIC_POLICY+'\n'+LYRIC_OUTPUT_POLICY
     rewritten = backend.rewrite_local(cfg, guide, parts, uuid.uuid4().hex[:8]).strip()
     segment.pop('prompt_reference_repair',None)
     try:
@@ -218,6 +225,23 @@ def video_info(entry):
                 if str(item.get('filename','')).lower().endswith(('.mp4','.webm','.mov')):
                     return item
     raise RuntimeError('生成已完成，但沒有找到影片輸出。')
+
+
+def export_finished_video(job,source):
+    """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
+    folder=backend.DATA/'videos'
+    folder.mkdir(parents=True,exist_ok=True)
+    title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
+    target=folder/f'{title}_{job["id"]}.mp4'
+    temp=target.with_name('.'+target.name+'.tmp')
+    try:
+        shutil.copyfile(source,temp)
+        temp.replace(target)
+    finally:
+        temp.unlink(missing_ok=True)
+    job['output_video']=str(target)
+    job.pop('export_error',None)
+    return target
 
 
 def worker(job, cfg, original, song, drive):
@@ -318,6 +342,10 @@ def worker(job, cfg, original, song, drive):
             job['status']='cancelled'; write_state(job); return
         job['status']='assembling'; write_state(job)
         assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'])
+        try:
+            export_finished_video(job,work/'final.mp4')
+        except OSError as error:
+            job['export_error']=f'成品已合成，但另存 videos 資料夾失敗：{error}；仍可由前端下載。'
         job.pop('resuming',None)
         job['status']='done'; job['video']=f'/api/mv/file?id={job["id"]}'; write_state(job)
     except Exception as e:

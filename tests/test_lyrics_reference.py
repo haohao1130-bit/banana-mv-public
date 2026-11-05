@@ -63,12 +63,45 @@ class LyricsReferenceTests(unittest.TestCase):
             req=normalize_references({'prompt':'舞台演唱','lyrics':'全曲背景歌詞','srt_reference':SRT,
                                       'optimizer_version':1,'rewrite':True},32)
             segment={'start':0,'seconds':15,'index':0,'model_frames':362}
-            with patch.object(server.backend,'rewrite_local',return_value='summary: A singer performs with <Audio 1>.') as model:
+            with patch.object(server.backend,'rewrite_local',return_value='summary: A singer performs with <Audio 1>. <d>[Chinese] 跨段歌詞</d>') as model:
                 result=server.local_prompt({'guides':{'ref':str(guide)}},req,segment,[photo],None)
             model_text='\n'.join(value for kind,value in model.call_args.args[2] if kind=='text')
             self.assertIn('全曲背景歌詞',model_text);self.assertIn('跨段歌詞',model_text)
             self.assertNotIn('尾段歌詞',model_text)
             self.assertNotIn('全曲背景歌詞',result);self.assertNotIn('跨段歌詞',result)
+            self.assertEqual(model.call_count,1)
+            self.assertNotIn('<d>',result)
+            self.assertIn('SOURCE AUDIO / VISIBLE ROLE SEPARATION',result)
+            self.assertGreater(segment['lyric_reference_cleanup']['removed_spans'],0)
+            self.assertIn('FINAL LYRIC OUTPUT OVERRIDE',model.call_args.args[1])
             req['rewrite']=False
             result=server.local_prompt({},req,segment,[photo],None)
             self.assertNotIn('全曲背景歌詞',result)
+
+    def test_output_cleanup_removes_speech_tags_and_exact_quotes_without_a_semantic_judge(self):
+        from banana_mv.lyrics_reference import clean_lyric_output
+        req=normalize_references({'lyrics':'拳風擦過耳邊\n[Verse]','srt_reference':SRT},32)
+        draft='[Shot 1] A fighter dodges, <d>[Chinese] 拳風擦過耳邊</d>.\nSoundtrack cue: 「跨段歌詞」.\n拳風擦過耳邊\n拳風擦過耳邊時，她側身閃避。'
+        cleaned,count=clean_lyric_output(draft,req)
+        self.assertNotIn('<d>',cleaned);self.assertNotIn('[Chinese]',cleaned)
+        self.assertNotIn('「跨段歌詞」',cleaned)
+        self.assertIn('拳風擦過耳邊時，她側身閃避。',cleaned) # retain visual-event descriptions
+        self.assertGreaterEqual(count,3)
+        self.assertEqual(clean_lyric_output(draft,{}),(draft,0))
+
+    def test_finished_video_export_keeps_master_and_uses_safe_unique_names(self):
+        from banana_mv import server
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);master=root/'final.mp4';master.write_bytes(b'finished-video')
+            with patch.object(server.backend,'DATA',root):
+                job={'id':'123456789abc','title':'作品/同名:測試'}
+                output=server.export_finished_video(job,master)
+                self.assertEqual(output.parent,root/'videos')
+                self.assertNotIn('/',output.name);self.assertNotIn(':',output.name)
+                self.assertEqual(master.read_bytes(),output.read_bytes())
+                second=server.export_finished_video({'id':'abcdef123456','title':job['title']},master)
+                self.assertNotEqual(output,second)
+                with patch.object(server.shutil,'copyfile',side_effect=OSError('disk full')):
+                    with self.assertRaises(OSError):server.export_finished_video(job,master)
+                self.assertTrue(master.exists());self.assertTrue(output.exists())
+                self.assertFalse(any(p.suffix=='.tmp' for p in (root/'videos').iterdir()))

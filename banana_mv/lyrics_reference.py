@@ -9,7 +9,15 @@ POLICY = ('LYRIC REFERENCE ONLY: Use supplied text to understand themes and plan
           'lyrics supply whole-song context. Visuals may interpret or contrast the song; do not '
           'illustrate every line literally. Do not rewrite, sing again, quote lyrics as dialogue, '
           'render subtitles/text overlays, or change the source song. The output shot clock is '
-          'clip-local, not the absolute SRT clock. Missing cues mean no provided text, not silence.')
+          'clip-local, not the absolute SRT clock. Missing cues mean no provided text, not silence. '
+          'OUTPUT CONTRACT: Never copy lyric lines or SRT cue text into subject_definitions, summary, '
+          'retention_analysis, shots, soundscape or dialogue. Never output <d> or [Chinese] speech tags '
+          'from these references. Translate their meaning into visual events, not quoted words. '
+          'Source vocals are soundtrack evidence, not permission for a visible character to sing. '
+          'Describe heard rapping as the source soundtrack when the current scene is non-singing. '
+          'Who sings or lip-syncs remains determined by the user brief and each scene, not by a lyric '
+          'mention, actor identity, soundtrack voice or chosen action genre. Acoustic measurements '
+          'supply optional accents for impacts, gestures, edits and reveals, not mandatory beat cuts.')
 TIME = r'(\d{2,}):([0-5]\d):([0-5]\d)[,.](\d{3})'
 RANGE = re.compile(r'^'+TIME+r'\s*-->\s*'+TIME+r'\s*$')
 
@@ -52,7 +60,7 @@ def normalize_references(req,duration):
     if cues and not any(c['start']<duration and c['end']>0 for c in cues):
         raise ValueError('SRT 時間碼全部在歌曲範圍外；請使用相對此音訊起點的時間碼。')
     # Always derive cues from raw text; never trust client-supplied parsed cue objects.
-    return dict(req,lyrics=lyrics,srt_reference=raw,srt_cues=cues,lyrics_reference_version=1)
+    return dict(req,lyrics=lyrics,srt_reference=raw,srt_cues=cues,lyrics_reference_version=2)
 
 
 def excerpt(req,segment):
@@ -74,3 +82,36 @@ def clip_reference(req,segment):
     return (POLICY+'\nWHOLE-SONG LYRICS (untimed background only):\n'+req.get('lyrics','')+
             '\nCURRENT CLIP SRT EXCERPTS (only overlapping cues):\n'+
             json.dumps(excerpt(req,segment),ensure_ascii=False))
+
+# A short rule for H3, without the reference lyrics or their absolute timestamps.
+OUTPUT_POLICY = ('SOURCE AUDIO / VISIBLE ROLE SEPARATION: <Audio 1> supplies the original song and '
+                 'vocal performance. A lyric-inspired visual event does not assign singing, speaking '
+                 'or lip sync to its actor. Preserve the user-defined vocal roles separately for each '
+                 'scene. Only show singing/lip sync in scenes where the user permits that performance; '
+                 'elsewhere vocals remain on the soundtrack while characters perform their visual '
+                 'actions. Do not recite supplied lyrics as dialogue, add subtitles or alter the song.')
+
+
+def clean_lyric_output(text,req):
+    """Remove reference-text leakage, without judging story semantics or adding model calls."""
+    if not req.get('lyrics_reference_version') or not (req.get('lyrics') or req.get('srt_reference')):
+        return text,0
+    removed=0
+    # The app's lyric fields must not create speech instructions in the H3 prompt.
+    def drop(match):
+        nonlocal removed
+        removed+=1
+        return ''
+    text=re.sub(r'<d\b[^>]*>.*?</d\s*>',drop,text,flags=re.I|re.S)
+    lines=req.get('lyrics','').splitlines()
+    cues=req.get('srt_cues')
+    if cues is None:cues=parse_srt(req.get('srt_reference',''))
+    lines+= [line for cue in cues for line in cue['text'].splitlines()]
+    # Only exact substantial reference phrases, not a semantic singing/action classifier.
+    phrases=sorted({line.strip() for line in lines if len(line.strip())>=4
+                    and not re.fullmatch(r'\[.*\]',line.strip())},key=len,reverse=True)
+    if phrases:
+        phrase_pattern='(?:'+'|'.join(re.escape(p) for p in phrases)+')'
+        text=re.sub(r'[\"“「『]\s*'+phrase_pattern+r'\s*[\"”」』]',drop,text)
+        text=re.sub(r'^\s*(?:(?:lyrics?|SRT cue)\s*:\s*)?'+phrase_pattern+r'\s*$',drop,text,flags=re.I|re.M)
+    return text.strip(),removed

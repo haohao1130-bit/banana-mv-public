@@ -33,6 +33,9 @@ vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
+  vm.runInContext("renderOutputLocation({output_video:'/content/drive/MyDrive/BananaMV/videos/test.mp4'})",context);assert.equal(els['output-location'].hidden,false);assert(els['output-location'].textContent.includes('videos/test.mp4'));
+  vm.runInContext("renderOutputLocation({export_error:'另存失敗，仍可下載'})",context);assert(els['output-location'].textContent.includes('仍可下載'));
+  vm.runInContext("renderOutputLocation({})",context);assert.equal(els['output-location'].hidden,true);
   const originalPrompt=els.prompt.value;
   assert(!els['help-dialog'].open);els['open-help'].onclick();assert.equal(els['help-dialog'].open,true);
   els['help-dialog'].scrollTop=42;els['open-help'].onclick();assert.equal(els['help-dialog'].scrollTop,42);

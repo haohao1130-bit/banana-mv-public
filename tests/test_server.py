@@ -139,6 +139,8 @@ class ServerIntegration(unittest.TestCase):
                         self.assertEqual(current['status'],'done',current.get('error'))
                         self.assertEqual(current['request']['srt_reference'],req['srt_reference'])
                         self.assertEqual(current['request']['srt_cues'][0]['text'],'時間參考歌詞')
+                        self.assertEqual(Path(current['output_video']).parent,root/'videos')
+                        self.assertEqual(Path(current['output_video']).read_bytes(),(app.job_dir(job['id'])/'final.mp4').read_bytes())
                         self.assertEqual(len(captured),2)
                         enabled=req.get('audio_analysis',True)
                         self.assertEqual((app.job_dir(job['id'])/'audio_analysis.json').is_file(),enabled)

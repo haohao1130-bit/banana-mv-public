@@ -24,7 +24,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "926658ad63166fb7dc6515c87874e01e4a03387574e5e0dea1c87e4aae82499f"
+      "sha256": "8785b263394382b264880a32edc18a2470d3af2050a5c88725ebefc448970349"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -56,7 +56,7 @@
     },
     {
       "path": "banana_mv/lyrics_reference.py",
-      "sha256": "72acd66ac05a45386b27eb1fae56aedd5daf9143c14ca4b62fb8151d292ceef8"
+      "sha256": "d68747bbef1317a7f7f720d29f129b85215995734b9797babfdac0d6b83e11ce"
     },
     {
       "path": "banana_mv/prompt_quality.py",
@@ -64,7 +64,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "a118ebfed613374d4685ad031807ace0d529047040553c916303f18b22c6fc0b"
+      "sha256": "3117728c5e048979e46fedb4813298629bbef56a0f95dd13b8f4458331088738"
     },
     {
       "path": "banana_mv/services.py",
@@ -80,11 +80,11 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "3622a1b4537e2e8f6121f4b87e663cbf4d5f597c17df6f564577240b5e329bdb"
+      "sha256": "452d14e6694123220d61679e7b6d655f687e86980b399fce22ea1c2c41d6d921"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "37cb0ab37fa794fbae2ddfdbbe13f71a491aa758426323fef3f64e150882ef0a"
+      "sha256": "9338d1613e1eb33830449f3d873e720cc015bb558c97b31e035507c3f955aeb2"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -112,7 +112,7 @@
     },
     {
       "path": "tests/test_lyrics_reference.py",
-      "sha256": "c3d43bc343f41736c0dc6ce6888bfc6c7ff737a9c8f16a55335074efd825bd0f"
+      "sha256": "8fee1d7bf181fcbff4fc4186d05db503e385dff3988d7f54c5eaf1c6803df1a3"
     },
     {
       "path": "tests/test_prompt_quality.py",
@@ -128,7 +128,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "722028c4d2d2ba9b6c2d36f1fbee08ca0b5003afcfb64b044b92c312d5090943"
+      "sha256": "d6fcb2cadc80f25e3412748a5d5851ecd2255cf16bfee5b42777d2d20963b4b4"
     },
     {
       "path": "tests/test_services.py",
