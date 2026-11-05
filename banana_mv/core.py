@@ -178,8 +178,11 @@ def enforce_face_identity(prompt, main_picture):
     return prompt + (
         '\n\n[BANANA_FACE_IDENTITY_V1]\n'
         f'<Subject 1> is the same individual shown in <Picture {main_picture}>, the original performer reference. '
-        'Preserve the original facial geometry, eye shape, nose structure, lips, jawline, hairstyle, '
-        'distinctive features and clothing across cuts, expressions and action sequences. '
+        'Preserve the original facial geometry, eye shape, nose structure, lips, jawline and '
+        'distinctive facial features across cuts, expressions and action sequences. '
+        'This locks facial identity only. Hairstyle, clothing, makeup, injuries and other mutable '
+        'appearance follow the user instructions and current persistent scene state, not the initial '
+        'reference outfit. Preserve their current state when no change is requested. '
         'Do not redesign, recast, beautify, replace or morph the face, or blend identities from other references. '
         'Allow natural expressions, head turns, profiles, dynamic movement, varied shot sizes and cinematic camera angles. '
         'Priority: performer identity, source-song synchronization and lip sync, action and story events, '

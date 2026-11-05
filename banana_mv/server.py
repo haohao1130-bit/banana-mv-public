@@ -22,6 +22,9 @@ from banana_mv import services as backend
 from banana_mv.http_server import WebHandler
 from banana_mv.lyrics_reference import (normalize_references, clip_reference, clean_lyric_output,
                                         POLICY as LYRIC_POLICY, OUTPUT_POLICY as LYRIC_OUTPUT_POLICY)
+from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_input, state_context,
+                                   plan_clip, save_clip, commit_clip, cached_clip, reconcile_history,
+                                   final_context, CLIP_SYSTEM, digest as scene_digest)
 from banana_mv.song_context import segment_context
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
@@ -89,7 +92,7 @@ def graph_options(req, seconds, segment=None):
             'director_mode': mode, 'intensity': req.get('intensity', 'high')}
 
 
-def local_prompt(cfg, req, segment, original, tail):
+def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None):
     # Only local model calls; never silently fall back to a paid API.
     director, mode = director_prompt(req, segment['seconds'], segment)
     segment['director_mode'] = mode
@@ -97,7 +100,7 @@ def local_prompt(cfg, req, segment, original, tail):
     from banana_mv.core import normalize_mv_prompt, map_image_mentions, MediaReferenceError
     picture_count = len(originals) + int(bool(tail))
     optimize = req.get('optimizer_version',0) >= 1
-    roles = reference_policy(picture_count,bool(tail)) if optimize else ''
+    roles = reference_policy(picture_count,bool(tail),mutable_appearance=scene_input is not None) if optimize else ''
     brief = map_image_mentions(req['prompt'],len(originals),bool(tail))
     # Reject incorrect user references before asking the model to rewrite them.
     if brief.strip():
@@ -125,6 +128,8 @@ def local_prompt(cfg, req, segment, original, tail):
             text,removed = clean_lyric_output(text,req)
             segment['lyric_reference_cleanup']={'removed_spans':removed}
             text += '\n\n'+LYRIC_OUTPUT_POLICY
+        if scene_input is not None:
+            text += '\n\n'+final_context(segment['scene_state_debug'])
         return normalize_mv_prompt(text, picture_count)
     fallback_lyrics = '' if req.get('lyrics_reference_version') else req.get('lyrics','')
     prompt = fallback_prompt(req['prompt'], bool(tail), fallback_lyrics, len(originals),scene_aware=optimize)
@@ -151,6 +156,8 @@ def local_prompt(cfg, req, segment, original, tail):
     lyric_context = clip_reference(req, segment)
     if lyric_context:
         parts.append(('text',lyric_context))
+    if scene_input is not None:
+        parts.append(('text',state_context(scene_input,event_catalog,bool(tail))))
     if roles:
         parts[0] = ('text',parts[0][1]+'\n\n'+roles)
     if creative:
@@ -178,31 +185,44 @@ def local_prompt(cfg, req, segment, original, tail):
         guide += '\n'+DIRECTOR_AUTHORITY
     if lyric_context:
         guide += '\nFINAL LYRIC OUTPUT OVERRIDE:\n'+LYRIC_POLICY+'\n'+LYRIC_OUTPUT_POLICY
-    rewritten = backend.rewrite_local(cfg, guide, parts, uuid.uuid4().hex[:8]).strip()
+    if scene_input is not None:
+        guide += '\n'+CLIP_SYSTEM
     segment.pop('prompt_reference_repair',None)
-    try:
-        rewritten = normalize_mv_prompt(rewritten,picture_count)
-    except MediaReferenceError as error:
-        # Retry only missing-media syntax, never audit creative interpretation.
-        correction = (f'\nMEDIA REFERENCE REPAIR: {error} '
-                      f'Allowed picture tags: '+', '.join(f'<Picture {i}>' for i in range(1,picture_count+1))+
-                      '. Only <Audio 1> is connected. Regenerate the current clip from the original '
-                      'brief and attached images. Preserve their identity/role mapping. '
-                      'Unreferenced extras or locations use plain text, never invented media tags. '
-                      'Do not renumber or merge identities to hide a missing reference.')
-        retry = backend.rewrite_local(cfg,guide+correction,parts,uuid.uuid4().hex[:8]).strip()
+    attempt_parts=list(parts)
+    for attempt in range(2):
+        raw = backend.rewrite_local(cfg,guide,attempt_parts,uuid.uuid4().hex[:8]).strip()
         try:
-            rewritten = normalize_mv_prompt(retry,picture_count)
-            segment['prompt_reference_repair']={'status':'repaired','message':'9B 圖片引用已自動修正。'}
-        except ValueError:
-            # Use the validated source, not an arbitrary remapping of hallucinated roles.
-            rewritten = fallback_prompt(req['prompt'],bool(tail),fallback_lyrics,len(originals),scene_aware=optimize)
+            if scene_input is not None:
+                record=plan_clip(raw,scene_input,event_catalog,segment)
+                rewritten=normalize_mv_prompt(record['clip_prompt'],picture_count)
+                segment['scene_state_debug']=record
+            else:
+                rewritten=normalize_mv_prompt(raw,picture_count)
+            if attempt:
+                segment['prompt_reference_repair']={'status':'repaired','message':'9B 結構或媒體引用已自動修正。'}
+            break
+        except (SceneStateError,MediaReferenceError) as error:
+            if scene_input is not None:
+                segment['scene_state_attempt']={'clip_index':segment['index'],'scene_state_in':scene_input,
+                                                'error':str(error),'raw_response':raw[:16000],'visual_verified':False}
+            if not attempt:
+                attempt_parts=parts+[('text','Correct only invalid media references or structured state transitions: '+str(error)+
+                                     '\nUse only connected Picture tags and <Audio 1>. Unreferenced supporting roles use plain text. '
+                                     'Preserve user roles, committed state and reserved final events. Do not replay completed events.')]
+                continue
+            if scene_input is not None:
+                raise SceneStateError('9B 本段狀態／引用修復失敗：'+str(error)) from error
+            rewritten=fallback_prompt(req['prompt'],bool(tail),fallback_lyrics,len(originals),scene_aware=optimize)
             segment['prompt_reference_repair']={'status':'fallback','message':'9B 引用修正未成功；此段改用原控制詞與導演規則。'}
     if optimize:
         segment.pop('prompt_review',None)
         segment['prompt_validation']={'status':'passed','kind':'technical_only'}
     # Validate the rewrite before appending guidance, including the empty-output guard.
-    return finalize(normalize_mv_prompt(rewritten, picture_count) + '\n\n' + director)
+    final=finalize(normalize_mv_prompt(rewritten, picture_count) + '\n\n' + director)
+    if scene_input is not None:
+        segment['scene_state_debug']['clip_prompt']=final
+        segment.pop('scene_state_attempt',None)
+    return final
 
 
 def wait_generation(cfg, prompt_id, job):
@@ -281,12 +301,27 @@ def worker(job, cfg, original, song, drive):
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
             job['status']='running'; write_state(job)
+        ledger=None
+        if job['request'].get('scene_state_version')==1:
+            if job['id'] in CANCEL:
+                job['status']='cancelled';write_state(job);return
+            job['status']='planning_state';write_state(job)
+            ledger=ensure_scene_state(cfg,job['request'],job['segments'],original,work,backend.rewrite_local)
+            reconcile_history(job,work,ledger,lambda s:valid_part(work/f'{s["index"]:02d}_part.mp4',s,job['size']))
+            job['scene_state_summary']={'version':1,'committed_clips':len(ledger['commits']),'visual_verified':False}
+            job['status']='running';write_state(job)
         for seg in job['segments']:
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             i = seg['index']
             part = work/f'{i:02d}_part.mp4'
             if seg.get('status')=='done' and valid_part(part,seg,job['size']):
+                if ledger is not None:
+                    record=cached_clip(work,ledger,seg)
+                    if record is None:raise SceneStateError('已完成影片缺少可繼承的狀態快照，不能猜測或重置。')
+                    commit_clip(work,ledger,record)
+                    seg['scene_state_debug']=record
+                    job['scene_state_summary']['committed_clips']=len(ledger['commits'])
                 parts.append(part)
                 if job['request']['mode']=='chain':
                     tail = work/f'{i:02d}_last.png'
@@ -301,15 +336,28 @@ def worker(job, cfg, original, song, drive):
                 (inp/first).write_bytes(tail.read_bytes())
             seg['status']='rewriting'; write_state(job)
             saved = work/f'{i:02d}_prompt.txt'
-            if job.get('resuming') and saved.is_file() and not seg.get('refresh_prompt'):
+            state_replanned=False
+            state_in=clip_input(ledger,seg) if ledger is not None else None
+            record=cached_clip(work,ledger,seg) if ledger is not None else None
+            if ledger is not None and record is not None and job.get('resuming'):
+                prompt=record['clip_prompt'];seg['scene_state_debug']=record
+            elif ledger is None and job.get('resuming') and saved.is_file() and not seg.get('refresh_prompt'):
                 from banana_mv.core import normalize_mv_prompt
-                prompt = normalize_mv_prompt(saved.read_text(encoding='utf-8'),len(original)+int(bool(tail)))
+                prompt=normalize_mv_prompt(saved.read_text(encoding='utf-8'),len(original)+int(bool(tail)))
             else:
-                prompt = local_prompt(cfg,job['request'],seg,original,tail)
+                state_replanned=ledger is not None
+                prompt=local_prompt(cfg,job['request'],seg,original,tail,scene_input=state_in,
+                                    event_catalog=ledger['event_catalog'] if ledger is not None else None)
+            if ledger is not None:
+                save_clip(work,seg['scene_state_debug'])
             if not prompt:
                 raise RuntimeError('提示詞改寫回傳空白，請關閉改寫或檢查本地模型。')
             seg['prompt']=prompt
             (work/f'{i:02d}_prompt.txt').write_text(prompt,encoding='utf-8')
+            if state_replanned:
+                seg.pop('prompt_id',None)
+                seg.pop('scene_state_prompt_sha256',None)
+                seg.pop('refresh_prompt',None) # the new prompt/state pair is now durable
             wf = build_workflow(job['images_comfy'],name,*job['size'],seg['model_frames'],prompt,
                                 (job['seed']+i) % (2**48),first,
                                 **graph_options(job['request'],seg['seconds'],seg))
@@ -317,13 +365,16 @@ def worker(job, cfg, original, song, drive):
             (work/f'{i:02d}_workflow_api.json').write_text(json.dumps(wf,ensure_ascii=False,indent=2),encoding='utf-8')
             seg['status']='generating'; write_state(job)
             entry = None
-            if job.get('resuming') and seg.get('prompt_id'):
+            if (job.get('resuming') and seg.get('prompt_id') and
+                (ledger is None or seg.get('scene_state_prompt_sha256')==scene_digest(prompt))):
                 candidate = backend.history_entry(cfg,seg['prompt_id'])
                 if candidate and candidate.get('status',{}).get('completed') and candidate.get('status',{}).get('status_str')!='error':
                     entry = candidate
             if entry is None:
                 pid = backend.queue_prompt(cfg,wf)
-                seg['prompt_id']=pid; write_state(job)
+                seg['prompt_id']=pid
+                if ledger is not None:seg['scene_state_prompt_sha256']=scene_digest(prompt)
+                write_state(job)
                 entry = wait_generation(cfg,pid,job)
             raw = work/f'{i:02d}_raw.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
@@ -333,6 +384,10 @@ def worker(job, cfg, original, song, drive):
             if job['request']['mode']=='chain':
                 tail = work/f'{i:02d}_last.png'
                 last_frame(part,tail)
+            if ledger is not None:
+                if not valid_part(part,seg,job['size']):raise SceneStateError('片段未成功保存，不提交規劃狀態。')
+                commit_clip(work,ledger,seg['scene_state_debug'])
+                job['scene_state_summary']['committed_clips']=len(ledger['commits'])
             seg.pop('refresh_prompt',None)
             seg['status']='done'; write_state(job)
             (inp/name).unlink(missing_ok=True)
@@ -352,6 +407,11 @@ def worker(job, cfg, original, song, drive):
         stage=job.get('status','running')
         if stage=='running' and job.get('current'):
             stage=job['segments'][job['current']-1].get('status',stage)
+        if job.get('current'):
+            failed=job['segments'][job['current']-1]
+            if failed.get('scene_state_attempt'):
+                from banana_mv.scene_state import atomic_json
+                atomic_json(work/f'{failed["index"]:02d}_scene_state_attempt.json',failed['scene_state_attempt'])
         job['error_stage']=stage
         job['status']='error'; job['error']=f'{type(e).__name__}: {e}'; write_state(job)
     finally:
@@ -366,6 +426,9 @@ def start(req):
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
+    if not isinstance(req.get('persistent_scene_state',True),bool):
+        raise ValueError('persistent_scene_state 必須為布林值。')
+    req['scene_state_version']=1 if req.get('persistent_scene_state',True) and req.get('rewrite',True) else 0
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):
         raise ValueError('face_identity 必須為布林值。')
     if not isinstance(req['audio_analysis'], bool):

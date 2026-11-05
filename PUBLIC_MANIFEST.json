@@ -24,7 +24,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "8785b263394382b264880a32edc18a2470d3af2050a5c88725ebefc448970349"
+      "sha256": "a476fb8c3580b00ff4051d086068bfbcc154a5f0a22a3e8a048728c21f158914"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -44,7 +44,7 @@
     },
     {
       "path": "banana_mv/core.py",
-      "sha256": "7ac768e9bd631ec044f51f812782379bcab23e5882ee801423a281bd88f3ff0d"
+      "sha256": "0d828900e957e23dc874ed01b95771cd00c5abda2ab494a582986886d26bbc51"
     },
     {
       "path": "banana_mv/director.py",
@@ -60,11 +60,15 @@
     },
     {
       "path": "banana_mv/prompt_quality.py",
-      "sha256": "f29ab5ad0247e4d6b93507e2edcb97c86facc9ae747b12a4506e7137fc2859db"
+      "sha256": "61c7acd5561bed22fb4dd442f8f7accf132a1c586c47c5db92bb33672f23e033"
+    },
+    {
+      "path": "banana_mv/scene_state.py",
+      "sha256": "d46f6ab6b7228bdf6f8d40bcd005319e92e5f54aa74ee2669da78a88fd45516f"
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "3117728c5e048979e46fedb4813298629bbef56a0f95dd13b8f4458331088738"
+      "sha256": "fab3808f7ee29711f382734402d21d64c4dc811bc3a0883b125295801c7a560a"
     },
     {
       "path": "banana_mv/services.py",
@@ -80,11 +84,15 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "452d14e6694123220d61679e7b6d655f687e86980b399fce22ea1c2c41d6d921"
+      "sha256": "3fbc62d177f50928c1497565bcedfe024bdb17ed9bf69e96f43bf7f965ff2ac7"
+    },
+    {
+      "path": "docs/persistent_scene_state.md",
+      "sha256": "067e8cac9f999075f3a45602a43bde8fc0755fff95c91796df118f8ebf0ec2f4"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "9338d1613e1eb33830449f3d873e720cc015bb558c97b31e035507c3f955aeb2"
+      "sha256": "119c40c657a854f681f59f30beebd3d07e14d0043efa746666c05aa189b3244b"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -127,8 +135,12 @@
       "sha256": "324a6c5f612e27652ba3dd2a74764bc80e0bd7700b9bb9289026eb24640009d7"
     },
     {
+      "path": "tests/test_scene_state.py",
+      "sha256": "f8511b0ba83a5741f2d1f9f3748e8f036fbfa407fd340951039ad7ce801eceb0"
+    },
+    {
       "path": "tests/test_server.py",
-      "sha256": "d6fcb2cadc80f25e3412748a5d5851ecd2255cf16bfee5b42777d2d20963b4b4"
+      "sha256": "422f523b33d15025e597f585e7c932350baad2b7b17a328c4af9de36a2815d0b"
     },
     {
       "path": "tests/test_services.py",

@@ -65,12 +65,18 @@ POLICY = (
 )
 
 
-def reference_policy(picture_count, continuation=False):
+def reference_policy(picture_count, continuation=False, mutable_appearance=False):
     main = 2 if continuation else 1
     mapping = f'Main original reference: <Picture {main}>. '
     if continuation:
         mapping += '<Picture 1> is the previous final frame, not an additional character. '
-    return mapping + f'Connected pictures: {picture_count}. ' + POLICY + '\n' + MV_POLICY
+    policy=POLICY
+    if mutable_appearance:
+        policy=policy.replace('Keep each identity distinct in face, hair, clothing and assigned role.',
+                              'Keep facial identities and roles distinct; current structured scene state governs hair, clothing and other mutable appearance.')
+        policy=policy.replace('type, colors and materials consistent for that recurring character across shots and clips;',
+                              'type, colors and materials consistent until an explicit story/state transition changes them;')
+    return mapping + f'Connected pictures: {picture_count}. ' + policy + '\n' + MV_POLICY
 
 
 def enforce_reference_policy(text, policy):
