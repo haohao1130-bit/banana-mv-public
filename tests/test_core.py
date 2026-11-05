@@ -116,6 +116,23 @@ class TimelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):dimensions('9:16',1280)
         with self.assertRaises(ValueError):dimensions('20:3',1280)
 
+    def test_480p_presets_reach_both_workflows_without_changing_sampling_or_audio(self):
+        for aspect,target,native in [('16:9',(854,480),(864,480)),
+                                     ('9:16',(480,854),(480,864)),
+                                     ('4:5',(480,600),(480,608)),
+                                     ('1:1',(480,480),(480,480))]:
+            with self.subTest(aspect=aspect):
+                self.assertEqual(output_dimensions(aspect,target[0]),target)
+                self.assertEqual(dimensions(aspect,target[0]),native)
+                for tail in (None,'tail.png'):
+                    low=build_workflow('ref.png','slice.wav',*native,362,'<Audio 1>',42,tail)
+                    high=build_workflow('ref.png','slice.wav',*dimensions(aspect),362,'<Audio 1>',42,tail)
+                    self.assertEqual(low['7']['inputs']['width'],native[0])
+                    self.assertEqual(low['7']['inputs']['height'],native[1])
+                    for graph in (low,high):
+                        graph['7']['inputs'].pop('width');graph['7']['inputs'].pop('height')
+                    self.assertEqual(low,high)
+
     def test_graph_routes_audio_and_preserves_identity(self):
         w=build_workflow('ref.png','slice.wav',736,416,362,'<Audio 1>',42)
         self.assertEqual(w['7']['inputs']['audio_mode'],'lock_source')
@@ -178,11 +195,13 @@ class MultiReferenceTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'ffmpeg required')
 class MediaTests(unittest.TestCase):
-    def test_exact_720p_landscape_and_portrait_crop_from_native_padding(self):
+    def test_exact_720p_and_480p_crop_from_native_padding(self):
         with tempfile.TemporaryDirectory(prefix='banana-resolution-') as tmp:
             p=Path(tmp);song=p/'song.wav'
             command(['ffmpeg','-y','-v','error','-f','lavfi','-i','sine=duration=1','-ar','32000',song])
-            for width,height,native_w,native_h in [(1280,720,1280,736),(720,1280,736,1280)]:
+            for width,height,native_w,native_h in [(1280,720,1280,736),(720,1280,736,1280),
+                                                         (854,480,864,480),(480,854,480,864),
+                                                         (480,600,480,608),(480,480,480,480)]:
                 raw=p/f'{width}_native.mp4';out=p/f'{width}_final.mp4'
                 command(['ffmpeg','-y','-v','error','-f','lavfi','-i',f'color=c=navy:s={native_w}x{native_h}:r=24:d=1',
                          '-c:v','libx264','-threads','1',raw])

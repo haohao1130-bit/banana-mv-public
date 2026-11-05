@@ -71,13 +71,22 @@ def align_frames(frames):
 OUTPUT_SIZES = {'16:9': (1280,720), '9:16': (720,1280), '4:5': (720,900), '1:1': (720,720)}
 
 
+# Existing width requests identify the preset, so saved 720p projects remain compatible.
+OUTPUT_SIZE_PRESETS = {
+    '720p': OUTPUT_SIZES,
+    '480p': {'16:9': (854,480), '9:16': (480,854), '4:5': (480,600), '1:1': (480,480)},
+}
+
+
 def output_dimensions(aspect, width=None):
     if aspect not in OUTPUT_SIZES:
         raise ValueError('不支援的比例。')
-    size = OUTPUT_SIZES[aspect]
-    if width is not None and width != size[0]:
-        raise ValueError(f'目前固定 720p 級，{aspect} 的橫向寬度為 {size[0]}；請載入新版前端。')
-    return size
+    if width is None:
+        return OUTPUT_SIZES[aspect]
+    for sizes in OUTPUT_SIZE_PRESETS.values():
+        if width == sizes[aspect][0]:
+            return sizes[aspect]
+    raise ValueError(f'不支援的橫向寬度；{aspect} 請選擇 720P 或 480P 預設尺寸。')
 
 
 def dimensions(aspect, width=None):

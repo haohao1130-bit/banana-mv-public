@@ -14,7 +14,7 @@ class Element{
   select(){this.selected=true;}
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
-Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.width.value='1280';els.segment.value='10';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
+Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
 const posts=[],uploads=[],resumes=[],copied=[];
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
@@ -24,6 +24,7 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     if(url==='api/mv/start'){posts.push(JSON.parse(options.body));return {id:'abcd'};}
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
+    if(url==='api/mv/status?id=low480')return {id:'low480',title:'L4 test',duration:10,status:'interrupted',request:{mode:'independent',aspect:'16:9',width:854},segments:[]};
     if(url==='api/mv/status?id=saved123')return {id:'saved123',title:'雲端歌曲',duration:180,seed:0,status:'interrupted',request:{mode:'independent',aspect:'9:16',segment_seconds:15,prompt:'saved story',lyrics:'已存歌詞',srt_reference:'已存SRT',face_identity:false},segments:[{start:0,seconds:15,status:'done'},{start:15,seconds:15}]};
     if(url==='api/mv/status?id=broken-plan')return {status:'error',error:'plan parse failed',error_stage:'planning_story',request:{director_version:2},segments:[{index:0,start:0,seconds:10,director_plan:{mode:'story',event:'x'.repeat(800)}}]};
     if(url==='status-error')return {status:'error',error:'bad media tag',segments:[]};
@@ -92,6 +93,14 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els.aspect.value='9:16';els.aspect.events.change();
   assert.equal(els.width.value,'720');assert(els['size-help'].textContent.includes('720 × 1280'));
   req=await submit();assert.equal(req.width,720);
+  els.resolution.value='480p';els.resolution.events.change();
+  assert.equal(els.width.value,'480');assert(els['size-help'].textContent.includes('480 × 854'));
+  req=await submit();assert.equal(req.width,480);assert.equal(req.aspect,'9:16');
+  for(const [aspect,width,label] of [['16:9',854,'854 × 480'],['4:5',480,'480 × 600'],['1:1',480,'480 × 480']]){
+    els.aspect.value=aspect;els.aspect.events.change();req=await submit();
+    assert.equal(req.width,width);assert(els['size-help'].textContent.includes(label));
+  }
+  els.resolution.value='720p';els.resolution.events.change();
   els.aspect.value='16:9';els.aspect.events.change();
   // Removing one extra renumbers the remaining card and the actual request together.
   els.previews.children[0].children[2].onclick();req=await submit();
@@ -101,6 +110,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['extra-images'].files=Array.from({length:8},(_,i)=>file(`extra${i}.png`));els['extra-images'].onchange();
   req=await submit();assert.equal(req.image_ids.length,2);
   await els['open-last'].onclick();assert.equal(els.kitchen_attention.checked,true);assert.equal(els.sparse_attention.checked,true);assert.equal(els['job-seed'].textContent,'本次 Seed：0');assert.equal(els.prompt.value,'saved story');assert.equal(els.aspect.value,'9:16');assert.equal(els.seed.value,'0');assert.equal(els.face_identity.checked,false);assert.equal(els['resume-project'].hidden,false);assert(els['project-summary'].textContent.includes('雲端歌曲'));
+  assert.equal(els.resolution.value,'720p');assert.equal(els.width.value,'720');
   assert.equal(els['srt-reference'].value,'已存SRT');assert.equal(els.lyrics.value,'已存歌詞');
   assert.equal(els.persistent_scene_state.checked,false);assert.equal(els.audio_analysis.checked,false);assert.equal(els.story_plan.checked,false);
   vm.runInContext("renderAudioAnalysis({audio_analysis:{status:'ready',pulse:{bpm_estimate:120}},request:{audio_analysis:true}})",context);assert(els['audio-summary'].textContent.includes('120 BPM'));
@@ -110,5 +120,6 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   await els['resume-project'].onclick();assert.deepEqual(resumes,[{id:'saved123',rewrite_retries:3}]);
   vm.runInContext("renderRewriteAttempt({status:'running',rewrite_attempt:{stage:'rewriting',clip_index:1,attempt:2,max_attempts:4}})",context);assert(els['rewrite-status'].textContent.includes('第 2 / 4 次'));
   vm.runInContext("renderRewriteAttempt({status:'done'})",context);assert.equal(els['rewrite-status'].textContent,'');
+  await vm.runInContext("openProject('low480')",context);assert.equal(els.resolution.value,'480p');assert.equal(els.width.value,'854');
   console.log('UI checks passed: collapsed default, legacy single image, multi upload, toggle exclusion, retained selections, removal numbering and count limit.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
