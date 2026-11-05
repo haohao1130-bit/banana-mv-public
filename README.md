@@ -2,7 +2,7 @@
 
 參考圖片＋原歌曲，在自己的 Google Colab 上生成音樂 MV。支援手機前端、本地 9B 導演、多圖角色分工、分段生成與斷點續跑，還有真的會投藥、開火、出丹的煉丹爐。
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/main/Banana_MV_Colab.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/main/Banana_MV_Public.ipynb)
 
 **這是自行運行的實驗工具。** 請使用自己的 Colab GPU 與額度；沒有共用的免費生成伺服器，也不需要付費模型 API。模型下載需要數十 GB 空間，生成時間與效果依 GPU、歌曲長度和設定而變化。
 

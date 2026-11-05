@@ -63,4 +63,9 @@ runtime.show_shutdown_control(globals())
 for index,cell in enumerate(cells):
     cell['id']=f'banana-public-{index:02d}'
 nb={'nbformat':4,'nbformat_minor':5,'metadata':{'kernelspec':{'name':'python3','display_name':'Python 3'},'language_info':{'name':'python'},'colab':{'provenance':[],'gpuType':'G4'},'accelerator':'GPU'},'cells':cells}
-(ROOT/'Banana_MV_Colab.ipynb').write_text(json.dumps(nb,ensure_ascii=False,indent=1)+'\n',encoding='utf-8')
+(ROOT/'Banana_MV_Public.ipynb').write_text(json.dumps(nb,ensure_ascii=False,indent=1)+'\n',encoding='utf-8')
+
+# Keep the previously shared URL useful without duplicating the executable entry.
+legacy={'nbformat':4,'nbformat_minor':5,'metadata':{'kernelspec':{'name':'python3','display_name':'Python 3'},'language_info':{'name':'python'}},'cells':[md(f"# Banana MV 公開版入口已更名\n\n請開啟 [Banana_MV_Public.ipynb](https://colab.research.google.com/github/{REPOSITORY}/blob/main/Banana_MV_Public.ipynb)。私人版仍使用原本的筆記本名稱。\n")] }
+legacy['cells'][0]['id']='banana-public-moved'
+(ROOT/'Banana_MV_Colab.ipynb').write_text(json.dumps(legacy,ensure_ascii=False,indent=1)+'\n',encoding='utf-8')
