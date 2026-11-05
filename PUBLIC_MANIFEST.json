@@ -80,7 +80,7 @@
     },
     {
       "path": "banana_mv/story_plan.py",
-      "sha256": "32ffa3cb60dca5a9be5be4bdfd726dbeb1c6d8aa1d511843272b0fad20a43e05"
+      "sha256": "674054756115cb6ee3908a2773fa65bf72f68665f7926d8a3fe13d0adfca5ad1"
     },
     {
       "path": "banana_mv/web/index.html",
@@ -116,7 +116,7 @@
     },
     {
       "path": "tests/test_director.py",
-      "sha256": "bafe56bb5c625ca67fc37266fe13ed3bb515f8d8c2a1a9b79c5e1ade804a83bb"
+      "sha256": "6932830693b7b2036850d3e33c0be913b78ca3f0b6f01f1875e91fdb9fc33dbb"
     },
     {
       "path": "tests/test_lyrics_reference.py",

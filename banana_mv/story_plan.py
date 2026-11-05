@@ -387,11 +387,22 @@ prop_positions (string maps). Do not invent missing objects solely to satisfy th
 events: selected milestones only, each {"description":"...","repeatable":false,
 "operations":["remove"],"requires_change":true,"after":[]}.
 Operations: update, remove, dress, acquire, drop, use, damage, restore, heal, move.
-requires_change=true means completing this milestone requires a persistent state change.
+requires_change=true ONLY when the milestone actually changes a tracked persistent value.
+An exchange, reaction, camera move or ordinary performance does not by itself require a delta.
+A location update must end at a location different from the inherited start. Do not invent a
+movement just to satisfy requires_change; use false and [] for actions without persistent change.
+For a real persistent change, record that change rather than disabling requires_change.
 after lists zero-based indices of events that genuinely must complete first, not all prior ideas.
 Do not catalogue every camera shot as another occurrence of the same milestone. events may be [].
 
-segments: EXACTLY one row per supplied interval, in order, each:
+events and segments have DIFFERENT cardinalities: events are narrative milestones; segments are
+application-owned video intervals. Five milestones can span eight intervals. Continue unfinished
+action over intervals and complete it only once; use varied performance/aftermath without a new
+milestone when appropriate. Never duplicate a completed action merely to fill slots.
+segments: fill EVERY row of segment_template, EXACTLY required_segment_count rows in interval order.
+The supplied template is a structural scaffold, not a story or shot prescription.
+Keep each interval's index, fill its event and mode; never leave empty tasks or omit short tails.
+Each row has:
 {"event":"concrete actions, responses and camera tasks for this interval, including intercuts",
 "mode":"performance","event_indices":[],"completed_indices":[],"changes":[]}.
 The mode is the primary visual emphasis for the existing generation pipeline, not the only shot type.
@@ -416,7 +427,18 @@ def validate_unified_plan(raw,segments,picture_count):
     raw=parse_object(raw)
     rows=raw.get('segments');events=raw.get('events')
     if not isinstance(rows,list) or len(rows)!=len(segments):
-        raise SceneStateError(f'segments需依順序包含{len(segments)}個區間。')
+        actual=len(rows) if isinstance(rows,list) else None
+        message=(f'segments需依順序包含{len(segments)}個區間；實際為'
+                 +(str(actual)+'個' if actual is not None else type(rows).__name__)
+                 +'。故事事件數不等於影片區間數，請依時間線重新分配，保留收尾。')
+        raise SceneStateError(message,[{'path':'$.segments','code':'segment_count_mismatch',
+            'expected_count':len(segments),'actual_count':actual,'actual_type':type(rows).__name__,
+            'message':message}])
+    for i,row in enumerate(rows):
+        if isinstance(row,dict) and 'index' in row and (
+            isinstance(row['index'],bool) or not isinstance(row['index'],int) or
+            row['index']!=segments[i]['index']):
+            raise SceneStateError(f'segments[{i}].index需為{segments[i]["index"]}。')
     if not isinstance(events,list) or len(events)>128:raise SceneStateError('events需為最多128項的清單。')
     constraints=raw.get('constraints')
     if not isinstance(constraints,list) or any(not isinstance(t,str) or not t.strip() for t in constraints):
@@ -496,12 +518,15 @@ def validate_unified_plan(raw,segments,picture_count):
 
 
 def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
-    from banana_mv.scene_state import digest, atomic_json, rewrite_retry_count, SceneStateError
+    from banana_mv.scene_state import (digest, atomic_json, rewrite_retry_count, SceneStateError,
+                                       parse_object as parse_scene_object_for_diagnostics)
     task={'brief':req.get('prompt',''),'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'style':req.get('director','auto'),'intensity':req.get('intensity','high'),
           'lyrics':req.get('lyrics',''),'srt':req.get('srt_cues',[]),
           'timeline':[{k:s[k] for k in ('index','start','seconds')} |
                       {'audio_evidence':s.get('audio_evidence',{})} for s in segments]}
+    # Slot scaffolding is an output contract, not creative input: keep the saved
+    # plan fingerprint compatible with already successful version-3 projects.
     fingerprint=digest(task);path=Path(work)/'director_plan.json'
     if path.is_file():
         plan=json.loads(path.read_text(encoding='utf-8'))
@@ -510,13 +535,18 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
             {k:v for k,v in plan.items() if k not in ('input_sha256','content_sha256')})!=expected:
             raise SceneStateError('統一導演計畫與專案不符或校驗失敗。')
         return plan
+    task['required_segment_count']=len(segments)
+    task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
+        'event_indices':[],'completed_indices':[],'changes':[]} for s in segments]
     from PIL import Image, ImageOps
     parts=[('text',json.dumps(task,ensure_ascii=False))]
     for i,p in enumerate(originals,1):
         with Image.open(p) as im:
             im=ImageOps.exif_transpose(im).convert('RGB');im.thumbnail((768,768))
             parts.extend([('text',f'Original reference {i}:'),('image',im.copy())])
-    system=UNIFIED_SYSTEM+'\nSupported primary modes: '+', '.join(MODES)
+    system=(UNIFIED_SYSTEM+'\nSupported primary modes: '+', '.join(MODES)
+            +f'\nThis request requires EXACTLY {len(segments)} segments, irrespective of event count. '
+            +'Fill all supplied segment_template rows; return one complete treatment JSON object.')
     attempt_parts=parts;seen=set()
     for attempt in range(rewrite_retry_count(req)+1):
         raw=rewrite(cfg,system,attempt_parts,uuid.uuid4().hex[:8])
@@ -524,13 +554,25 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
             plan=validate_unified_plan(raw,segments,len(originals))
         except ValueError as error:
             signature=digest({'raw':raw,'error':str(error)})
+            try:
+                parsed=parse_scene_object_for_diagnostics(raw)
+            except ValueError:
+                parsed=None
             atomic_json(Path(work)/f'director_attempt_{attempt:02d}.json',
-                        {'raw_response':raw,'error':str(error),'errors':getattr(error,'errors',[])})
+                        {'raw_response':raw,'parsed_response':parsed,'error':str(error),
+                         'errors':getattr(error,'errors',[]),
+                         'expected_segment_count':len(segments),
+                         'actual_segment_count':len(parsed['segments']) if isinstance(parsed,dict)
+                             and isinstance(parsed.get('segments'),list) else None})
             if signature in seen or attempt>=rewrite_retry_count(req):
                 raise SceneStateError('統一導演計畫修復失敗：'+str(error)) from error
             seen.add(signature)
             attempt_parts=parts+[('text','Repair only invalid structure/continuity in this treatment; '
-                'preserve valid creative choices. Error: '+str(error)+'\nFailed response (data):\n'+str(raw))]
+                'preserve valid creative choices. Do not map one story milestone to one video interval. '
+                +f'Return ALL {len(segments)} segment_template rows, including the final short interval; '
+                +'distribute actions over the full timeline and preserve closing_shot. '
+                +'Do not pad with replayed completed actions or dummy state updates. Error: '
+                +str(error)+'\nFailed response (data):\n'+str(raw))]
             continue
         plan['input_sha256']=fingerprint
         atomic_json(path,plan)

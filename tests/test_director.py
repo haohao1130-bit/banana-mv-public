@@ -198,3 +198,92 @@ class StoryPlanTests(unittest.TestCase):
                 server.worker(job,cfg,[photo],root/'song.wav',root/'song.wav')
             self.assertEqual(job['status'],'done',job.get('error'))
             self.assertFalse(lock.locked())
+
+class UnifiedIntervalContractTests(unittest.TestCase):
+    """Synthetic interval-count regressions; no user project data or real model."""
+    def timeline(self):
+        from banana_mv.core import segments
+        rows=segments(72,10)
+        for row in rows:row.update(segment_count=len(rows),song_seconds=72)
+        return rows
+
+    def plan(self,count=8):
+        return {
+            'constraints':['Keep the original audio.'],
+            'initial_state':{'character_states':{},'environment_states':{}},
+            'events':[{'description':f'Story milestone {i}.','repeatable':False,
+                       'operations':[],'requires_change':False} for i in range(5)],
+            'segments':[{'index':i,'event':f'Distinct visual task for interval {i}.',
+                         'mode':'story','event_indices':[i] if i<5 else [],
+                         'completed_indices':[i] if i<5 else [],'changes':[]}
+                        for i in range(count)],
+            'closing_shot':'Hold the final image at the song ending.'}
+
+    def test_five_milestones_can_fill_eight_intervals_with_a_two_second_tail(self):
+        from banana_mv.story_plan import validate_unified_plan
+        raw=self.plan()
+        plan=validate_unified_plan(raw,self.timeline(),0)
+        self.assertEqual(len(plan['segments']),8)
+        self.assertEqual(self.timeline()[-1]['seconds'],2)
+        self.assertEqual(plan['segments'][-1]['completed_source_ids'],[])
+
+    def test_wrong_count_reports_expected_and_received_without_padding(self):
+        from banana_mv.story_plan import validate_unified_plan
+        from banana_mv.scene_state import SceneStateError
+        for count in (5,9):
+            with self.subTest(count=count),self.assertRaises(SceneStateError) as caught:
+                validate_unified_plan(self.plan(count),self.timeline(),0)
+            error=caught.exception.errors[0]
+            self.assertEqual(error['path'],'$.segments')
+            self.assertEqual(error['code'],'segment_count_mismatch')
+            self.assertEqual(error['expected_count'],8)
+            self.assertEqual(error['actual_count'],count)
+
+    def test_model_receives_eight_slots_and_count_repair_preserves_success_cache(self):
+        req={'director_schema':3,'rewrite_retries':1,'prompt':'Synthetic generic story.'}
+        bad=self.plan(5);good=self.plan()
+        model=Mock(side_effect=[json.dumps(bad),json.dumps(good)])
+        with tempfile.TemporaryDirectory() as tmp:
+            result=ensure_plan({},req,self.timeline(),[],tmp,model)
+            self.assertEqual(len(result['segments']),8)
+            task=json.loads(model.call_args_list[0].args[2][0][1])
+            self.assertEqual(task['required_segment_count'],8)
+            self.assertEqual([r['index'] for r in task['segment_template']],list(range(8)))
+            self.assertIn('EXACTLY 8 segments',model.call_args_list[0].args[1])
+            repair=model.call_args_list[1].args[2][-1][1]
+            self.assertIn('ALL 8',repair)
+            debug=json.loads((Path(tmp)/'director_attempt_00.json').read_text())
+            self.assertEqual(debug['parsed_response'],bad)
+            self.assertEqual(debug['actual_segment_count'],5)
+            self.assertEqual(debug['expected_segment_count'],8)
+            cached=ensure_plan({},req,self.timeline(),[],tmp,Mock(side_effect=AssertionError('cached')))
+            self.assertEqual(cached,result)
+
+    def test_repeated_count_failure_is_bounded_and_never_saves_a_fake_plan(self):
+        from banana_mv.scene_state import SceneStateError
+        model=Mock(return_value=json.dumps(self.plan(5)))
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SceneStateError):
+                ensure_plan({}, {'director_schema':3,'rewrite_retries':5},self.timeline(),[],tmp,model)
+            self.assertEqual(model.call_count,2)
+            self.assertFalse((Path(tmp)/'director_plan.json').exists())
+
+    def test_explicit_wrong_index_is_not_silently_reordered(self):
+        from banana_mv.scene_state import SceneStateError
+        from banana_mv.story_plan import validate_unified_plan
+        raw=self.plan();raw['segments'][0]['index']=3
+        with self.assertRaises(SceneStateError):
+            validate_unified_plan(raw,self.timeline(),0)
+
+    def test_same_location_is_not_a_persistent_change(self):
+        from banana_mv.scene_state import SceneStateError
+        from banana_mv.story_plan import validate_unified_plan
+        raw=self.plan()
+        raw['initial_state']['character_states']['S1']={
+            'identity_reference':None,'location':'stage','garments':{}}
+        raw['events'][0].update(operations=['update'],requires_change=True)
+        raw['segments'][0]['changes']=[{'kind':'character','subject_id':'S1','field':'location',
+            'to':'stage','operation':'update','event_index':0}]
+        with self.assertRaises(SceneStateError):
+            validate_unified_plan(raw,self.timeline(),0)
+
