@@ -64,7 +64,7 @@
     },
     {
       "path": "banana_mv/scene_state.py",
-      "sha256": "a41a38a821166fc77f7e8a93b6827f159e12be8fcaafe6c30d23a459d89866f4"
+      "sha256": "92fa6804c61be43bdde5a092d7030f9cc4ca4d66d089acbd3570b378f87ede1e"
     },
     {
       "path": "banana_mv/server.py",
@@ -80,7 +80,7 @@
     },
     {
       "path": "banana_mv/story_plan.py",
-      "sha256": "674054756115cb6ee3908a2773fa65bf72f68665f7926d8a3fe13d0adfca5ad1"
+      "sha256": "f88fdf5668843f7cf98e317b2099a1ab0c6efe73cb5af3bb551eb7ab69864923"
     },
     {
       "path": "banana_mv/web/index.html",
@@ -140,7 +140,7 @@
     },
     {
       "path": "tests/test_scene_state_init.py",
-      "sha256": "5f7576a2cce7ac1a7f6d82971f3d0525b6257ad639850164465f0a2d3ba2add0"
+      "sha256": "24d0a17cbcc72395622ee76e52c048b5a23a7e59ecda624ca84eb5130c8a9aee"
     },
     {
       "path": "tests/test_server.py",

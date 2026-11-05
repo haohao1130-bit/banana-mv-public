@@ -399,11 +399,7 @@ def initial_state(raw,segments,picture_count):
         raise SceneStateError('原始圖片1的主要角色需對應 S1，以沿用 Face Lock。')
     for key,e in envs.items():
         text(key)
-        if not isinstance(e,dict) or set(e)-{'active_location','persistent_changes','damaged_objects','prop_positions'}:
-            raise SceneStateError('場景狀態格式錯誤。')
-        e['active_location']=text(e.get('active_location',''))
-        e['persistent_changes']=string_list(e.get('persistent_changes',[]))
-        for f in ('damaged_objects','prop_positions'):e[f]=string_map(e.get(f,{}))
+        envs[key]=normalize_environment(e,key)
     catalog=event_catalog(raw)
     total=segments[-1]['start']+segments[-1]['seconds']
     narrative={'completed_events':[],'current_event':None,
@@ -412,6 +408,33 @@ def initial_state(raw,segments,picture_count):
     state=PersistentSceneState(chars,envs,narrative,{'current_clip_index':-1,'current_start_time':0,
            'current_end_time':0,'total_duration':total}).to_dict()
     return state,catalog
+
+
+def normalize_environment(value, scene):
+    """Canonicalize redundant IDs and empty map arrays without inventing state."""
+    path=f'$.initial_state.environment_states.{scene}'
+    def fail(suffix,code,message):
+        raise SceneStateError(message,[{'path':path+suffix,'code':code,'message':message}])
+    if not isinstance(value,dict):fail('','type','場景狀態需為物件。')
+    result=deepcopy(value)
+    if 'scene_id' in result:
+        if result['scene_id']!=scene:
+            fail('.scene_id','conflicting_id','場景內部scene_id與外層ID矛盾。')
+        result.pop('scene_id')
+    allowed={'active_location','persistent_changes','damaged_objects','prop_positions'}
+    unknown=set(result)-allowed
+    if unknown:
+        field=sorted(unknown)[0]
+        fail('.'+field,'unknown_field','場景含未知欄位：'+field)
+    for field,parser,default in [('active_location',text,''),('persistent_changes',string_list,[]),
+                                 ('damaged_objects',string_map,{}),('prop_positions',string_map,{})]:
+        item=result.get(field,deepcopy(default))
+        # Only the empty list is lossless. Nonempty lists, null and scalars remain errors.
+        if field in ('damaged_objects','prop_positions') and isinstance(item,list) and not item:
+            item={}
+        try:result[field]=parser(item)
+        except SceneStateError as error:fail('.'+field,'type',str(error))
+    return result
 
 
 def normalize_garments(garments, subject):

@@ -213,3 +213,55 @@ class InitialSceneStateTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class EnvironmentFormatTests(unittest.TestCase):
+    def test_redundant_scene_id_and_empty_map_arrays_are_lossless_and_idempotent(self):
+        from banana_mv.scene_state import normalize_environment
+        raw={'scene_id':'room','active_location':'studio','persistent_changes':[],
+             'damaged_objects':[],'prop_positions':{'chair':'left'}}
+        before=deepcopy(raw)
+        result=normalize_environment(raw,'room')
+        self.assertEqual(raw,before)
+        self.assertEqual(result,{'active_location':'studio','persistent_changes':[],
+                                'damaged_objects':{},'prop_positions':{'chair':'left'}})
+        self.assertEqual(normalize_environment(result,'room'),result)
+
+    def test_conflicting_ids_nonempty_arrays_unknown_fields_and_null_keep_precise_errors(self):
+        from banana_mv.scene_state import normalize_environment
+        for raw,field in [({'scene_id':'elsewhere'},'scene_id'),
+                          ({'damaged_objects':['broken chair']},'damaged_objects'),
+                          ({'prop_positions':None},'prop_positions'),
+                          ({'unknown':True},'unknown')]:
+            with self.subTest(raw=raw),self.assertRaises(SceneStateError) as caught:
+                normalize_environment(raw,'room')
+            self.assertEqual(caught.exception.errors[0]['path'],
+                             '$.initial_state.environment_states.room.'+field)
+
+    def test_normalization_survives_initial_state_and_keeps_nonempty_maps(self):
+        raw=deepcopy(INITIAL_EXAMPLE)
+        raw['initial_state']['environment_states']={'room':{'scene_id':'room',
+            'active_location':'studio','damaged_objects':{'chair':'broken'},'prop_positions':[]}}
+        state,_=initial_state(raw,timeline(8,10),0)
+        self.assertEqual(state['environment_states']['room']['damaged_objects'],{'chair':'broken'})
+        self.assertEqual(state['environment_states']['room']['prop_positions'],{})
+        self.assertEqual(raw['initial_state']['environment_states']['room']['prop_positions'],[])
+
+    def test_unified_planner_receives_same_task_at_both_resolutions(self):
+        from banana_mv.story_plan import ensure_plan
+        raw={'initial_state':{'character_states':{},'environment_states':{'room':{
+                 'scene_id':'room','active_location':'studio','damaged_objects':[]}}},
+             'constraints':[],'events':[],
+             'segments':[{'event':f'Distinct camera task {i}.','mode':'story',
+                          'event_indices':[],'completed_indices':[],'changes':[]} for i in range(8)],
+             'closing_shot':'Hold the final image.'}
+        calls=[]
+        for width in (854,1280):
+            with tempfile.TemporaryDirectory() as tmp:
+                model=Mock(return_value=json.dumps(raw))
+                plan=ensure_plan({}, {'director_schema':3,'width':width,'prompt':'Same brief.'},
+                                 timeline(8,10),[],tmp,model)
+                calls.append(model.call_args.args[1:3])
+                self.assertEqual(model.call_count,1)
+                self.assertEqual(len(plan['segments']),8)
+        self.assertEqual(calls[0],calls[1])

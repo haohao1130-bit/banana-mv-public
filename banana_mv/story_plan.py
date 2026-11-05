@@ -382,7 +382,8 @@ garment_type, material, color, current_status, current_location. The application
 from that key. Describe the actual starting state; future acquisitions must not start already worn.
 Statuses: worn, unfastened, partially_removed, removed, held, placed.
 Environment entries can include active_location, persistent_changes (list), damaged_objects and
-prop_positions (string maps). Do not invent missing objects solely to satisfy this example.
+prop_positions (string maps, use {} when empty, not []). The environment dictionary key is the
+scene ID; do not add scene_id inside its value. Do not invent objects solely for this example.
 
 events: selected milestones only, each {"description":"...","repeatable":false,
 "operations":["remove"],"requires_change":true,"after":[]}.
