@@ -49,6 +49,69 @@ def garment(gid,before='worn',after='removed',eid=None,operation='remove'):
 
 
 class SceneStateTests(unittest.TestCase):
+    def test_completed_history_is_not_selectable_but_repeatable_performance_remains(self):
+        ledger=ledger_for();segs=segments()
+        with tempfile.TemporaryDirectory() as temp:
+            first=plan_clip(response(['coat'],[garment('coat')]),clip_input(ledger,segs[0]),ledger['event_catalog'],segs[0])
+            commit_clip(temp,ledger,first);incoming=clip_input(ledger,segs[1])
+            payload=json.loads(state_context(incoming,ledger['event_catalog']).split('STRUCTURED SCENE INPUT (planned, not visually verified):\n')[1])
+            self.assertNotIn('coat',payload['event_catalog']);self.assertNotIn('final',payload['event_catalog'])
+            self.assertIn('intro',payload['event_catalog']);self.assertIn('vest',payload['event_catalog'])
+            self.assertIn('coat',payload['completed_history_only_do_not_replay'])
+            self.assertIn('final',payload['reserved_future_only_do_not_execute'])
+            self.assertEqual(payload['scene_state_in']['narrative_states']['previous_clip_events'][0]['event_id'],'coat')
+            with self.assertRaises(SceneStateError) as error:
+                plan_clip(response(['coat']),incoming,ledger['event_catalog'],segs[1])
+            self.assertEqual(error.exception.errors[0]['event_id'],'coat')
+            self.assertEqual(error.exception.errors[0]['code'],'completed_event_replay')
+            self.assertIn('remove coat',str(error.exception))
+
+    def test_continuation_without_milestone_does_not_reset_or_replay_a_completed_event(self):
+        raw=fixture();raw['events']=[event('exit','exit car',ops=['move']),event('end','finish',final=True)]
+        ledger=ledger_for(raw);segs=segments()
+        move={'kind':'character','subject_id':'S1','field':'location','from':'stage','to':'outside_car',
+              'event_id':'exit','operation':'move'}
+        with tempfile.TemporaryDirectory() as temp:
+            record=plan_clip(response(['exit'],[move]),clip_input(ledger,segs[0]),ledger['event_catalog'],segs[0])
+            commit_clip(temp,ledger,record);incoming=clip_input(ledger,segs[1])
+            text=state_context(incoming,ledger['event_catalog'])
+            payload=json.loads(text.split('STRUCTURED SCENE INPUT (planned, not visually verified):\n')[1])
+            self.assertEqual(payload['event_catalog'],{})
+            ongoing=plan_clip(response([],prompt='The character continues walking away from the car.'),incoming,ledger['event_catalog'],segs[1])
+            self.assertEqual(ongoing['scene_state_out']['character_states'],incoming['character_states'])
+            self.assertEqual(ongoing['scene_state_out']['narrative_states']['completed_events'],['exit'])
+            self.assertEqual(ongoing['state_transitions'],[])
+
+    def test_replay_retry_receives_original_response_and_continues_from_saved_state(self):
+        from PIL import Image
+        from banana_mv import server
+        ledger=ledger_for();segs=segments()
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);image=root/'ref.png';Image.new('RGB',(16,16)).save(image)
+            guide=root/'guide.md';guide.write_text('base H3 guide')
+            first=plan_clip(response(['coat'],[garment('coat')]),clip_input(ledger,segs[0]),ledger['event_catalog'],segs[0])
+            commit_clip(root,ledger,first);incoming=clip_input(ledger,segs[1]);before=deepcopy(incoming)
+            replay=json.dumps(response(['coat'],[garment('coat')],prompt='The performer removes the coat again.'))
+            fixed=json.dumps(response(['vest'],[garment('vest')],prompt='The performer removes the vest; the coat remains on the floor.'))
+            req={'prompt':'The performer removes the coat, then the vest over the song.',
+                 'rewrite':True,'optimizer_version':1,'scene_state_version':1,'director':'performance'}
+            with patch.object(server.backend,'rewrite_local',side_effect=[replay,fixed]) as model:
+                prompt=server.local_prompt({'guides':{'ref':str(guide)}},req,segs[1],[image],None,
+                                          scene_input=incoming,event_catalog=ledger['event_catalog'])
+            self.assertEqual(model.call_count,2)
+            retry='\n'.join(value for kind,value in model.call_args_list[1].args[2] if kind=='text')
+            self.assertIn(json.dumps(replay,ensure_ascii=False),retry)
+            self.assertIn('completed_event_replay',retry);self.assertIn('empty event/transition arrays',retry)
+            self.assertIn('remove any replayed action',retry)
+            self.assertNotIn('removes the coat again',prompt)
+            self.assertEqual(incoming,before);self.assertEqual(len(ledger['commits']),1)
+            record=segs[1]['scene_state_debug'];self.assertEqual(record['planned_events'],['vest'])
+            self.assertEqual(record['scene_state_out']['character_states']['S1']['removed_garments'],['coat','vest'])
+            debug=segs[1]['scene_state_rewrite_debug']
+            self.assertEqual(debug['attempts'][0]['raw_response'],replay)
+            self.assertEqual(debug['attempts'][1]['raw_response'],fixed)
+            self.assertEqual(restore_clip_input(root,0),first['scene_state_in'])
+
     def test_a_progressive_wardrobe_never_resets_and_inputs_can_be_restored(self):
         ledger=ledger_for();segs=segments()
         with tempfile.TemporaryDirectory() as work:
@@ -266,6 +329,7 @@ class SceneStateTests(unittest.TestCase):
             raw=fixture();raw['events']=[event('move','move to the side stage',ops=['move']),event('end','finish song',final=True,deps=['move'])]
             move={'kind':'character','subject_id':'S1','field':'location','from':'stage','to':'side_stage','event_id':'move','operation':'move'}
             replies=[json.dumps(raw),json.dumps(response(['move'],[move],'A lateral tracking shot follows the performer.')),
+                     json.dumps(response(['move'],prompt='The performer moves to the side stage again.')),
                      json.dumps(response(['end'],prompt='A close-up concludes the source song.'))]
             def create_audio(*args):Path(args[1]).write_bytes(b'slice')
             def download(cfg,info,path):path.write_bytes(b'raw')
@@ -293,9 +357,12 @@ class SceneStateTests(unittest.TestCase):
                 ledger=read_json(work/'scene_state.json');self.assertEqual(len(ledger['commits']),1)
                 failed=read_json(work/'01_scene_state.json');self.assertEqual(failed['status'],'planned')
                 self.assertEqual(failed['scene_state_in']['character_states']['S1']['location'],'side_stage')
+                repair=read_json(work/'01_scene_state_rewrite_debug.json')
+                self.assertEqual(repair['attempts'][0]['validation_errors'][0]['code'],'completed_event_replay')
+                self.assertEqual(repair['status'],'repaired')
                 self.assertEqual(failed['scene_state_in']['narrative_states']['previous_clip_events'][0]['event_id'],'move')
                 self.assertTrue(failed['scene_state_in']['narrative_states']['previous_clip_events'][0]['completed_in_previous_clip'])
-                self.assertEqual(model.call_count,3)
+                self.assertEqual(model.call_count,4)
                 # Resume the failed clip: the source input and already prepared prompt/state pair are reused.
                 job.update(status='running',resuming=True);job.pop('error',None)
                 job['segments'][1]['status']='waiting'
@@ -303,7 +370,7 @@ class SceneStateTests(unittest.TestCase):
                 self.assertTrue(server.GPU_LOCK.acquire(blocking=False))
                 server.worker(job,cfg,[photo],song,song)
                 self.assertEqual(job['status'],'done',job.get('error'))
-                self.assertEqual(model.call_count,3) # no reinitialization and no repeated state advancement
+                self.assertEqual(model.call_count,4) # no reinitialization and no repeated state advancement
                 ledger=read_json(work/'scene_state.json');self.assertEqual(len(ledger['commits']),2)
                 self.assertEqual(restore_clip_input(work,1),failed['scene_state_in'])
                 self.assertEqual(job['scene_state_summary']['committed_clips'],2)
@@ -320,7 +387,7 @@ class SceneStateTests(unittest.TestCase):
                 self.assertTrue(server.GPU_LOCK.acquire(blocking=False))
                 server.worker(job,cfg,[photo],song,song)
                 self.assertEqual(job['status'],'done',job.get('error'))
-                self.assertEqual(model.call_count,3);self.assertEqual(waiting.call_count,3)
+                self.assertEqual(model.call_count,4);self.assertEqual(waiting.call_count,3)
                 self.assertEqual(len(read_json(work/'scene_state.json')['commits']),2)
                 self.assertEqual(job['scene_state_summary']['committed_clips'],2)
 

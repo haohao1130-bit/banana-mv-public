@@ -108,7 +108,14 @@ Return ONLY JSON: {"clip_prompt":"the complete H3 prompt text for THIS interval"
 Keep the stable subject IDs and uploaded-image identity mapping from scene_state_in in subject_definitions.
 Use event IDs from the provided catalog. planned_events is their execution order; completed_events is
 only the subset completed in this clip. Unfinished events may continue later. Do not repeat completed
-non-repeatable IDs. Every transition must cite its planned event_id and a permitted operation.
+non-repeatable IDs. The provided event_catalog contains ONLY currently selectable IDs; completed history
+is context, never a to-do list. Never copy previous_clip_events or accumulated completed_events into
+planned_events/completed_events. Dependencies already completed remain satisfied through scene_state_in.
+An ordinary continuation, recurring singing, reaction or atmosphere may use planned_events: [],
+completed_events: [], state_transitions: [] when it adds no new catalog milestone. Write an active,
+music-led clip using the inherited situation; do not replay an old event merely to fill the arrays.
+Do not invent a milestone, force the ending or mark an unfinished multi-clip event complete to fill a slot.
+Only genuine changes require transitions; every transition must cite its planned event_id and permitted operation.
 A garment transition is {"kind":"garment","subject_id":"S1","garment_id":"coat",
 "from":"worn","to":"removed","current_location":"floor","event_id":"E1","operation":"remove"}.
 Other character changes: {"kind":"character","subject_id":"S1","field":"location",
@@ -360,10 +367,13 @@ def plan_clip(raw,state,catalog,segment):
     out=deepcopy(state);n=out['narrative_states'];previous=set(n['completed_events'])
     is_final=segment['index']==segment['segment_count']-1
     available=set(previous)
-    for eid in planned:
+    for index,eid in enumerate(planned):
         if eid not in catalog:raise SceneStateError('規劃使用未知事件 ID。')
         event=catalog[eid]
-        if eid in previous and not event['repeatable']:raise SceneStateError('已完成的一次性事件不得重播。')
+        if eid in previous and not event['repeatable']:
+            message=f'已完成的一次性事件不得重播：{eid}（{event["description"]}）。歷史事件不能列為本段待執行事件。'
+            raise SceneStateError(message,[{'path':f'$.planned_events[{index}]','code':'completed_event_replay',
+                                           'event_id':eid,'description':event['description'],'message':message}])
         if event['reserved_final'] and not is_final:raise SceneStateError('非最終段不得消耗保留終局事件。')
         if set(event['depends_on'])-available:raise SceneStateError('事件的前置條件尚未完成。')
         if eid in done:available.add(eid)
@@ -421,8 +431,16 @@ def plan_clip(raw,state,catalog,segment):
 
 
 def state_context(state,catalog,continuation=False):
+    completed=set(state['narrative_states']['completed_events'])
+    is_final=state['timeline']['current_end_time']>=state['timeline']['total_duration']-1e-6
+    selectable={eid:event for eid,event in catalog.items()
+                if (eid not in completed or event['repeatable']) and (is_final or not event['reserved_final'])}
+    history={eid:event for eid,event in catalog.items() if eid in completed and not event['repeatable']}
+    reserved={eid:event for eid,event in catalog.items() if not is_final and event['reserved_final'] and eid not in completed}
     return RULES+'\nSTRUCTURED SCENE INPUT (planned, not visually verified):\n'+json.dumps(
-        {'scene_state_in':state,'event_catalog':catalog,
+        {'scene_state_in':state,'event_catalog':selectable,
+         'completed_history_only_do_not_replay':history,'reserved_future_only_do_not_execute':reserved,
+         'continuation_without_new_milestone':{'planned_events':[],'completed_events':[],'state_transitions':[]},
          'uploaded_original_to_connected_picture':{str(c['identity_reference']):f'<Picture {c["identity_reference"]+int(continuation)}>'
             for c in state['character_states'].values() if c['identity_reference'] is not None}},ensure_ascii=False)
 

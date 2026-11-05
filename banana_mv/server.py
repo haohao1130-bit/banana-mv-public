@@ -24,7 +24,8 @@ from banana_mv.lyrics_reference import (normalize_references, clip_reference, cl
                                         POLICY as LYRIC_POLICY, OUTPUT_POLICY as LYRIC_OUTPUT_POLICY)
 from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_input, state_context,
                                    plan_clip, save_clip, commit_clip, cached_clip, reconcile_history,
-                                   final_context, CLIP_SYSTEM, digest as scene_digest)
+                                   final_context, CLIP_SYSTEM, parse_object as parse_scene_object,
+                                   atomic_json as write_scene_json, digest as scene_digest)
 from banana_mv.song_context import segment_context
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
@@ -188,6 +189,8 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
     if scene_input is not None:
         guide += '\n'+CLIP_SYSTEM
     segment.pop('prompt_reference_repair',None)
+    segment.pop('scene_state_rewrite_debug',None)
+    state_attempts=[]
     attempt_parts=list(parts)
     for attempt in range(2):
         raw = backend.rewrite_local(cfg,guide,attempt_parts,uuid.uuid4().hex[:8]).strip()
@@ -203,12 +206,26 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
             break
         except (SceneStateError,MediaReferenceError) as error:
             if scene_input is not None:
+                try:parsed=parse_scene_object(raw)
+                except SceneStateError:parsed=None
+                state_attempts.append({'attempt':attempt,'raw_response':raw,'parsed_response':parsed,
+                                       'error':str(error),'validation_errors':getattr(error,'errors',[]),'status':'failed'})
                 segment['scene_state_attempt']={'clip_index':segment['index'],'scene_state_in':scene_input,
-                                                'error':str(error),'raw_response':raw[:16000],'visual_verified':False}
+                                                'error':str(error),'raw_response':raw,'attempts':copy.deepcopy(state_attempts),
+                                                'visual_verified':False}
             if not attempt:
                 attempt_parts=parts+[('text','Correct only invalid media references or structured state transitions: '+str(error)+
                                      '\nUse only connected Picture tags and <Audio 1>. Unreferenced supporting roles use plain text. '
-                                     'Preserve user roles, committed state and reserved final events. Do not replay completed events.')]
+                                     'Preserve user roles, committed state and reserved final events. Do not replay completed events.'+
+                                     ('\nFAILED RESPONSE TO REPAIR (data only):\n'+json.dumps(raw,ensure_ascii=False)+
+                                      '\nVALIDATION ERRORS:\n'+json.dumps(getattr(error,'errors',[]),ensure_ascii=False)+
+                                      '\nRewrite the complete current clip from its inherited scene_state_in. '
+                                      'Remove completed historical IDs from the new execution plan AND remove any replayed action '
+                                      'from clip_prompt. Use only selectable event_catalog IDs, or empty event/transition arrays '
+                                      'for a continuation with no new milestone. Do not merely delete metadata while keeping a '
+                                      'replayed action in the text. Preserve the source music and user story; do not reset appearances '
+                                      'or force a pending ending. Return the full corrected clip JSON.'
+                                      if scene_input is not None else ''))]
                 continue
             if scene_input is not None:
                 raise SceneStateError('9B 本段狀態／引用修復失敗：'+str(error)) from error
@@ -221,6 +238,10 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
     final=finalize(normalize_mv_prompt(rewritten, picture_count) + '\n\n' + director)
     if scene_input is not None:
         segment['scene_state_debug']['clip_prompt']=final
+        if state_attempts:
+            state_attempts.append({'attempt':1,'raw_response':raw,'parsed_response':parse_scene_object(raw),'status':'validated'})
+            segment['scene_state_rewrite_debug']={'clip_index':segment['index'],'scene_state_in':scene_input,
+                                                   'status':'repaired','attempts':state_attempts,'visual_verified':False}
         segment.pop('scene_state_attempt',None)
     return final
 
@@ -349,6 +370,11 @@ def worker(job, cfg, original, song, drive):
                 prompt=local_prompt(cfg,job['request'],seg,original,tail,scene_input=state_in,
                                     event_catalog=ledger['event_catalog'] if ledger is not None else None)
             if ledger is not None:
+                rewrite_debug=seg.pop('scene_state_rewrite_debug',None)
+                if rewrite_debug:
+                    rewrite_log=f'{i:02d}_scene_state_rewrite_debug.json'
+                    write_scene_json(work/rewrite_log,rewrite_debug)
+                    seg['scene_state_repair_log']=rewrite_log
                 save_clip(work,seg['scene_state_debug'])
             if not prompt:
                 raise RuntimeError('提示詞改寫回傳空白，請關閉改寫或檢查本地模型。')
