@@ -1,0 +1,146 @@
+{
+  "edition": "public",
+  "repository": "haohao1130-bit/banana-mv-public",
+  "files": [
+    {
+      "path": ".github/workflows/checks.yml",
+      "sha256": "642d5a91b93a77d1feaa13ba31042097521b91485c21d0d6c1a162a56dcfd84b"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "6e28ce737e3bcc1446f20385cfe6667ec0451808a9f24dcac6bde3822eb54d14"
+    },
+    {
+      "path": "Banana_MV_Colab.ipynb",
+      "sha256": "719f317d043ad05d516b2185847797497645321366276aa6a250b469725e82d5"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "c7f83e69fc1888277d1ec5c6db354949ab0599564745db4c090f3da01b9ad623"
+    },
+    {
+      "path": "README.md",
+      "sha256": "dd8a2e3f86f306f9b109d71873e3d07838764d6635ddb895407c532c4c0e47a4"
+    },
+    {
+      "path": "THIRD_PARTY.md",
+      "sha256": "9e89356e28bee55131642d6490028f1f741e51df09488169b654720522046d82"
+    },
+    {
+      "path": "banana_mv/__init__.py",
+      "sha256": "5e392880d22fdfba32a65160f4583c0651e5b1b7b35bdcc4f162041c493280e2"
+    },
+    {
+      "path": "banana_mv/audio_analysis.py",
+      "sha256": "90cc2bd8d1653a8460e7c23d2465433af7524e9bfc57591b390667efa979caab"
+    },
+    {
+      "path": "banana_mv/comfy.py",
+      "sha256": "65a0d686051a11d8e2ed07998291f7747a19dfaae32d742cff707d9c33a13803"
+    },
+    {
+      "path": "banana_mv/core.py",
+      "sha256": "7ac768e9bd631ec044f51f812782379bcab23e5882ee801423a281bd88f3ff0d"
+    },
+    {
+      "path": "banana_mv/director.py",
+      "sha256": "4ae6059da08d9cfbb9cff417c2c919235735432ac9b5ebadd73438da749eeb4e"
+    },
+    {
+      "path": "banana_mv/http_server.py",
+      "sha256": "5f7bce53c4e1e450057911b324eccca9d917a7491daa465f3c2307f8bcf4cafe"
+    },
+    {
+      "path": "banana_mv/prompt_quality.py",
+      "sha256": "bf623ec9c1cbc59977712e2e454cb9654fd8533e61b5821327d16283f173c900"
+    },
+    {
+      "path": "banana_mv/server.py",
+      "sha256": "f6e587d715be9b322d792472b37f96963920bed688f6e3e0eeaa76c46d847e4e"
+    },
+    {
+      "path": "banana_mv/services.py",
+      "sha256": "5655e3adb2d6fe12f383c19186b72a0e76af6025feee7d6a79a7495f27c86368"
+    },
+    {
+      "path": "banana_mv/song_context.py",
+      "sha256": "94b8a655bb5e5a44da172f0c1fbc546041ced6846619471dc8024b9599a9a5f4"
+    },
+    {
+      "path": "banana_mv/story_plan.py",
+      "sha256": "852d7fe1651fd9a13d6737c898b06d2c8a7db7f1f664af31012f30ebf615822a"
+    },
+    {
+      "path": "banana_mv/web/index.html",
+      "sha256": "494d231459e7d81e8500c3fd107890b7f37f93d4d5e66d133b758e8448a0d1df"
+    },
+    {
+      "path": "tests/check_ui.cjs",
+      "sha256": "80dc27e20c6ac1841a00e78d4b9dfb5ccbda8f6db5fbd4af07b8b3e62e5d3496"
+    },
+    {
+      "path": "tests/test_audio_analysis.py",
+      "sha256": "f46310d9fcd6cad49f1a434e58cfe0181a3237a6aa92082c433d328fa7b4f900"
+    },
+    {
+      "path": "tests/test_audio_timing.py",
+      "sha256": "a74cf7d2f56665a19198f2f91d204e90f6397164cc80d6370c18adeed235449c"
+    },
+    {
+      "path": "tests/test_clip_scope.py",
+      "sha256": "88e843dcaceecdca21371056e7d25a3b6599704ec1b679598a22c4ecf52002e1"
+    },
+    {
+      "path": "tests/test_comfy.py",
+      "sha256": "9d5f2c274ecf66a87423b33a6ec5fb9d030d3e4db8a19834843b5e3913faa107"
+    },
+    {
+      "path": "tests/test_core.py",
+      "sha256": "8b2d6a4d77467b2309ca38a606864bc889489c1d6a015f66ebb9ee49cad6ccb3"
+    },
+    {
+      "path": "tests/test_director.py",
+      "sha256": "bafe56bb5c625ca67fc37266fe13ed3bb515f8d8c2a1a9b79c5e1ade804a83bb"
+    },
+    {
+      "path": "tests/test_prompt_quality.py",
+      "sha256": "996d2d4b56d4cd12b099b3cf7d06963571d4e0cf06aaae668597491de52d0091"
+    },
+    {
+      "path": "tests/test_public_clone.py",
+      "sha256": "4144fb551d2f4b2efa1fe276badcf08858779db73ffbee8bf113eda93c41346e"
+    },
+    {
+      "path": "tests/test_runtime.py",
+      "sha256": "2c70176609aeb152c0f2f197ea5080717d9c41fb924b4a0c848f8a7691e55f7f"
+    },
+    {
+      "path": "tests/test_server.py",
+      "sha256": "ce83a49b20bbf7fdee6e3e0bf63c7f0bb6dbf47c0c57050982904e6a0a9fddf3"
+    },
+    {
+      "path": "tests/test_services.py",
+      "sha256": "81c34fdbc234087a02c64de5788d65c7271cf6d2eabe569488988bc58634813b"
+    },
+    {
+      "path": "tools/build_notebook.py",
+      "sha256": "fc14cacf44d6125a48c156deac9bb751138d9820c69892edc268351f24858891"
+    },
+    {
+      "path": "tools/colab_runtime.py",
+      "sha256": "8e1f4d7a3d46adc21514ee975bbf4177365c2e744b35b081af72e3b16cf75a06"
+    },
+    {
+      "path": "tools/public_clone.py",
+      "sha256": "6caceca6994e49e10594effee6aaddf693707eb0a899b8320ff470064593509d"
+    },
+    {
+      "path": "workflows/chain_api.json",
+      "sha256": "04d730dac52a98fffa93fe9f3e10237ef0197031ca735b2c2cbbe908e11e48ed"
+    },
+    {
+      "path": "workflows/independent_api.json",
+      "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
+    }
+  ]
+}

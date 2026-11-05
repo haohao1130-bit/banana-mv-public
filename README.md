@@ -1,1 +1,75 @@
-# banana-mv-public
+# 🍌 Banana MV｜大乘蕉宗公開煉丹房
+
+參考圖片＋原歌曲，在自己的 Google Colab 上生成音樂 MV。支援手機前端、本地 9B 導演、多圖角色分工、分段生成與斷點續跑，還有真的會投藥、開火、出丹的煉丹爐。
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/main/Banana_MV_Colab.ipynb)
+
+**這是自行運行的實驗工具。** 請使用自己的 Colab GPU 與額度；沒有共用的免費生成伺服器，也不需要付費模型 API。模型下載需要數十 GB 空間，生成時間與效果依 GPU、歌曲長度和設定而變化。
+
+## 開始使用
+
+1. 開啟上方 Colab，選擇 G4 GPU。依序執行①安裝、②下載模型、③啟動。
+2. 公開倉庫不需要 GitHub Token。Hugging Face 可匿名下載，或在 Colab 左側🔑放入自己的唯讀 `HF_TOKEN`；若上游要求授權，依該模型頁面辦理。
+3. 打開③輸出的前端，上傳主唱參考圖與歌曲，第一次先用 **5 秒音訊** 驗證環境及對嘴。
+4. 選擇導演模式、比例與動作強度，選填想拍的內容，按「開爐煉製 MV」。
+5. 等待各段完成後，播放或下載完整 MV。
+
+這份配置使用 INT8 ConvRot 與 CUDA 13 套件；需要 GPU capability ≥ 8.0、驅動 ≥ 580。①會檢查環境，不符合就停止並提示。G4 是建議配置，Colab 實際分配及可用性仍以當次環境為準。
+
+## 可以做什麼
+
+| 功能 | 行為 |
+| --- | --- |
+| 多圖參考 | 預設單張；需要時展開，獨立分段最多9張、末幀接續最多8張 |
+| 通用角色 | 用 `@圖片1`、`@圖片2` 指定用途，不預設姓名或固定角色；配角可直接用文字描述 |
+| 音樂導向導演 | 以原曲為時間主軸，依強弱、起音、停頓和使用者內容安排演唱、事件與切鏡 |
+| 導演主導 | 勾選全曲規劃後可展開、重排或濃縮故事；仍保留參考身分、演唱分工與明確限制 |
+| 兩種分段模式 | 獨立分段重用參考圖；末幀接續加入上一段最後一幀，不是多幀動作上下文 |
+| 分段與合成 | 每段選10或15秒，尾段按實際剩餘音訊處理；最後混入一次原曲，歌曲最多五分鐘 |
+| 斷點續跑 | 保存專案後重新開啟，沿用素材與設定，續做未完成段落 |
+| 提示詞與 Seed | 查看實際送入 H3 的逐段提示詞、複製，進階設定可填 Seed；留空隨機 |
+| 煉丹實況 | 分析／規劃投藥、生成開火、合成凝丹、完成取丹；動畫代表階段，不是採樣百分比 |
+| 手動關爐 | 筆記本底部只在手動點擊按鈕時關閉 ComfyUI，「全部執行」不會誤關 |
+
+例如：
+
+```text
+@圖片1 是主唱，負責演唱會表演。
+@圖片2 是拳擊選手，在獨立的地下拳擊場對戰。
+歌曲連續播放，演唱會與拳擊畫面依音樂交錯剪接。
+拳擊選手不演唱。對手與裁判由文字描述生成，不另引用圖片。
+```
+
+9B 不直接接收音訊 tokens。音樂資訊由本地分析提供，不會自動辨識歌詞、副歌或情緒；節奏數值也是估計。可選填已知歌詞或同時間線的隔離人聲。對嘴、身份一致性與高速動作效果需看片確認。
+
+## 專案保存與續跑
+
+③預設掛載你自己的 Google Drive，專案位於 `MyDrive/BananaMV`；模型快取可在②選擇保存到 `MyDrive/H3_models`。關閉 Drive 保存時，作品留在 Colab 本次執行階段，回收後可能消失。
+
+在前端開啟原專案，按「續跑未完成段落」；已完成的片段保留。不要讓兩個執行階段同時操作同一專案。手機前端的連線重試不代表 GPU 一直可用，Colab 仍可能中斷或回收執行階段。
+
+素材與成片不會由程式提交到此 GitHub 倉庫。安裝／下載會連線 GitHub 與 Hugging Face；生成使用你自己的 Colab GPU。請勿將密鑰、上傳素材、專案資料或個人日誌提交到公開倉庫。
+
+## 遇到問題
+
+- **啟動慢：** ③會等待服務啟動並回報狀態；先看日誌，不用連點重開程序。
+- **生成失敗：** 看生成紀錄的錯誤與階段，保留專案後可續跑。GPU／節點問題需先修復環境。
+- **9B 編出不存在的圖片：** 自動依媒體清單重寫一次；仍失敗改用原控制詞與導演規則並標註，不亂套到另一個角色。使用者原文的無效圖片引用仍需修正。
+- **想關閉 ComfyUI：** 執行底部關閉格只顯示按鈕，手動點擊才停止。生成中的段落可能中斷；重跑③可重新啟動。停止 ComfyUI不會解除GPU配置，結束GPU使用需在Colab中斷並刪除執行階段。
+- **想更新程式：** 先保存作品，再用新的 Colab 執行階段依序執行①②③；已有目錄不會被自動覆寫。
+
+目前有本地單元測試、前端操作測試及模擬 GPU 的 HTTP 流程測試。作者自用版已實測分段 MV 與失敗續跑；公開打包版仍需在新 Colab 執行階段驗證，測試不等於所有 GPU／歌曲皆可成功。
+
+## 開發與授權
+
+```bash
+python -m pip install Pillow numpy ipywidgets
+# 系統需有 ffmpeg、ffprobe；前端測試需 Node.js
+python -m unittest discover -s tests
+node tests/check_ui.cjs
+python tools/build_notebook.py
+```
+
+本倉庫自有整合程式採 MIT 授權。ComfyUI、外掛、模型、LoRA、提示詞指南與使用者素材各依自身條款；此授權不取代模型的授權與使用條件。來源見 [THIRD_PARTY.md](THIRD_PARTY.md)。
+
+Banana MV is a self-hosted Colab music-video workflow with local prompt rewriting, reference-image roles, music-guided planning and resumable segments. Bring your own GPU allocation and media. Start with a five-second test.
