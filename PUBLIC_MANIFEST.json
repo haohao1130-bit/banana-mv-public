@@ -4,7 +4,7 @@
   "files": [
     {
       "path": ".github/workflows/checks.yml",
-      "sha256": "4b53dbc3033e49932713dfb03886d80c08838c67336c005e0d4fe2bc04b1852a"
+      "sha256": "945bbb8ac782b2d5f0f5c7692a4239b322c6f3f3cfbf9d2e9f958e476efa121c"
     },
     {
       "path": ".gitignore",
@@ -100,7 +100,7 @@
     },
     {
       "path": "tests/test_audio_timing.py",
-      "sha256": "28f206a89aa1d76efe03e557488ac919efdb66f3aa1216a01465fd500580e5c6"
+      "sha256": "a74cf7d2f56665a19198f2f91d204e90f6397164cc80d6370c18adeed235449c"
     },
     {
       "path": "tests/test_clip_scope.py",
