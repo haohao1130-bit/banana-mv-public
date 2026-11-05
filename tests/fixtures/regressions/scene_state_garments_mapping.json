@@ -1,0 +1,59 @@
+{
+  "case_id": "scene_state_garments_mapping",
+  "synthetic": true,
+  "reported_stage": "planning_state",
+  "expected_behavior": "Accept semantically equivalent garment mappings by normalization, or return a precise single validation error; do not retry identical schema output without a changed repair strategy.",
+  "observed_in_original_report": "Four schema validation failures (attempts 0..3); garment mapping rejected with invalid_state.",
+  "model_output": {
+    "initial_state": {
+      "character_states": {
+        "S1": {
+          "identity_reference": 1,
+          "hairstyle": "short dark hair",
+          "garments": {
+            "top": {
+              "garment_id": "shirt_1",
+              "garment_type": "shirt",
+              "material": "cotton",
+              "color": "blue",
+              "current_status": "worn",
+              "current_location": "S1"
+            },
+            "footwear": {
+              "garment_id": "shoes_1",
+              "garment_type": "shoes",
+              "material": "canvas",
+              "color": "white",
+              "current_status": "worn",
+              "current_location": "S1"
+            }
+          },
+          "appearance_changes": [],
+          "injuries": [],
+          "held_props": [],
+          "location": "studio"
+        }
+      },
+      "environment_states": {
+        "studio": {
+          "active_location": "small indoor music studio",
+          "persistent_changes": [],
+          "damaged_objects": {},
+          "prop_positions": {}
+        }
+      }
+    },
+    "events": [
+      {
+        "event_id": "E1",
+        "description": "The performer enters the studio and begins the performance.",
+        "repeatable": false,
+        "reserved_final": false,
+        "depends_on": [],
+        "allowed_operations": [
+          "update"
+        ]
+      }
+    ]
+  }
+}
