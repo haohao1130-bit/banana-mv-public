@@ -24,7 +24,7 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     if(url==='api/mv/start'){posts.push(JSON.parse(options.body));return {id:'abcd'};}
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
-    if(url==='api/mv/status?id=saved123')return {id:'saved123',title:'雲端歌曲',duration:180,seed:0,status:'interrupted',request:{mode:'independent',aspect:'9:16',segment_seconds:15,prompt:'saved story',face_identity:false},segments:[{start:0,seconds:15,status:'done'},{start:15,seconds:15}]};
+    if(url==='api/mv/status?id=saved123')return {id:'saved123',title:'雲端歌曲',duration:180,seed:0,status:'interrupted',request:{mode:'independent',aspect:'9:16',segment_seconds:15,prompt:'saved story',lyrics:'已存歌詞',srt_reference:'已存SRT',face_identity:false},segments:[{start:0,seconds:15,status:'done'},{start:15,seconds:15}]};
     if(url==='api/mv/status?id=broken-plan')return {status:'error',error:'plan parse failed',error_stage:'planning_story',request:{director_version:2},segments:[{index:0,start:0,seconds:10,director_plan:{mode:'story',event:'x'.repeat(800)}}]};
     if(url==='status-error')return {status:'error',error:'bad media tag',segments:[]};
     return {status:'done',seed:42,segments:[]};
@@ -70,8 +70,11 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext('renderJobSeed({seed:0})',context);assert.equal(els['job-seed'].textContent,'本次 Seed：0');
   vm.runInContext('renderJobSeed({})',context);assert.equal(els['job-seed'].textContent,'本次 Seed：尚未取得');
   assert.equal(els['multi-panel'].hidden,true);
+  const srt='1\n00:00:00,000 --> 00:00:03,000\n歌詞參考';
+  els['srt-file'].files=[{name:'song.srt',size:100,text:async()=>srt}];await els['srt-file'].onchange();assert.equal(els['srt-reference'].value,srt);
+  els.lyrics.value='全曲歌詞';
   els.image.files=[file('main.png')];els.image.onchange();els.song.files=[file('song.wav')];
-  let req=await submit();assert.equal(req.story_plan,true);assert.equal(req.audio_analysis,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.equal(req.image_ids,undefined);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
+  let req=await submit();assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.audio_analysis,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.equal(req.image_ids,undefined);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
   assert.deepEqual(uploads,['main.png','song.wav']);
   els.story_plan.checked=false;els.audio_analysis.checked=false;els.face_identity.checked=false;els.kitchen_attention.checked=false;els.sparse_attention.checked=true;els.motion_lora.checked=false;req=await submit();assert.equal(req.story_plan,false);assert.equal(req.audio_analysis,false);assert.equal(req.face_identity,false);assert.equal(req.kitchen_attention,false);assert.equal(req.sparse_attention,true);assert.equal(req.motion_lora,false);
   els['toggle-multiref'].onclick();assert.equal(els['multi-panel'].hidden,false);
@@ -92,9 +95,12 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['extra-images'].files=Array.from({length:8},(_,i)=>file(`extra${i}.png`));els['extra-images'].onchange();
   req=await submit();assert.equal(req.image_ids.length,2);
   await els['open-last'].onclick();assert.equal(els.kitchen_attention.checked,true);assert.equal(els.sparse_attention.checked,true);assert.equal(els['job-seed'].textContent,'本次 Seed：0');assert.equal(els.prompt.value,'saved story');assert.equal(els.aspect.value,'9:16');assert.equal(els.seed.value,'0');assert.equal(els.face_identity.checked,false);assert.equal(els['resume-project'].hidden,false);assert(els['project-summary'].textContent.includes('雲端歌曲'));
+  assert.equal(els['srt-reference'].value,'已存SRT');assert.equal(els.lyrics.value,'已存歌詞');
   assert.equal(els.audio_analysis.checked,false);assert.equal(els.story_plan.checked,false);
   vm.runInContext("renderAudioAnalysis({audio_analysis:{status:'ready',pulse:{bpm_estimate:120}},request:{audio_analysis:true}})",context);assert(els['audio-summary'].textContent.includes('120 BPM'));
   vm.runInContext("renderDirectorPlan({director_plan:{status:'ready'}})",context);assert(els['director-summary'].textContent.includes('全曲事件已分配'));
+  let releaseRead;els['srt-file'].files=[{name:'slow.srt',size:100,text:()=>new Promise(resolve=>{releaseRead=resolve;})}];const pending=els['srt-file'].onchange();els['srt-reference'].value='手動文字';els['srt-reference'].oninput();releaseRead(srt);await pending;assert.equal(els['srt-reference'].value,'手動文字');
+  els['srt-file'].files=[{name:'large.srt',size:300000}];await assert.rejects(els['srt-file'].onchange());els['srt-reference'].value='';els['srt-reference'].oninput();
   await els['resume-project'].onclick();assert.deepEqual(resumes,[{id:'saved123'}]);
   console.log('UI checks passed: collapsed default, legacy single image, multi upload, toggle exclusion, retained selections, removal numbering and count limit.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

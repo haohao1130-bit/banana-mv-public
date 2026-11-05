@@ -73,3 +73,9 @@ python tools/build_notebook.py
 本倉庫自有整合程式採 MIT 授權。ComfyUI、外掛、模型、LoRA、提示詞指南與使用者素材各依自身條款；此授權不取代模型的授權與使用條件。來源見 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
 Banana MV is a self-hosted Colab music-video workflow with local prompt rewriting, reference-image roles, music-guided planning and resumable segments. Bring your own GPU allocation and media. Start with a five-second test.
+
+## 歌詞與 SRT 參考
+
+前端的「歌詞與 SRT 參考」提供兩個獨立選填欄位：全曲歌詞供9B理解語意，UTF-8 SRT 可匯入或貼上。SRT 時間碼相對目前上傳的原歌曲起點，按各段時間交集提供；橫跨切點的歌詞會出現在兩段參考中。純歌詞不假定逐行時間，缺少字幕不等於靜音。兩欄任填其一或皆留空都可。
+
+開啟9B後，全曲規劃會讀到各段SRT摘要，段落改寫只取得當段重疊的SRT文字，加上全曲歌詞背景。歌詞與時間碼保存在專案設定，開啟／續跑會沿用；既有專案沿用原行為。新版不再把整首歌詞直接附加到H3提示詞，不自動燒字幕，也不改寫原曲。未開啟9B時，不據此另做語意事件規劃。歌詞上限12000字元、SRT上限60000字元；時間碼格式錯誤會在生成前提示修正。

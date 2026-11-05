@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from banana_mv.director import MODES, mode_candidates, performance_scene_modes
+from banana_mv.lyrics_reference import excerpt, POLICY as LYRIC_POLICY
 from banana_mv.prompt_quality import POLICY, MV_POLICY, ending_excerpt, director_led, DIRECTOR_AUTHORITY
 
 VERSION = 2
@@ -132,11 +133,13 @@ def plan_input(req, segments):
         timeline.append({'index':seg['index'], 'start':seg['start'], 'seconds':seg['seconds'],
                          'energy':evidence.get('relative_energy'),
                          'change_db':evidence.get('energy_change_db'),
-                         'local_accents':evidence.get('transient_candidates_s', [])[:4]})
+                         'local_accents':evidence.get('transient_candidates_s', [])[:4],
+                         'srt_excerpts':excerpt(req,seg) if req.get('lyrics_reference_version') else []})
     title=('USER CREATIVE BRIEF (outline for director interpretation; preserve reference roles and explicit hard restrictions):\n'
            if director_led(req) else 'USER WHOLE-SONG BRIEF (highest priority, do not change roles or exclusions):\n')
     return (title + req.get('prompt', '')
             + '\nUser-supplied lyrics as context only; do not add or rewrite lyrics:\n' + req.get('lyrics', '')
+            + ('\n'+LYRIC_POLICY if req.get('lyrics_reference_version') else '')
             + '\nAllowed visual modes: ' + ', '.join(sorted(allowed_modes(req)))
             + '\nRequested intensity: ' + req.get('intensity', 'high')
             + '\nMEASURED TIMELINE (null means unmeasured, not silence):\n' + json.dumps(timeline, ensure_ascii=False)

@@ -20,6 +20,7 @@ from banana_mv.core import (FPS, assemble, audio_window, build_workflow, dimensi
 
 from banana_mv import services as backend
 from banana_mv.http_server import WebHandler
+from banana_mv.lyrics_reference import normalize_references, clip_reference
 from banana_mv.song_context import segment_context
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
@@ -120,7 +121,8 @@ def local_prompt(cfg, req, segment, original, tail):
         if req.get('face_identity', True):
             text = enforce_face_identity(text, 2 if tail else 1)
         return normalize_mv_prompt(text, picture_count)
-    prompt = fallback_prompt(req['prompt'], bool(tail), req.get('lyrics',''), len(originals),scene_aware=optimize)
+    fallback_lyrics = '' if req.get('lyrics_reference_version') else req.get('lyrics','')
+    prompt = fallback_prompt(req['prompt'], bool(tail), fallback_lyrics, len(originals),scene_aware=optimize)
     if not req.get('rewrite', True):
         if optimize:
             segment.pop('prompt_review',None)
@@ -135,12 +137,15 @@ def local_prompt(cfg, req, segment, original, tail):
                 +'Use this reference to preserve identities, scene rules and original story requirements. '
                 'Only the assigned current event belongs in the generated summary and shots; '
                 'future events and the ending remain reference until their source interval.\n'+scope)
-        if req.get('lyrics'):
+        if req.get('lyrics') and not req.get('lyrics_reference_version'):
             prompt+='\nUSER LYRICS REFERENCE ONLY (do not add new lyrics):\n'+req['lyrics']
     parts = [('text', f'Target visible duration: {target:.6f} seconds. '
               'The user supplies source audio but you do not receive audio tokens. Do not guess lyrics. '
               'Keep <Audio 1>: fully_copy and synchronize the visible singer to that audio.\n' + prompt
               + '\n\n' + director + ('\n\n' + context if context else ''))]
+    lyric_context = clip_reference(req, segment)
+    if lyric_context:
+        parts.append(('text',lyric_context))
     if roles:
         parts[0] = ('text',parts[0][1]+'\n\n'+roles)
     if creative:
@@ -184,7 +189,7 @@ def local_prompt(cfg, req, segment, original, tail):
             segment['prompt_reference_repair']={'status':'repaired','message':'9B 圖片引用已自動修正。'}
         except ValueError:
             # Use the validated source, not an arbitrary remapping of hallucinated roles.
-            rewritten = fallback_prompt(req['prompt'],bool(tail),req.get('lyrics',''),len(originals),scene_aware=optimize)
+            rewritten = fallback_prompt(req['prompt'],bool(tail),fallback_lyrics,len(originals),scene_aware=optimize)
             segment['prompt_reference_repair']={'status':'fallback','message':'9B 引用修正未成功；此段改用原控制詞與導演規則。'}
     if optimize:
         segment.pop('prompt_review',None)
@@ -369,9 +374,9 @@ def start(req):
     output_size = output_dimensions(aspect,width)
     director_prompt(req, plan[0]['seconds'])
     seed = random.randrange(2**48) if req.get('seed') in (None,'') else int(req['seed'])
-    req = dict(req, prompt=str(req.get('prompt',''))[:10000],lyrics=str(req.get('lyrics',''))[:12000])
+    req = normalize_references(dict(req,prompt=str(req.get('prompt',''))[:10000]),seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
-    fallback_prompt(req['prompt'], False, req.get('lyrics',''), len(images))
+    fallback_prompt(req['prompt'], False, '', len(images))
     images_comfy = [img['comfy_name'] for img in images]
     graph = build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
                            **graph_options(req,plan[0]['seconds']))

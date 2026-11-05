@@ -122,6 +122,7 @@ class ServerIntegration(unittest.TestCase):
                         captured.clear()
                         req={'image_id':image['id'],'song_id':audio['id'],'mode':mode,
                              'aspect':'16:9','width':1280,'segment_seconds':4,'rewrite':False,'seed':42,
+                             'lyrics':'全曲語意參考','srt_reference':'1\n00:00:00,000 --> 00:00:02,000\n時間參考歌詞',
                              'realism_lora':False,'realism_strength':0.6,
                              'kitchen_attention':True,'sparse_attention':mode=='chain'}
                         if mode=='chain' and legacy:
@@ -136,6 +137,8 @@ class ServerIntegration(unittest.TestCase):
                             if current['status'] in ('done','error'):break
                             time.sleep(.1)
                         self.assertEqual(current['status'],'done',current.get('error'))
+                        self.assertEqual(current['request']['srt_reference'],req['srt_reference'])
+                        self.assertEqual(current['request']['srt_cues'][0]['text'],'時間參考歌詞')
                         self.assertEqual(len(captured),2)
                         enabled=req.get('audio_analysis',True)
                         self.assertEqual((app.job_dir(job['id'])/'audio_analysis.json').is_file(),enabled)
@@ -168,6 +171,8 @@ class ServerIntegration(unittest.TestCase):
                     try:
                         for job_id in saved_jobs[:2]:
                             previous=app.read_state(job_id)
+                            self.assertEqual(previous['request']['lyrics'],'全曲語意參考')
+                            self.assertEqual(previous['request']['srt_cues'][0]['start'],0)
                             work=app.job_dir(job_id);original_part=(work/'00_part.mp4').read_bytes()
                             (work/'01_part.mp4').unlink();(work/'final.mp4').unlink()
                             previous['segments'][1]['status']='generating'
