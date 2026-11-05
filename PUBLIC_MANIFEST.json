@@ -24,7 +24,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "f5aa721c805052c108c66efe0c12c8fde9183273c556eb23890a43669e1ef577"
+      "sha256": "926658ad63166fb7dc6515c87874e01e4a03387574e5e0dea1c87e4aae82499f"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "038afe0ef0e22cdfbe10b49b8d77bfb63f6215ec603ca966a08106ca42f57276"
+      "sha256": "3622a1b4537e2e8f6121f4b87e663cbf4d5f597c17df6f564577240b5e329bdb"
     },
     {
       "path": "tests/check_ui.cjs",
