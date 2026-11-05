@@ -187,12 +187,13 @@ class ServerIntegration(unittest.TestCase):
                                 with self.assertRaises(ValueError):app.resume(job_id)
                             self.assertFalse(app.GPU_LOCK.locked())
                             captured.clear()
-                            post('/api/mv/resume',json.dumps({'id':job_id}).encode())
+                            post('/api/mv/resume',json.dumps({'id':job_id,'rewrite_retries':2}).encode())
                             for _ in range(300):
                                 resumed=app.read_state(job_id)
                                 if resumed['status'] in ('done','error'):break
                                 time.sleep(.1)
                             self.assertEqual(resumed['status'],'done',resumed.get('error'))
+                            self.assertEqual(resumed['request']['rewrite_retries'],2)
                             self.assertEqual(len(captured),1)
                             self.assertIn('attention_backend',captured[0])
                             self.assertEqual('sparse_attention' in captured[0],previous['request']['sparse_attention'])

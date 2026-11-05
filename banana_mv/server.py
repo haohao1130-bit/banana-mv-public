@@ -25,7 +25,7 @@ from banana_mv.lyrics_reference import (normalize_references, clip_reference, cl
 from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_input, state_context,
                                    plan_clip, save_clip, commit_clip, cached_clip, reconcile_history,
                                    final_context, CLIP_SYSTEM, parse_object as parse_scene_object,
-                                   atomic_json as write_scene_json, digest as scene_digest)
+                                   atomic_json as write_scene_json, rewrite_retry_count, digest as scene_digest)
 from banana_mv.song_context import segment_context
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
@@ -93,7 +93,7 @@ def graph_options(req, seconds, segment=None):
             'director_mode': mode, 'intensity': req.get('intensity', 'high')}
 
 
-def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None):
+def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
     director, mode = director_prompt(req, segment['seconds'], segment)
     segment['director_mode'] = mode
@@ -192,7 +192,10 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
     segment.pop('scene_state_rewrite_debug',None)
     state_attempts=[]
     attempt_parts=list(parts)
-    for attempt in range(2):
+    retries=rewrite_retry_count(req)
+    for attempt in range(retries+1):
+        if progress:progress({'stage':'rewriting','clip_index':segment['index'],
+                              'attempt':attempt+1,'max_attempts':retries+1})
         raw = backend.rewrite_local(cfg,guide,attempt_parts,uuid.uuid4().hex[:8]).strip()
         try:
             if scene_input is not None:
@@ -206,14 +209,14 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
             break
         except (SceneStateError,MediaReferenceError) as error:
             if scene_input is not None:
-                try:parsed=parse_scene_object(raw)
+                try:parsed=parse_scene_object(raw,expected='clip')
                 except SceneStateError:parsed=None
                 state_attempts.append({'attempt':attempt,'raw_response':raw,'parsed_response':parsed,
                                        'error':str(error),'validation_errors':getattr(error,'errors',[]),'status':'failed'})
                 segment['scene_state_attempt']={'clip_index':segment['index'],'scene_state_in':scene_input,
                                                 'error':str(error),'raw_response':raw,'attempts':copy.deepcopy(state_attempts),
                                                 'visual_verified':False}
-            if not attempt:
+            if attempt<retries:
                 attempt_parts=parts+[('text','Correct only invalid media references or structured state transitions: '+str(error)+
                                      '\nUse only connected Picture tags and <Audio 1>. Unreferenced supporting roles use plain text. '
                                      'Preserve user roles, committed state and reserved final events. Do not replay completed events.'+
@@ -239,7 +242,7 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
     if scene_input is not None:
         segment['scene_state_debug']['clip_prompt']=final
         if state_attempts:
-            state_attempts.append({'attempt':1,'raw_response':raw,'parsed_response':parse_scene_object(raw),'status':'validated'})
+            state_attempts.append({'attempt':attempt,'raw_response':raw,'parsed_response':parse_scene_object(raw,expected='clip'),'status':'validated'})
             segment['scene_state_rewrite_debug']={'clip_index':segment['index'],'scene_state_in':scene_input,
                                                    'status':'repaired','attempts':state_attempts,'visual_verified':False}
         segment.pop('scene_state_attempt',None)
@@ -289,6 +292,8 @@ def worker(job, cfg, original, song, drive):
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
     parts, tail = [], None
+    def rewrite_progress(info):
+        job['rewrite_attempt']=info;write_state(job)
     try:
         # Old projects keep their saved prompt behavior. New projects opt in by
         # a persisted request field; no GPU or additional model downloads needed.
@@ -327,7 +332,8 @@ def worker(job, cfg, original, song, drive):
             if job['id'] in CANCEL:
                 job['status']='cancelled';write_state(job);return
             job['status']='planning_state';write_state(job)
-            ledger=ensure_scene_state(cfg,job['request'],job['segments'],original,work,backend.rewrite_local)
+            ledger=ensure_scene_state(cfg,job['request'],job['segments'],original,work,backend.rewrite_local,
+                                      progress=rewrite_progress)
             reconcile_history(job,work,ledger,lambda s:valid_part(work/f'{s["index"]:02d}_part.mp4',s,job['size']))
             job['scene_state_summary']={'version':1,'committed_clips':len(ledger['commits']),'visual_verified':False}
             job['status']='running';write_state(job)
@@ -368,7 +374,8 @@ def worker(job, cfg, original, song, drive):
             else:
                 state_replanned=ledger is not None
                 prompt=local_prompt(cfg,job['request'],seg,original,tail,scene_input=state_in,
-                                    event_catalog=ledger['event_catalog'] if ledger is not None else None)
+                                    event_catalog=ledger['event_catalog'] if ledger is not None else None,
+                                    progress=rewrite_progress)
             if ledger is not None:
                 rewrite_debug=seg.pop('scene_state_rewrite_debug',None)
                 if rewrite_debug:
@@ -452,6 +459,7 @@ def start(req):
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
+    req['rewrite_retries']=rewrite_retry_count(req)
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
     req['scene_state_version']=1 if req.get('persistent_scene_state',True) and req.get('rewrite',True) else 0
@@ -617,11 +625,13 @@ def repair_unstarted_timeline(job, song):
     job.pop('director_plan',None)
 
 
-def resume(job_id):
+def resume(job_id,rewrite_retries=None):
+    retries=rewrite_retry_count({'rewrite_retries':rewrite_retries}) if rewrite_retries is not None else None
     if not GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 執行中，不能重複續跑。')
     try:
         job=read_state(job_id)
+        if retries is not None:job['request']['rewrite_retries']=retries
         if job['status'] not in ('error','cancelled','interrupted'):
             raise ValueError('這個專案沒有待續跑的失敗或中斷工作。')
         cfg=copy.deepcopy(backend.load_config())
@@ -729,7 +739,8 @@ class Handler(WebHandler):
             if path=='/api/mv/start':
                 return self.send_json(start(self.body_json()))
             if path=='/api/mv/resume':
-                return self.send_json(resume(self.body_json()['id']))
+                body=self.body_json()
+                return self.send_json(resume(body['id'],body.get('rewrite_retries')))
             if path=='/api/mv/stop':
                 job_id=self.body_json()['id']; read_state(job_id); CANCEL.add(job_id)
                 return self.send_json({'ok':True,'message':'目前這段完成後停止。'})

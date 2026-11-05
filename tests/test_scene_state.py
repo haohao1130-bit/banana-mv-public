@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from banana_mv.scene_state import (initial_state,clip_input,plan_clip,commit_clip,save_clip,cached_clip,
+from banana_mv.scene_state import (initial_state,clip_input,plan_clip,commit_clip,save_clip,cached_clip,parse_object,
                                   restore_clip_input,reconcile_history,ensure_scene_state,SceneStateError,
                                   state_context,digest,read_json,atomic_json)
 
@@ -49,6 +49,67 @@ def garment(gid,before='worn',after='removed',eid=None,operation='remove'):
 
 
 class SceneStateTests(unittest.TestCase):
+    def test_clip_retry_count_progress_and_resume_validation_are_bounded(self):
+        from PIL import Image
+        from banana_mv import server
+        ledger=ledger_for();seg=segments()[0];incoming=clip_input(ledger,seg)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);image=root/'ref.png';Image.new('RGB',(16,16)).save(image)
+            guide=root/'guide.md';guide.write_text('base H3 guide')
+            req={'prompt':'perform the source song','rewrite':True,'optimizer_version':1,'rewrite_retries':3}
+            cfg={'guides':{'ref':str(guide)}};progress=[]
+            with patch.object(server.backend,'rewrite_local',side_effect=['bad','bad',json.dumps(response(['intro']))]) as model:
+                server.local_prompt(cfg,req,seg,[image],None,scene_input=incoming,
+                                    event_catalog=ledger['event_catalog'],progress=progress.append)
+            self.assertEqual(model.call_count,3);self.assertEqual([v['attempt'] for v in progress],[1,2,3])
+            self.assertEqual(seg['scene_state_rewrite_debug']['attempts'][-1]['attempt'],2)
+            for retries in (0,2):
+                with self.subTest(retries=retries),patch.object(server.backend,'rewrite_local',return_value='bad') as model:
+                    with self.assertRaises(SceneStateError):
+                        server.local_prompt(cfg,dict(req,rewrite_retries=retries),dict(segments()[0]),[image],None,
+                                            scene_input=incoming,event_catalog=ledger['event_catalog'])
+                    self.assertEqual(model.call_count,retries+1)
+            with self.assertRaises(ValueError):server.resume('unused',rewrite_retries=6)
+
+    def test_markdown_clip_envelopes_are_selected_or_merged_without_losing_state(self):
+        raw=response(['intro'],prompt='The singer performs in a tight tracking shot.')
+        def fenced(value):return '```json\n'+json.dumps(value)+'\n```'
+        variants=[fenced(raw)+'\n'+fenced(raw),
+                  fenced({'clip_prompt':raw['clip_prompt']})+'\n'+fenced({k:v for k,v in raw.items() if k!='clip_prompt'}),
+                  fenced({'kind':'character','subject_id':'S1'})+'\n'+fenced(raw)]
+        ledger=ledger_for();seg=segments()[0];incoming=clip_input(ledger,seg)
+        for text in variants:
+            with self.subTest(text=text[:60]):
+                record=plan_clip(text,incoming,ledger['event_catalog'],seg)
+                self.assertEqual(record['planned_events'],['intro'])
+                self.assertEqual(record['clip_prompt'],raw['clip_prompt'])
+                self.assertEqual(record['scene_state_out']['character_states'],incoming['character_states'])
+        # Valid outer JSON wins before inspecting Markdown examples inside its prompt string.
+        with_examples=response(['intro'],prompt='The singer performs.\n```json\n{"camera":"close"}\n```\n```json\n{"light":"red"}\n```')
+        self.assertEqual(parse_object(json.dumps(with_examples),expected='clip'),with_examples)
+        other=deepcopy(raw);other['clip_prompt']='A conflicting scene.'
+        with self.assertRaisesRegex(SceneStateError,'內容衝突'):
+            plan_clip(fenced(raw)+'\n'+fenced(other),incoming,ledger['event_catalog'],seg)
+        invalid=response(['unknown'])
+        with self.assertRaisesRegex(SceneStateError,'未知事件'):
+            plan_clip(fenced(invalid)+'\n'+fenced(invalid),incoming,ledger['event_catalog'],seg)
+
+    def test_actual_rewriter_accepts_multi_block_reply_without_an_extra_model_call(self):
+        from PIL import Image
+        from banana_mv import server
+        ledger=ledger_for();seg=segments()[0];incoming=clip_input(ledger,seg)
+        raw=response(['intro'],prompt='The singer continues the source song in a moving close-up.')
+        blocks='```json\n'+json.dumps({'clip_prompt':raw['clip_prompt']})+'\n```\n```json\n'+json.dumps({k:v for k,v in raw.items() if k!='clip_prompt'})+'\n```'
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);image=root/'ref.png';Image.new('RGB',(16,16)).save(image)
+            guide=root/'guide.md';guide.write_text('base H3 guide')
+            req={'prompt':'Perform the supplied song.','rewrite':True,'optimizer_version':1,'scene_state_version':1}
+            with patch.object(server.backend,'rewrite_local',return_value=blocks) as model:
+                prompt=server.local_prompt({'guides':{'ref':str(guide)}},req,seg,[image],None,
+                                          scene_input=incoming,event_catalog=ledger['event_catalog'])
+            self.assertEqual(model.call_count,1);self.assertIn(raw['clip_prompt'],prompt)
+            self.assertEqual(seg['scene_state_debug']['planned_events'],['intro'])
+
     def test_completed_history_is_not_selectable_but_repeatable_performance_remains(self):
         ledger=ledger_for();segs=segments()
         with tempfile.TemporaryDirectory() as temp:
@@ -401,7 +462,7 @@ class SceneStateTests(unittest.TestCase):
             guide=root/'guide.md';guide.write_text('H3 guide')
             bad=json.dumps(response(['final'],prompt='CUT TO BLACK'))
             good=json.dumps(response(['intro'],prompt='A naturally ending medium shot of the ongoing performance.'))
-            req={'prompt':'performance with a final resolution','rewrite':True,'optimizer_version':1}
+            req={'prompt':'performance with a final resolution','rewrite_retries':1,'rewrite':True,'optimizer_version':1}
             with patch.object(server.backend,'rewrite_local',side_effect=[bad,good]) as model:
                 prompt=server.local_prompt({'guides':{'ref':str(guide)}},req,seg,[photo],None,
                                           scene_input=incoming,event_catalog=ledger['event_catalog'])

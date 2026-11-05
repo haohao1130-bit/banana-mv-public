@@ -99,12 +99,15 @@ Do not rewrite the story, add combat, wardrobe changes, props, or a new ending t
 If events are nested or named incorrectly, move the existing event data to top-level events.
 If events are missing/empty, extract only events already stated in the brief; for a performance-only MV,
 a repeatable rendition of that requested performance is sufficient. Never invent story milestones.
-Return the full corrected JSON object, not explanations or a diff. This is the ONLY repair attempt.
+Return the full corrected JSON object, not explanations or a diff. This is a controlled format repair under the application retry budget; do not request recursive retries.
 '''
 
 CLIP_SYSTEM = '''PERSISTENT STATE OUTPUT CONTRACT (overrides prose-only output format):
 Return ONLY JSON: {"clip_prompt":"the complete H3 prompt text for THIS interval",
 "planned_events":["E1"],"completed_events":["E1"],"state_transitions":[]}.
+Return ONE outer JSON object for ONE clip, with all four keys together. No Markdown fences,
+separate JSON sections, example alternatives or before/after versions. H3 sections belong inside the
+clip_prompt STRING, with JSON-escaped newlines and quotes, not separate fenced blocks outside it.
 Keep the stable subject IDs and uploaded-image identity mapping from scene_state_in in subject_definitions.
 Use event IDs from the provided catalog. planned_events is their execution order; completed_events is
 only the subset completed in this clip. Unfinished events may continue later. Do not repeat completed
@@ -140,21 +143,70 @@ class SceneStateError(ValueError):
         self.errors=errors or [{'path':'$','code':'invalid_state','message':message}]
 
 
-def parse_object(raw):
+def rewrite_retry_count(request):
+    value=request.get('rewrite_retries',3)
+    if isinstance(value,bool) or not isinstance(value,int) or not 0<=value<=5:
+        raise ValueError('9B 自動重試次數必須是 0–5 的整數（不含第一次）。')
+    return value
+
+
+def parse_object(raw,expected=None):
+    """Read JSON before Markdown, select a unique contract or merge lossless fragments only."""
     if isinstance(raw,str):
         if len(raw)>180000:raise SceneStateError('狀態資料過大。')
-        raw=re.sub(r'<think>.*?</think>','',raw,flags=re.S).strip()
-        raw=raw.lstrip('\ufeff').strip()
-        blocks=re.findall(r'^\s*```(?:json)?[ \t]*\r?\n(.*?)^\s*```[ \t]*$',raw,flags=re.S|re.M|re.I)
-        if len(blocks)>1:raise SceneStateError('狀態回傳含多個 Markdown JSON 區塊，無法確定使用哪一份。')
-        if blocks:raw=blocks[0].strip()
-        else:raw=re.sub(r'^```(?:json)?\s*|\s*```$','',raw,flags=re.I).strip()
-        try:raw=json.loads(raw,parse_constant=lambda value:(_ for _ in ()).throw(ValueError('非標準 JSON 常數：'+value)))
-        except ValueError as error:
-            detail=(f'第 {error.lineno} 行、第 {error.colno} 欄：{error.msg}'
-                    if isinstance(error,json.JSONDecodeError) else str(error))
-            message='狀態回傳不是有效 JSON：'+detail
-            raise SceneStateError(message,[{'path':'$','code':'invalid_json','message':message}]) from error
+        source=re.sub(r'<think>.*?</think>','',raw,flags=re.S).strip().lstrip('\ufeff').strip()
+        def decode(value):
+            return json.loads(value,parse_constant=lambda value:(_ for _ in ()).throw(
+                ValueError('非標準 JSON 常數：'+value)))
+        try:
+            # A JSON string may itself contain Markdown; never split valid outer JSON.
+            raw=decode(source)
+        except ValueError as original_error:
+            blocks=re.findall(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?:json)?[ \t]*\r?\n(?P<body>.*?)^[ \t]*(?P=fence)[ \t]*$',
+                              source,flags=re.S|re.M|re.I)
+            if len(blocks)>32:raise SceneStateError('Markdown JSON 區塊過多。')
+            bodies=[body.strip() for _,body in blocks]
+            if not bodies:
+                stripped=re.sub(r'^```(?:json)?\s*|\s*```$','',source,flags=re.I).strip()
+                bodies=[stripped]
+            objects=[];invalid=[];non_objects=[];error=original_error
+            for body in bodies:
+                try:value=decode(body)
+                except ValueError as failure:error=failure;invalid.append(str(failure));continue
+                if isinstance(value,dict):
+                    if value not in objects:objects.append(value)
+                else:non_objects.append(type(value).__name__)
+            if not objects and not invalid and non_objects:
+                raise SceneStateError('狀態資料必須是 JSON 物件；實際為 '+', '.join(non_objects)+'。')
+            contracts={'clip':{'clip_prompt','planned_events','completed_events','state_transitions'},
+                       'initial':{'initial_state','events'}}
+            required=contracts.get(expected,set())
+            complete=[value for value in objects if required and required<=set(value)]
+            if len(complete)==1:
+                chosen=complete[0]
+                # Non-contract examples are harmless; conflicting contract fragments are not.
+                conflicts=sorted({key for value in objects if value!=chosen for key in required & set(value)
+                                  if value[key]!=chosen[key]})
+                if conflicts:raise SceneStateError('多個 JSON 區塊內容衝突：'+', '.join(conflicts),
+                    [{'path':'$','code':'ambiguous_json','message':'完整回應與其他區塊內容衝突。','fields':conflicts}])
+                raw=chosen
+            elif len(objects)==1 and not invalid:
+                raw=objects[0] # includes identical repeated blocks, without choosing first/last
+            elif objects and not invalid:
+                merged={};conflicts=set()
+                for value in objects:
+                    for key,item in value.items():
+                        if key in merged and merged[key]!=item:conflicts.add(key)
+                        else:merged[key]=item
+                if conflicts:raise SceneStateError('多個 JSON 區塊內容衝突：'+', '.join(sorted(conflicts)),
+                    [{'path':'$','code':'ambiguous_json','message':'多份回應存在不同值，不能任選或覆寫。',
+                      'fields':sorted(conflicts)}])
+                raw=merged # complementary top-level fields only; never concatenate event arrays
+            else:
+                detail=(f'第 {error.lineno} 行、第 {error.colno} 欄：{error.msg}'
+                        if isinstance(error,json.JSONDecodeError) else str(error))
+                message='狀態回傳不是有效 JSON：'+detail
+                raise SceneStateError(message,[{'path':'$','code':'invalid_json','message':message}]) from error
     if not isinstance(raw,dict):raise SceneStateError('狀態資料必須是 JSON 物件。')
     if len(json.dumps(raw,ensure_ascii=False))>180000:raise SceneStateError('狀態資料過大。')
     return raw
@@ -289,7 +341,7 @@ class PersistentSceneState:
 
 
 def initial_state(raw,segments,picture_count):
-    raw=parse_object(raw);source=raw.get('initial_state')
+    raw=parse_object(raw,expected='initial');source=raw.get('initial_state')
     if not isinstance(source,dict):raise SceneStateError('缺少 initial_state。')
     chars=deepcopy(source.get('character_states',{}));envs=deepcopy(source.get('environment_states',{}))
     if not isinstance(chars,dict) or not isinstance(envs,dict) or len(chars)>32 or len(envs)>32:
@@ -354,7 +406,7 @@ def clip_input(ledger,segment):
 
 def plan_clip(raw,state,catalog,segment):
     """Apply typed deltas and return canonical full snapshots; no rendered-video assertions."""
-    raw=parse_object(raw)
+    raw=parse_object(raw,expected='clip')
     timeline=state['timeline']
     if (timeline['current_clip_index']!=segment['index'] or
         abs(timeline['current_start_time']-segment['start'])>1e-6 or
@@ -482,9 +534,12 @@ def commit_clip(work,ledger,record):
     atomic_json(Path(work)/'scene_state.json',ledger)
 
 
-def ensure_scene_state(cfg,req,segments,originals,work,rewrite):
+def ensure_scene_state(cfg,req,segments,originals,work,rewrite,*,progress=None):
     work=Path(work);path=work/'scene_state.json'
-    fingerprint=digest({'request':req,'timeline':[{k:s[k] for k in ('index','start','seconds')} for s in segments]})
+    # Retry budgets affect orchestration only; changing them must not invalidate committed scenes.
+    state_request={k:v for k,v in req.items() if k!='rewrite_retries'}
+    fingerprint=digest({'request':state_request,'timeline':[{k:s[k] for k in ('index','start','seconds')} for s in segments]})
+    retries=rewrite_retry_count(req)
     if path.is_file():
         ledger=read_json(path)
         if ledger.get('version')!=VERSION or ledger.get('input_sha256')!=fingerprint:
@@ -506,16 +561,17 @@ def ensure_scene_state(cfg,req,segments,originals,work,rewrite):
         atomic_json(work/f'scene_state_init_{run_id}_{record["attempt"]:02d}.json',record)
         atomic_json(debug_path,{'run_id':run_id,'input_sha256':fingerprint,
                     'status':record['status'],'attempts':attempts,'visual_verified':False})
-    for attempt in range(2):
+    for attempt in range(retries+1):
         record={'attempt':attempt,'stage':'generation','status':'running','raw_response':None,
                 'parsed_response':None,'events':None,'events_present':False,
                 'schema_validation_errors':[],'visual_verified':False}
         attempts.append(record);save_attempt(record)
         try:
+            if progress:progress({'stage':'planning_state','attempt':attempt+1,'max_attempts':retries+1})
             system=INIT_SYSTEM+'\n'+RULES+ ('\n'+INIT_REPAIR_SYSTEM if attempt else '')
             raw=rewrite(cfg,system,repair_parts,uuid.uuid4().hex[:8])
             record.update(raw_response=raw,stage='parse');save_attempt(record)
-            parsed=parse_object(raw)
+            parsed=parse_object(raw,expected='initial')
             nested=parsed.get('initial_state',{})
             record.update(parsed_response=deepcopy(parsed),events=deepcopy(parsed.get('events')),
                           events_present='events' in parsed,stage='schema',
@@ -530,7 +586,7 @@ def ensure_scene_state(cfg,req,segments,originals,work,rewrite):
             record.update(status='failed',schema_validation_errors=deepcopy(errors));save_attempt(record)
             logging.getLogger(__name__).warning('9B state initialization attempt %s failed: %s; diagnostics: %s',
                                                 attempt+1,str(error),debug_path.name)
-            if attempt or record['stage']=='generation':
+            if attempt>=retries or record['stage']=='generation':
                 raise SceneStateError('9B 初始跨段狀態格式失敗：'+str(error)+
                                       '（診斷：scene_state_init_debug.json）',errors) from error
             repair_parts=parts+[('text','INITIALIZATION FORMAT REPAIR — user brief above remains authoritative.\n'

@@ -64,11 +64,11 @@
     },
     {
       "path": "banana_mv/scene_state.py",
-      "sha256": "a8a5e2bec6cae99c51a889eaeb98448da8a5a2071dd820c398bb5c9bec53d05e"
+      "sha256": "fab144e1c97fc6fd4269a98f03773965e8bc68299d64a9397c31cf0aec808ca1"
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "a5f21a6fbf3cf9dd4066793e52c3be23b4a9cf697a21287a46233cae34e8e0f8"
+      "sha256": "0b6841e7b6203e10975d75d13812648abbf6d5560c3142a68915e1c665f52a63"
     },
     {
       "path": "banana_mv/services.py",
@@ -84,15 +84,15 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "3fbc62d177f50928c1497565bcedfe024bdb17ed9bf69e96f43bf7f965ff2ac7"
+      "sha256": "40fb28fc494601ed6429f6ccaf38069b639db5e2b8eb99e81db9cf1beba2ca24"
     },
     {
       "path": "docs/persistent_scene_state.md",
-      "sha256": "7cee76d1e60dcb12b59be46fa896b12203e206d2f91730b6463a11e5e7daeff2"
+      "sha256": "8eeb01806b1abb24b611e6fb6e223c6abd1c9b72f4744725a18aab7145402168"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "119c40c657a854f681f59f30beebd3d07e14d0043efa746666c05aa189b3244b"
+      "sha256": "c619ed45b3033af4842864e6ed0cbfaf787ffe55c996dad5fd8885c9cb0de8d4"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -124,7 +124,7 @@
     },
     {
       "path": "tests/test_prompt_quality.py",
-      "sha256": "bd1df24bf4955af80bf6ac669be3470be329970cdc1c820a00076b6c03efab1d"
+      "sha256": "2622ffd7c3f7c21e6f1303fd952251797038020d6ff926034e38d5319f412485"
     },
     {
       "path": "tests/test_public_clone.py",
@@ -136,15 +136,15 @@
     },
     {
       "path": "tests/test_scene_state.py",
-      "sha256": "689f0d661178f18a6c9acb3d2254512aa145f8d84933d17a68cd538fcd2aeaee"
+      "sha256": "27cb9f8576ee1c417fe4efea8b857024e0ab18c479bab5ea3cac1221a453b700"
     },
     {
       "path": "tests/test_scene_state_init.py",
-      "sha256": "d723897ffa5ec206e01933739a977ef104234e99670181dba04140289f478ab2"
+      "sha256": "5f7576a2cce7ac1a7f6d82971f3d0525b6257ad639850164465f0a2d3ba2add0"
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "422f523b33d15025e597f585e7c932350baad2b7b17a328c4af9de36a2815d0b"
+      "sha256": "07c1e9175a00db29c731c64923dd4a6c8e4da80ceb4e6484d5161f323bdb55e6"
     },
     {
       "path": "tests/test_services.py",

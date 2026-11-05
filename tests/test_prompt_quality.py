@@ -92,7 +92,7 @@ class PromptQualityTests(unittest.TestCase):
             root=Path(tmp);photo=root/'ref.png';Image.new('RGB',(32,32)).save(photo)
             guide=root/'guide.md';guide.write_text('H3 guide')
             cfg={'guides':{'ref':str(guide)}}
-            req=self.req(rewrite=True,prompt='@圖片1 sings; @圖片2 boxes.')
+            req=self.req(rewrite=True,rewrite_retries=1,prompt='@圖片1 sings; @圖片2 boxes.')
             for tail,missing in ((None,3),(photo,4)):
                 count=2+int(bool(tail))
                 for repaired in (True,False):

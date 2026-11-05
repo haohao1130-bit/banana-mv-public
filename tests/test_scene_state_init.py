@@ -25,6 +25,29 @@ class InitialSceneStateTests(unittest.TestCase):
         self.assertIn(json.dumps(INITIAL_EXAMPLE,ensure_ascii=False),INIT_SYSTEM)
         self.assertEqual(state['timeline']['total_duration'],60)
 
+    def test_configurable_retry_budget_and_progress_do_not_invalidate_saved_state(self):
+        from banana_mv.scene_state import rewrite_retry_count
+        self.assertEqual(rewrite_retry_count({}),3)
+        for value in (-1,6,True,1.5,'3'):
+            with self.subTest(value=value),self.assertRaises(ValueError):rewrite_retry_count({'rewrite_retries':value})
+        with tempfile.TemporaryDirectory() as temp:
+            req={'prompt':'sing','rewrite_retries':3};progress=[]
+            model=Mock(side_effect=['bad','bad',json.dumps(INITIAL_EXAMPLE)])
+            ledger=ensure_scene_state({},req,timeline(6,10),[],temp,model,progress=progress.append)
+            self.assertEqual(model.call_count,3)
+            self.assertEqual([v['attempt'] for v in progress],[1,2,3])
+            self.assertTrue(all(v['max_attempts']==4 for v in progress))
+            # Old projects had no explicit budget; retry-only changes must not break the fingerprint.
+            for changed in ({'prompt':'sing'},{'prompt':'sing','rewrite_retries':5}):
+                loaded=ensure_scene_state({},changed,timeline(6,10),[],temp,model)
+                self.assertEqual(loaded,ledger);self.assertEqual(model.call_count,3)
+        for retries in (0,2):
+            with self.subTest(retries=retries),tempfile.TemporaryDirectory() as temp:
+                model=Mock(return_value='bad')
+                with self.assertRaises(SceneStateError):
+                    ensure_scene_state({}, {'prompt':'sing','rewrite_retries':retries},timeline(6,10),[],temp,model)
+                self.assertEqual(model.call_count,retries+1)
+
     def test_performance_combat_and_multistage_costumes_for_both_timelines(self):
         from PIL import Image
         performance=fixture();performance['events']=[event('sing','perform the requested song',repeat=True)]
@@ -50,8 +73,22 @@ class InitialSceneStateTests(unittest.TestCase):
                         'Result:\n```json\n'+raw+'\n```\nEnd.', '\ufeff'+raw,
                         '<think>hidden reasoning</think>\n```json\n'+raw+'\n```']:
             with self.subTest(wrapper=wrapped[:20]):self.assertEqual(parse_object(wrapped),INITIAL_EXAMPLE)
-        with self.assertRaises(SceneStateError):parse_object('```json\n{}\n```\n```json\n{}\n```')
+        self.assertEqual(parse_object('```json\n{}\n```\n```json\n{}\n```'),{})
+        with self.assertRaisesRegex(SceneStateError,'內容衝突'):
+            parse_object('```json\n{"events": []}\n```\n```json\n{"events": ["different"]}\n```')
         with self.assertRaises(SceneStateError):parse_object('{"events": NaN}')
+
+    def test_initial_json_blocks_can_split_fields_or_repeat_without_changing_events(self):
+        initial=json.dumps({'initial_state':INITIAL_EXAMPLE['initial_state']})
+        events=json.dumps({'events':INITIAL_EXAMPLE['events']})
+        raw='```json\n'+initial+'\n```\n```json\n'+events+'\n```'
+        with tempfile.TemporaryDirectory() as temp:
+            model=Mock(return_value=raw)
+            ledger=ensure_scene_state({}, {'prompt':'sing','rewrite_retries':1},timeline(6,10),[],temp,model)
+            self.assertEqual(model.call_count,1);self.assertEqual(list(ledger['event_catalog']),['E1'])
+            debug=read_json(Path(temp)/'scene_state_init_debug.json')['attempts'][0]
+            self.assertEqual(debug['raw_response'],raw)
+            self.assertEqual(debug['parsed_response'],INITIAL_EXAMPLE)
 
     def test_invalid_json_logs_raw_parse_error_and_repairs_once_using_failed_response(self):
         invalid='```json\n{"events": [}\n```';valid=json.dumps(INITIAL_EXAMPLE)
@@ -68,7 +105,7 @@ class InitialSceneStateTests(unittest.TestCase):
             text='\n'.join(v for kind,v in repair.args[2] if kind=='text')
             self.assertIn(json.dumps(invalid,ensure_ascii=False),text)
             self.assertIn('invalid_json',text);self.assertIn('preserve the user story',text)
-            self.assertIn('ONLY repair attempt',repair.args[1])
+            self.assertIn('application retry budget',repair.args[1])
             self.assertEqual(attempts[1]['schema_validation_errors'],[])
 
     def test_empty_events_stays_failed_keeps_media_and_all_raw_attempts(self):
@@ -78,7 +115,7 @@ class InitialSceneStateTests(unittest.TestCase):
             final=root/'final.mp4';final.write_bytes(b'existing final')
             model=Mock(return_value=json.dumps(source))
             with self.assertRaisesRegex(SceneStateError,r'\$\.events.*實際有 0 個'):
-                ensure_scene_state({}, {'prompt':'sing'},timeline(6,10),[],root,model)
+                ensure_scene_state({}, {'prompt':'sing','rewrite_retries':1},timeline(6,10),[],root,model)
             self.assertEqual(model.call_count,2);self.assertFalse((root/'scene_state.json').exists())
             self.assertEqual(part.read_bytes(),b'existing valid media');self.assertEqual(final.read_bytes(),b'existing final')
             debug=read_json(root/'scene_state_init_debug.json')
@@ -98,7 +135,7 @@ class InitialSceneStateTests(unittest.TestCase):
                 elif value=='dict':source['events']={'E1':source['events'][0]}
                 else:source['events']=['sing']
                 model=Mock(side_effect=[json.dumps(source),json.dumps(INITIAL_EXAMPLE)])
-                ensure_scene_state({}, {'prompt':'sing'},timeline(4,15),[],temp,model)
+                ensure_scene_state({}, {'prompt':'sing','rewrite_retries':1},timeline(4,15),[],temp,model)
                 first=read_json(Path(temp)/'scene_state_init_debug.json')['attempts'][0]
                 self.assertEqual(first['schema_validation_errors'][0]['code'],code)
                 self.assertEqual(first['parsed_response'],source)
@@ -128,7 +165,7 @@ class InitialSceneStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             model=Mock(side_effect=RuntimeError('ComfyUI unavailable'))
             with self.assertRaisesRegex(SceneStateError,'ComfyUI unavailable'):
-                ensure_scene_state({}, {'prompt':'sing'},timeline(4,15),[],temp,model)
+                ensure_scene_state({}, {'prompt':'sing','rewrite_retries':1},timeline(4,15),[],temp,model)
             self.assertEqual(model.call_count,1)
             attempt=read_json(Path(temp)/'scene_state_init_debug.json')['attempts'][0]
             self.assertEqual(attempt['stage'],'generation');self.assertEqual(attempt['status'],'failed')
@@ -139,7 +176,7 @@ class InitialSceneStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             model=Mock(side_effect=[json.dumps(source),json.dumps(replacement)])
             with self.assertRaisesRegex(SceneStateError,'格式修復改動'):
-                ensure_scene_state({}, {'prompt':'sing'},timeline(4,15),[],temp,model)
+                ensure_scene_state({}, {'prompt':'sing','rewrite_retries':1},timeline(4,15),[],temp,model)
             self.assertEqual(model.call_count,2);self.assertFalse((Path(temp)/'scene_state.json').exists())
             last=read_json(Path(temp)/'scene_state_init_debug.json')['attempts'][-1]
             self.assertEqual(last['schema_validation_errors'][0]['code'],'repair_changed_content')
@@ -148,7 +185,7 @@ class InitialSceneStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             for _ in range(2):
                 with self.assertRaises(SceneStateError):
-                    ensure_scene_state({}, {'prompt':'sing'},timeline(4,15),[],temp,Mock(return_value='bad'))
+                    ensure_scene_state({}, {'prompt':'sing','rewrite_retries':1},timeline(4,15),[],temp,Mock(return_value='bad'))
             self.assertEqual(len(list(Path(temp).glob('scene_state_init_*_0*.json'))),4)
 
     def test_worker_never_plans_clips_or_removes_successful_media_after_bad_initialization(self):
@@ -156,7 +193,7 @@ class InitialSceneStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);work=root/'runs'/'abcdef123456';work.mkdir(parents=True)
             media=work/'00_part.mp4';media.write_bytes(b'successful existing clip')
-            req={'prompt':'sing','scene_state_version':1,'rewrite':True,'story_plan':False,
+            req={'prompt':'sing','rewrite_retries':1,'scene_state_version':1,'rewrite':True,'story_plan':False,
                  'audio_analysis':False,'director_version':2}
             segs=timeline(4,15);segs[0]['status']='done'
             job={'id':'abcdef123456','request':req,'segments':segs,'status':'running','size':(720,1280)}
