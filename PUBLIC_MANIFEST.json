@@ -56,7 +56,7 @@
     },
     {
       "path": "banana_mv/prompt_quality.py",
-      "sha256": "bf623ec9c1cbc59977712e2e454cb9654fd8533e61b5821327d16283f173c900"
+      "sha256": "f29ab5ad0247e4d6b93507e2edcb97c86facc9ae747b12a4506e7137fc2859db"
     },
     {
       "path": "banana_mv/server.py",
@@ -112,7 +112,7 @@
     },
     {
       "path": "tests/test_prompt_quality.py",
-      "sha256": "996d2d4b56d4cd12b099b3cf7d06963571d4e0cf06aaae668597491de52d0091"
+      "sha256": "bd1df24bf4955af80bf6ac669be3470be329970cdc1c820a00076b6c03efab1d"
     },
     {
       "path": "tests/test_public_clone.py",

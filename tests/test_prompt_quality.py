@@ -57,6 +57,10 @@ class PromptQualityTests(unittest.TestCase):
         self.assertEqual(text.count('[BANANA_REFERENCE_ROLES_V1]'),1)
         self.assertNotIn('小語',policy)
         self.assertNotIn('蕉彌',policy)
+        self.assertIn('SUPPORTING WARDROBE',policy)
+        self.assertIn('boxing trunks and boxing shoes',policy)
+        self.assertIn('Preserve explicit user/reference costumes',policy)
+        self.assertIn('do not dress animal or mascot bodies',policy)
 
     def test_creative_variation_does_not_trigger_a_second_model_or_abort(self):
         from PIL import Image
@@ -166,6 +170,8 @@ class PromptQualityTests(unittest.TestCase):
                 self.assertTrue(final.endswith('[/BANANA_FACE_IDENTITY_V1]'))
                 self.assertEqual(req['prompt'],original)
                 self.assertIn('REFERENCE ROLE CONTRACT',rewrite.call_args_list[0].args[2][0][1])
+                self.assertIn('SUPPORTING WARDROBE',rewrite.call_args_list[0].args[2][0][1])
+                self.assertIn('SUPPORTING WARDROBE',final)
 
     def test_music_video_is_the_optimizer_priority_instead_of_a_continuous_film(self):
         from banana_mv.story_plan import plan_input

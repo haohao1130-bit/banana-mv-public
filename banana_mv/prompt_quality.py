@@ -51,7 +51,17 @@ POLICY = (
     'voice assignments and per-shot character counts. A song continuing over an action shot does not mean '
     'the action character is lip-syncing. Keep scene-specific props and behavior in their own scenes. '
     'Retain immediate openings, reserved endings and user exclusions. Character names and gender come '
-    'only from the user or references, never from a fixed application persona.'
+    'only from the user or references, never from a fixed application persona. '
+    'SUPPORTING WARDROBE: When inventing a human supporting character whose attire is unspecified, '
+    'describe a complete scene-appropriate outfit in subject_definitions, including lower-body garments '
+    'and footwear, not just anatomy, tattoos or handheld equipment. Boxing gloves alone are not an outfit: '
+    'a human boxer may be bare-chested but wears boxing trunks and boxing shoes. Keep the chosen garment '
+    'type, colors and materials consistent for that recurring character across shots and clips; repeat '
+    'the identifying wardrobe in their visible action descriptions, including rear and low-angle views. '
+    'Do not infer nudity from an omitted outfit, a shirtless torso, or a camera angle. Preserve explicit '
+    'user/reference costumes and intended exposed skin; do not dress animal or mascot bodies in human '
+    'clothing unless requested. Apply these wardrobe details while writing events and prompts, without '
+    'adding a semantic judge, extra review inference or a task-stopping creative check.'
 )
 
 
