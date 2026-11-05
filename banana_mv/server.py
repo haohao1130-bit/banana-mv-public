@@ -95,6 +95,11 @@ def graph_options(req, seconds, segment=None):
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
+    if req.get('director_schema')==3 and req.get('rewrite',True):
+        from banana_mv.prompt_quality import write_directed_clip
+        originals=original if isinstance(original,list) else [original]
+        return write_directed_clip(cfg,req,segment,originals,tail,scene_input=scene_input,
+                                   event_catalog=event_catalog,progress=progress)
     director, mode = director_prompt(req, segment['seconds'], segment)
     if scene_input is not None:
         director=director.replace('Preserve costumes, locations and source audio; do not invent lyrics.',
@@ -316,8 +321,9 @@ def worker(job, cfg, original, song, drive):
                                      'pulse': music_analysis['pulse']}
             job['status'] = 'running'; write_state(job)
         needs_plan = (job['request'].get('director_version', 1) >= 2
-                      and job['request'].get('story_plan', True)
-                      and job['request'].get('rewrite', True) and len(job['segments']) > 1
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema')==3)
+                      and job['request'].get('rewrite', True)
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema')==3)
                       and any(not (s.get('status') == 'done' and valid_part(work/f'{s["index"]:02d}_part.mp4', s, job['size']))
                               and not (job.get('resuming') and (work/f'{s["index"]:02d}_prompt.txt').is_file()
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -328,6 +334,10 @@ def worker(job, cfg, original, song, drive):
             plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
+                if plan['version']==3:
+                    seg['direction_constraints']=plan['constraints']
+                    seg['direction_closing_shot']=plan['closing_shot']
+                    seg['direction_requires_change']=plan['requires_change']
                 if index:
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
@@ -461,6 +471,7 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
+             director_schema=3,
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))

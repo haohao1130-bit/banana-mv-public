@@ -32,7 +32,9 @@ class InitialSceneStateTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(ValueError):rewrite_retry_count({'rewrite_retries':value})
         with tempfile.TemporaryDirectory() as temp:
             req={'prompt':'sing','rewrite_retries':3};progress=[]
-            model=Mock(side_effect=['bad','bad',json.dumps(INITIAL_EXAMPLE)])
+            # Distinct failures may use the configured budget; an identical
+            # response now stops after one unsuccessful format-repair attempt.
+            model=Mock(side_effect=['bad','different invalid JSON',json.dumps(INITIAL_EXAMPLE)])
             ledger=ensure_scene_state({},req,timeline(6,10),[],temp,model,progress=progress.append)
             self.assertEqual(model.call_count,3)
             self.assertEqual([v['attempt'] for v in progress],[1,2,3])
@@ -46,7 +48,7 @@ class InitialSceneStateTests(unittest.TestCase):
                 model=Mock(return_value='bad')
                 with self.assertRaises(SceneStateError):
                     ensure_scene_state({}, {'prompt':'sing','rewrite_retries':retries},timeline(6,10),[],temp,model)
-                self.assertEqual(model.call_count,retries+1)
+                self.assertEqual(model.call_count,min(retries+1,2))
 
     def test_performance_combat_and_multistage_costumes_for_both_timelines(self):
         from PIL import Image

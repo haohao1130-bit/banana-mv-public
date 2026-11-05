@@ -384,7 +384,8 @@ def initial_state(raw,segments,picture_count):
         c.setdefault('identity_reference',None)
         for f in ('hairstyle','location'):c[f]=text(c.get(f,''))
         for f in ('appearance_changes','injuries','held_props'):c[f]=string_list(c.get(f,[]))
-        garments=c.setdefault('garments',{})
+        garments=normalize_garments(c.setdefault('garments',{}),key)
+        c['garments']=garments
         if not isinstance(garments,dict) or len(garments)>64:raise SceneStateError('服裝清單格式錯誤。')
         for gid,g in garments.items():
             text(gid)
@@ -411,6 +412,37 @@ def initial_state(raw,segments,picture_count):
     state=PersistentSceneState(chars,envs,narrative,{'current_clip_index':-1,'current_start_time':0,
            'current_end_time':0,'total_duration':total}).to_dict()
     return state,catalog
+
+
+def normalize_garments(garments, subject):
+    """Rekey category dictionaries by their explicit IDs; never invent state.
+
+    The original model's ID remains authoritative for future references. Category
+    aliases are not retained because two categories may name the same garment.
+    """
+    path=f'$.initial_state.character_states.{subject}.garments'
+    def fail(suffix,code,message):
+        raise SceneStateError(message,[{'path':path+suffix,'code':code,'message':message}])
+    if not isinstance(garments,dict) or len(garments)>64:
+        fail('','invalid_mapping','服裝清單需為最多64件的物件。')
+    result={}
+    fields={'garment_id','garment_type','material','color','current_status','current_location'}
+    for key,value in garments.items():
+        if not isinstance(value,dict):fail('.'+str(key),'invalid_garment','衣物需為物件。')
+        gid=value.get('garment_id')
+        if not isinstance(gid,str) or not gid.strip():
+            fail('.'+str(key)+'.garment_id','missing_id','缺少明確衣物ID；不可猜測。')
+        if set(value)!=fields:
+            fail('.'+str(key),'invalid_fields','衣物需包含ID、類型、材質、顏色、狀態與位置，不能缺漏或加入未知欄位。')
+        if not isinstance(value.get('current_status'),str) or value['current_status'] not in STATUSES:
+            fail('.'+str(key)+'.current_status','invalid_status','衣物狀態無效；允許：'+', '.join(sorted(STATUSES)))
+        for field,item in value.items():
+            if not isinstance(item,str) or not item.strip():
+                fail('.'+str(key)+'.'+field,'invalid_value','衣物欄位需為非空文字。')
+        if gid in result:
+            fail('.'+str(key)+'.garment_id','duplicate_id','衣物ID重複：'+gid+'；不能無聲合併。')
+        result[gid]=deepcopy(value)
+    return result
 
 
 def clip_input(ledger,segment):
@@ -611,6 +643,8 @@ def commit_clip(work,ledger,record):
 
 
 def ensure_scene_state(cfg,req,segments,originals,work,rewrite,*,progress=None):
+    if req.get('director_schema')==3:
+        return ledger_from_direction(req,segments,work)
     work=Path(work);path=work/'scene_state.json'
     # Retry budgets affect orchestration only; changing them must not invalidate committed scenes.
     state_request={k:v for k,v in req.items() if k!='rewrite_retries'}
@@ -632,6 +666,7 @@ def ensure_scene_state(cfg,req,segments,originals,work,rewrite,*,progress=None):
             image=ImageOps.exif_transpose(image).convert('RGB');image.thumbnail((768,768))
             parts.extend([('text',f'Uploaded original reference {index}:'),('image',image.copy())])
     run_id=uuid.uuid4().hex[:8];attempts=[];repair_parts=parts
+    seen_failures=set()
     debug_path=work/'scene_state_init_debug.json'
     def save_attempt(record):
         atomic_json(work/f'scene_state_init_{run_id}_{record["attempt"]:02d}.json',record)
@@ -662,8 +697,14 @@ def ensure_scene_state(cfg,req,segments,originals,work,rewrite,*,progress=None):
             record.update(status='failed',schema_validation_errors=deepcopy(errors));save_attempt(record)
             logging.getLogger(__name__).warning('9B state initialization attempt %s failed: %s; diagnostics: %s',
                                                 attempt+1,str(error),debug_path.name)
-            if attempt>=retries or record['stage']=='generation':
+            failure=digest({'raw':record['raw_response'],'errors':errors})
+            repeated=failure in seen_failures
+            seen_failures.add(failure)
+            if repeated:
+                record['repeated_failure']=True;save_attempt(record)
+            if repeated or attempt>=retries or record['stage']=='generation':
                 raise SceneStateError('9B 初始跨段狀態格式失敗：'+str(error)+
+                                      ('；相同回覆修復無進展，提前停止。' if repeated else '')+
                                       '（診斷：scene_state_init_debug.json）',errors) from error
             repair_parts=parts+[('text','INITIALIZATION FORMAT REPAIR — user brief above remains authoritative.\n'
                 'Concrete validation errors:\n'+json.dumps(errors,ensure_ascii=False)+
@@ -674,6 +715,73 @@ def ensure_scene_state(cfg,req,segments,originals,work,rewrite,*,progress=None):
             'events_sha256':digest(catalog),'commits':[]}
     atomic_json(work/'scene_state.json',ledger)
     return ledger
+
+
+def ledger_from_direction(req,segments,work):
+    """Initialize the existing ledger from the one saved creative treatment."""
+    plan=read_json(Path(work)/'director_plan.json')
+    if plan.get('version')!=3 or digest({k:v for k,v in plan.items()
+        if k not in ('input_sha256','content_sha256')})!=plan.get('content_sha256'):
+        raise SceneStateError('統一全曲計畫校驗失敗。')
+    fingerprint=digest({'request':{k:v for k,v in req.items() if k!='rewrite_retries'},
+        'timeline':[{k:s[k] for k in ('index','start','seconds')} for s in segments],
+        'plan':plan['content_sha256']})
+    path=Path(work)/'scene_state.json'
+    if path.is_file():
+        ledger=read_json(path)
+        if ledger.get('input_sha256')!=fingerprint or any(
+            digest(ledger[key])!=ledger.get(check) for key,check in
+            [('initial_state','initial_sha256'),('event_catalog','events_sha256')]):
+            raise SceneStateError('跨段記憶與統一計畫不符。')
+        return ledger
+    state,catalog=plan['initial_state'],plan['event_catalog']
+    ledger={'version':VERSION,'director_schema':3,'input_sha256':fingerprint,
+            'initial_state':deepcopy(state),'initial_sha256':digest(state),
+            'event_catalog':deepcopy(catalog),'events_sha256':digest(catalog),
+            'commits':[],'visual_verified':False}
+    atomic_json(path,ledger)
+    return ledger
+
+
+def compile_direction_record(row,state,catalog,segment,requires_change=()):
+    """Compute IDs/from-values deterministically, then use the full validator.
+
+    These are intended story changes, committed only after a saved video. There
+    is no second inference that can forget deltas or reinterpret the story.
+    """
+    planned=row['source_ids'];completed=row['completed_source_ids']
+    working=deepcopy(state);deltas=[]
+    for raw in row.get('changes',[]):
+        change=deepcopy(raw)
+        idx=change.pop('event_index',None)
+        if isinstance(idx,bool) or not isinstance(idx,int):raise SceneStateError('change.event_index無效。')
+        change['event_id']=f'E{idx+1}'
+        kind=change.get('kind')
+        try:
+            if kind=='garment':
+                target=working['character_states'][change['subject_id']]['garments'][change['garment_id']]
+                before=target['current_status']
+                if 'to' not in change or 'current_location' not in change:raise KeyError('to/current_location')
+                after={'current_status':change['to'],'current_location':change['current_location']}
+            elif kind in ('character','environment'):
+                target=(working['character_states'][change['subject_id']] if kind=='character'
+                        else working['environment_states'][change['scene_id']])
+                field=change['field'];before=deepcopy(target[field])
+                if 'to' not in change:raise KeyError('to')
+                after={field:change['to']}
+            else:raise KeyError('kind')
+        except (KeyError,TypeError) as error:
+            raise SceneStateError('計畫狀態變化引用未知角色、衣物、場景或缺少欄位：'+str(error)) from error
+        if 'from' in change and change['from']!=before:
+            raise SceneStateError('計畫提供的from與繼承狀態矛盾。')
+        change['from']=deepcopy(before)
+        target.update(deepcopy(after));deltas.append(change)
+    missing=set(completed).intersection(requires_change)-{
+        d['event_id'] for d in deltas if d['from']!=d.get('to')}
+    if missing:
+        raise SceneStateError('宣告完成的狀態變化缺少changes：'+', '.join(sorted(missing)))
+    return plan_clip({'clip_prompt':row['event'],'planned_events':planned,
+                      'completed_events':completed,'state_transitions':deltas},state,catalog,segment)
 
 
 def reconcile_history(job,work,ledger,is_valid):

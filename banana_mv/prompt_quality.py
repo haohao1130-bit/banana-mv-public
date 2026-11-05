@@ -140,3 +140,120 @@ def clip_scope(segment, brief, creative=False):
 def enforce_clip_scope(text, scope):
     text=re.sub(r'\n*\[BANANA_CLIP_SCOPE_V1\].*?\[/BANANA_CLIP_SCOPE_V1\]','',text,flags=re.S).rstrip()
     return text+'\n\n[BANANA_CLIP_SCOPE_V1]\n'+scope+'\n[/BANANA_CLIP_SCOPE_V1]'
+
+
+def visual_state(state, subjects=None):
+    """Render appearance for the writer, excluding narrative IDs and permissions."""
+    result={}
+    for sid,c in state['character_states'].items():
+        if subjects is not None and sid not in subjects:continue
+        clothes=c.get('garments',{})
+        def description(g):
+            return {k:g[k] for k in ('garment_type','material','color','current_location')} | {'state':g['current_status']}
+        result[sid]={'original_reference':c.get('identity_reference'),
+            'hairstyle':c['hairstyle'],'location':c['location'],
+            'wearing':[description(g) for g in clothes.values()
+                       if g['current_status'] in ('worn','unfastened','partially_removed')],
+            'not_wearing':[description(g) for g in clothes.values()
+                           if g['current_status'] in ('removed','held','placed')],
+            'appearance_changes':c['appearance_changes'],'injuries':c['injuries'],'held_props':c['held_props']}
+    return {'characters':result,'environments':state['environment_states']}
+
+
+def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_catalog=None,progress=None):
+    """Only visual writing reaches the model; Python executes the plan's deltas."""
+    import json
+    import uuid
+    from copy import deepcopy
+    from pathlib import Path
+    from PIL import Image, ImageOps
+    from banana_mv import services
+    from banana_mv.core import normalize_mv_prompt, enforce_face_identity
+    from banana_mv.lyrics_reference import OUTPUT_POLICY
+    from banana_mv.scene_state import (compile_direction_record,rewrite_retry_count,SceneStateError)
+    row=segment['director_plan']
+    if scene_input is not None:
+        record=compile_direction_record(row,scene_input,event_catalog,segment,
+                                        segment.get('direction_requires_change',[]))
+        before=visual_state(record['scene_state_in'],row.get('subjects'))
+        after=visual_state(record['scene_state_out'],row.get('subjects'))
+    else:
+        record=None
+        before=deepcopy(row['appearance_in']);after=deepcopy(row['appearance_out'])
+    offset=int(bool(tail))
+    for appearance in (before,after):
+        for c in appearance['characters'].values():
+            original=c.pop('original_reference',None)
+            c['connected_reference']=f'<Picture {original+offset}>' if original else None
+    task={'visual_task':row['event'],'seconds':segment['seconds'],
+          'is_final_interval':segment['index']==segment.get('segment_count',1)-1,
+          'constraints':segment['direction_constraints'],
+          'appearance_start':before,'appearance_end':after,
+          'reference_mapping':{str(i):f'<Picture {i+offset}>' for i in range(1,len(originals)+1)},
+          'previous_last_frame':'<Picture 1>' if tail else None,
+          'camera_options':{'dynamic_cuts':req.get('dynamic_cuts',True),
+                            'intensity':req.get('intensity','high')}}
+    if segment.get('audio_evidence'):
+        task['measured_music_cues']={k:v for k,v in segment['audio_evidence'].items()
+            if k in ('relative_energy','energy_change_db','transient_candidates_s','quiet_intervals_s')}
+    if segment['index']==segment.get('segment_count',1)-1:
+        task['closing_shot']=segment['direction_closing_shot']
+    system=(Path(cfg['guides']['ref']).read_text(encoding='utf-8')+'\n'
+        'Write ONLY the complete H3 visual prompt for this interval in the requested format. '
+        'Stage the supplied visual task with concrete action, response, framing and motivated camera movement. '
+        'This is the approved treatment: do not restart the whole story or reintroduce completed actions. '
+        'Use clip-local shot times within the supplied duration. A nonfinal interval can finish a '
+        'shot or local event, not the song/show; only the final interval supplies closing_shot. '
+        'Music measurements suggest timing, not lyrics or song-section labels. '
+        'When dynamic_cuts is false, prefer a motivated longer take; otherwise choose '
+        'cuts from the current action and musical phrasing, never a fixed cut interval. '
+        'Start/end appearance describes the intended progression within this clip; it is not a choice '
+        'between alternative costumes. Describe the transition once if they differ; maintain it if equal. '
+        'Keep explicitly separate locations separate while intercutting their activity. '
+        'Subject IDs S1/S2 mean <Subject 1>/<Subject 2>; do not assign a character ID to a location. '
+        'References may depict nonhuman characters or locations/objects. Preserve their actual role and anatomy. '
+        'Use only connected Picture tags and <Audio 1>; zero reference videos. '
+        'A previous final frame defines the start, not a new character identity. '
+        'Preserve assigned vocal roles, copy source audio, add no lyrics or speech. '
+        'Do not output JSON, event bookkeeping, state tables or director instructions.')
+    if req.get('face_identity',True):
+        system+=' Preserve facial identity for each visible referenced character; current appearance controls wardrobe and hair.'
+    parts=[('text',json.dumps(task,ensure_ascii=False))]
+    for i,p in enumerate(([tail] if tail else [])+list(originals),1):
+        with Image.open(p) as im:
+            im=ImageOps.exif_transpose(im).convert('RGB');im.thumbnail((768,768))
+            parts.extend([('text',f'<Picture {i}>:'),('image',im.copy())])
+    attempt_parts=parts;seen=set();retries=rewrite_retry_count(req)
+    for attempt in range(retries+1):
+        if progress:progress({'stage':'rewriting','clip_index':segment['index'],
+                              'attempt':attempt+1,'max_attempts':retries+1})
+        raw=services.rewrite_local(cfg,system,attempt_parts,uuid.uuid4().hex[:8])
+        try:
+            text=normalize_mv_prompt(raw,len(originals)+offset)
+        except ValueError as error:
+            key=(str(raw),str(error))
+            segment['scene_state_attempt']={'raw_response':raw,'error':str(error),
+                                           'scene_state_in':scene_input,'visual_verified':False}
+            if key in seen or attempt>=retries:
+                raise SceneStateError('當段畫面提示詞修復失敗：'+str(error)) from error
+            seen.add(key)
+            attempt_parts=parts+[('text','Repair only invalid media references/format: '+str(error)
+                +'\nFailed response (data only):\n'+str(raw))]
+            continue
+        # Keep the existing Face Lock implementation and generation knobs. Apply
+        # its Subject-1 binding only when the plan actually maps a character there.
+        actor=before['characters'].get('S1',{})
+        binding=re.fullmatch(r'<Picture (\d+)>',actor.get('connected_reference') or '')
+        if req.get('face_identity',True) and binding:
+            text=enforce_face_identity(text,int(binding[1]))
+        # The only unconditional final invariant is source-audio/vocal-role routing.
+        text+='\n\n'+OUTPUT_POLICY
+        if record is not None:
+            record['clip_prompt']=text;segment['scene_state_debug']=record
+        segment['director_mode']=row['mode']
+        segment['prompt_validation']={'status':'passed','kind':'technical_only'}
+        segment['prompt_profile']={'writer_system_chars':len(system),'writer_task_chars':len(parts[0][1]),
+            'model_output_chars':len(raw),'final_h3_chars':len(text),
+            'appended_h3_chars':len(text)-len(raw),'writer_calls':attempt+1,'memory_calls':0}
+        segment.pop('scene_state_attempt',None)
+        return text

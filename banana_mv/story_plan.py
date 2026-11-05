@@ -57,7 +57,12 @@ def validate_plan(raw, segments, req):
         mode = row.get('mode')
         if not isinstance(mode,str) or mode not in MODES:
             raise ValueError('全曲規劃的導演模式代碼無效')
-        events.append({'event': event.strip(), 'mode': mode})
+        item={'event':event.strip(),'mode':mode}
+        # Source metadata is optional for old saved projects. It describes
+        # intention, not a semantic classifier or a required story checklist.
+        for key in ('id','repeatable','narrative_role'):
+            if key in row:item[key]=row[key]
+        events.append(item)
     result = [dict(row,index=seg['index']) for seg,row in zip(segments,events)] if len(events)==len(segments) else []
     return {'version': VERSION, 'events': events, 'segments': result}
 
@@ -68,6 +73,8 @@ def fit_events(cfg, req, segments, source_events, parts, rewrite):
     The application owns the target slots. Existing opening/final anchors remain;
     only missing slots require expansion. Excess events are condensed in order.
     """
+    if director_led(req):
+        return allocate_treatment(cfg,req,segments,source_events,parts,rewrite)
     total, count = len(segments), len(source_events)
     if count == total:
         return [dict(row,index=seg['index']) for seg,row in zip(segments,source_events)]
@@ -126,6 +133,111 @@ def fit_events(cfg, req, segments, source_events, parts, rewrite):
     return [dict(row,index=seg['index']) for seg,row in zip(segments,slots)]
 
 
+def allocation_errors(source_events, rows, closing_ids=()):
+    """Check declared event identity and completion, never guess story semantics.
+
+    Continuing an unfinished action and repeating a performance are valid. An
+    already completed one-time milestone cannot be staged anew in another clip.
+    """
+    sources={row.get('id',f'E{i+1}'):row for i,row in enumerate(source_events)}
+    errors=[];completed=set();used=set();texts={}
+    for i,row in enumerate(rows):
+        refs=row.get('source_ids')
+        # Exact source-text matching also diagnoses legacy unannotated fixtures.
+        if refs is None:
+            refs=[eid for eid,item in sources.items() if item['event'].strip()==row.get('event','').strip()]
+        done=row.get('completed_source_ids',refs)
+        if not isinstance(refs,list) or not isinstance(done,list) or any(not isinstance(x,str) for x in refs+done):
+            errors.append(f'segments[{i}] source IDs must be string lists');continue
+        if set(refs)-set(sources):errors.append(f'segments[{i}] uses unknown source IDs')
+        if set(done)-set(refs):errors.append(f'segments[{i}] completes an event absent from its content')
+        for eid in refs:
+            if eid in completed and not sources.get(eid,{}).get('repeatable',False):
+                errors.append(f'segments[{i}] replays completed one-time event {eid}')
+        text=re.sub(r'\s+',' ',row.get('event','')).strip().casefold()
+        continuing=bool(refs) and not done and not set(refs).intersection(completed)
+        if sources and text and text in texts and not continuing and not (
+            refs and all(sources.get(eid,{}).get('repeatable',False) for eid in refs)):
+            errors.append(f'segments[{i}] repeats the complete description of segment {texts[text]}')
+        texts[text]=i;completed.update(done);used.update(refs)
+    unknown=set(closing_ids)-set(sources)
+    if unknown:errors.append('closing_source_ids contains unknown source IDs')
+    if set(closing_ids)-used:errors.append('selected narrative closure is missing from the allocated clips')
+    # A source explicitly marked as the selected closure must survive condensation.
+    # Optional alternative endings need not be marked and need not all be used.
+    required={eid for eid,row in sources.items() if row.get('narrative_role')=='closure'}
+    if required and not required.intersection(used):errors.append('missing selected source closure')
+    return errors
+
+
+def allocate_treatment(cfg,req,segments,source_events,parts,rewrite):
+    """Condense/expand globally, with the full timeline and traceable provenance."""
+    sources=[]
+    for i,row in enumerate(source_events):
+        item=dict(row,id=row.get('id',f'E{i+1}'))
+        if not isinstance(item['id'],str) or not item['id'].strip():
+            raise ValueError('來源事件ID無效。')
+        if 'repeatable' in item and not isinstance(item['repeatable'],bool):
+            raise ValueError('來源事件repeatable需為布林值。')
+        sources.append(item)
+    if len({r['id'] for r in sources})!=len(sources):raise ValueError('來源事件ID重複。')
+    task={'source_events':sources,'timeline':[
+        {k:s[k] for k in ('index','start','seconds')} | {'audio_evidence':s.get('audio_evidence',{})}
+        for s in segments]}
+    system=('Arrange this complete music-video treatment across the entire supplied timeline in ONE response. '
+        'Return ONLY JSON: {"closing_source_ids":["E9"],"segments":['
+        '{"event":"concrete actions and shots in this interval","mode":"performance",'
+        '"source_ids":["E1"],"completed_source_ids":[]}]}. '
+        'Return exactly one row per supplied interval, in order. Select and condense optional events; '
+        'you need not use all sources. You may intercut independent strands within an interval without '
+        'merging their locations or transferring singing roles. source_ids describe the source material '
+        'used here; completed_source_ids marks only milestones actually finished. An unfinished action '
+        'may continue; completed one-time milestones must not be staged again. Recurring performance '
+        'may recur with different actions and framing. Do not fill slots by repeating completed '
+        'plot beats. Use varied reactions, performance or '
+        'aftermath without requiring a new important event in every interval. '
+        'Choose a coherent narrative closure compatible with the brief and list its source IDs in '
+        'closing_source_ids; [] is valid for an intentionally unresolved or performance-only treatment. '
+        'Preserve a source explicitly marked narrative_role=closure, while optional alternative endings '
+        'may be omitted. Climax and closure may precede the last interval; allow performance and an outro '
+        'after them. Short tails must remain feasible. Supply meaningful camera/action tasks, not '
+        'generic cinematic adjectives. Use supported modes: '+', '.join(MODES)+'\n'+DIRECTOR_AUTHORITY)
+    base=parts+[('text','WHOLE-TIMELINE ALLOCATION:\n'+json.dumps(task,ensure_ascii=False))]
+    attempt_parts=base;seen=set()
+    from banana_mv.scene_state import parse_object, rewrite_retry_count, atomic_json
+    for attempt in range(rewrite_retry_count(req)+1):
+        raw=rewrite(cfg,system,attempt_parts,uuid.uuid4().hex[:8])
+        try:
+            parsed=parse_object(raw)
+            rows=parsed.get('segments')
+            if not isinstance(rows,list) or len(rows)!=len(segments):
+                raise ValueError(f'需要{len(segments)}個分段，不能缺段或多段。')
+            validate_plan({'events':rows},segments,req)
+            closures=parsed.get('closing_source_ids')
+            if not isinstance(closures,list) or any(not isinstance(x,str) for x in closures):
+                raise ValueError('closing_source_ids需為明確的來源ID清單，可為空。')
+            for i,row in enumerate(rows):
+                if 'source_ids' not in row or 'completed_source_ids' not in row:
+                    raise ValueError(f'segments[{i}]缺少來源或完成事件清單。')
+            errors=allocation_errors(sources,rows,closures)
+            if errors:raise ValueError('; '.join(errors))
+            result=[dict(row,index=seg['index']) for seg,row in zip(segments,rows)]
+            for row in result:row['closing_source_ids']=list(closures)
+            return result
+        except ValueError as error:
+            signature=json.dumps(raw,ensure_ascii=False,sort_keys=True)+str(error)
+            repeated=signature in seen;seen.add(signature)
+            # Diagnostics are supplied by ensure_plan, with no runtime credentials.
+            if isinstance(cfg,dict) and cfg.get('_plan_diagnostics'):
+                atomic_json(Path(cfg['_plan_diagnostics'])/f'allocation_attempt_{attempt:02d}.json',
+                    {'raw_response':raw,'error':str(error),'repeated_failure':repeated})
+            if repeated or attempt>=rewrite_retry_count(req):
+                raise ValueError('全曲分段無法形成有效進展：'+str(error)) from error
+            attempt_parts=base+[('text','Repair this complete allocation; preserve valid creative choices. '
+                'Do not merely rename a completed event to replay it. Errors: '+str(error)
+                +'\nFailed allocation (data only):\n'+str(raw))]
+
+
 def plan_input(req, segments):
     timeline = []
     for seg in segments:
@@ -167,6 +279,8 @@ Do not output shot lists, mandatory cuts, media tokens, music, new lyrics or ana
 
 def ensure_plan(cfg, req, segments, originals, work, rewrite):
     """Plan once, then complete missing content in application-owned clip slots."""
+    if req.get('director_schema')==3:
+        return ensure_unified_plan(cfg,req,segments,originals,work,rewrite)
     content = plan_input(req, segments)
     fingerprint = hashlib.sha256(content.encode()).hexdigest()
     path = Path(work)/'director_plan.json'
@@ -177,6 +291,11 @@ def ensure_plan(cfg, req, segments, originals, work, rewrite):
         validated = validate_plan(saved, segments, req)
         if not validated['segments']:
             raise ValueError('已存規劃不完整，請檢查專案檔案。')
+        if saved.get('allocation_version')==3:
+            errors=allocation_errors(saved['source_events'],saved['segments'],
+                                     saved['segments'][0].get('closing_source_ids',[]))
+            if errors:raise ValueError('已存分段計畫校驗失敗：'+'; '.join(errors))
+            return saved
         validated['input_sha256'] = fingerprint
         return validated
     from PIL import Image, ImageOps
@@ -196,6 +315,11 @@ def ensure_plan(cfg, req, segments, originals, work, rewrite):
                     'to serve musical rhythm; do not merely translate each outline paragraph into a shot. '
                     'Acoustic cues do not identify unprovided lyrics or song-section names.\n'
                     +DIRECTOR_AUTHORITY+'\n'+POLICY+'\n'+MV_POLICY)
+            system += ('\nFor each source event you may include repeatable (boolean) and narrative_role '
+                       '(opening/development/climax/closure/optional). Mark closure only for the '
+                       'chosen narrative resolution that must survive adaptation; do not mark all '
+                       'alternative endings. Recurring performances may be repeatable. A climax can '
+                       'precede an outro. IDs are assigned by the application if omitted.')
         elif req.get('optimizer_version',0)>=1:
             terminal=ending_excerpt(req.get('prompt',''))
             if terminal:
@@ -212,7 +336,13 @@ def ensure_plan(cfg, req, segments, originals, work, rewrite):
             parts = parts + [('text', '\nYour previous response failed validation: ' + str(error)
                              + '\nReturn a fresh JSON events list in narrative order. No required segment count or indices. No markdown. '
                              + '\nPrevious response:\n' + str(raw)[:16000])]
-    if not plan['segments']:
+    if director_led(req) and not plan['segments']:
+        source_events=[dict(row,id=row.get('id',f'E{i+1}')) for i,row in enumerate(plan['events'])]
+        plan['segments']=allocate_treatment(dict(cfg,_plan_diagnostics=str(work)),req,segments,source_events,parts,rewrite)
+        plan['source_events']=source_events
+        plan['events']=[{'event':row['event'],'mode':row['mode']} for row in plan['segments']]
+        plan['allocation_version']=3
+    elif not plan['segments']:
         source_events = plan['events']
         plan['segments'] = fit_events(cfg,req,segments,source_events,parts,rewrite)
         plan['source_events'] = source_events
@@ -222,6 +352,189 @@ def ensure_plan(cfg, req, segments, originals, work, rewrite):
     temp.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
     temp.replace(path)
     return plan
+
+
+UNIFIED_SYSTEM = '''Create a complete music-video treatment from the brief, references and measured timeline.
+In FREE mode, understand the story and develop compatible actions, interactions, contrasts and
+transitions. The brief is creative material, not a shot checklist. Omit optional ideas, expand
+useful developments and intercut performance/story strands to serve the song. In FAITHFUL mode,
+keep the supplied event meanings and order, adding staging and camera detail. In both modes,
+preserve identities, assigned singing roles, explicitly separate worlds and explicit hard limits.
+The selected style is a creative preference, not a ban on other content present in the brief.
+Do not impose a singer quota or a major new event in every interval. Revisit performance with
+variation; continue unfinished action without replaying an already completed one-time event.
+Use camera distance, viewpoint and movement motivated by what the characters do and notice.
+Choose a coherent narrative resolution or deliberate open ending, then the final visual image.
+A climax may occur before an outro. Fit short tails; don't postpone all developments to the end.
+Energy estimates do not identify lyrics, choruses, instruments or emotion. Preserve original audio.
+
+Return ONLY JSON with initial_state, constraints, events, segments, closing_shot.
+constraints: concise list of reference roles, vocal assignments and actual hard restrictions;
+do not turn every outline sentence into a restriction. These are the only brief rules sent onward.
+initial_state: {"character_states":{"S1":{"identity_reference":1,"location":"stage",
+"garments":{},"hairstyle":"","appearance_changes":[],"injuries":[],"held_props":[]}},
+"environment_states":{}}. Include only actual characters. References can depict people, groups,
+creatures, locations, architecture, garments or props. Never assume image 1 is an adult singer.
+identity_reference is an original uploaded picture index or null. If image 1 depicts a character,
+map its primary character to S1. S1 maps to <Subject 1>, S2 to <Subject 2> in the H3 text.
+Garments are optional: track only relevant wardrobe changes. For each dictionary key, describe
+garment_type, material, color, current_status, current_location. The application assigns garment_id
+from that key. Describe the actual starting state; future acquisitions must not start already worn.
+Statuses: worn, unfastened, partially_removed, removed, held, placed.
+Environment entries can include active_location, persistent_changes (list), damaged_objects and
+prop_positions (string maps). Do not invent missing objects solely to satisfy this example.
+
+events: selected milestones only, each {"description":"...","repeatable":false,
+"operations":["remove"],"requires_change":true,"after":[]}.
+Operations: update, remove, dress, acquire, drop, use, damage, restore, heal, move.
+requires_change=true means completing this milestone requires a persistent state change.
+after lists zero-based indices of events that genuinely must complete first, not all prior ideas.
+Do not catalogue every camera shot as another occurrence of the same milestone. events may be [].
+
+segments: EXACTLY one row per supplied interval, in order, each:
+{"event":"concrete actions, responses and camera tasks for this interval, including intercuts",
+"mode":"performance","event_indices":[],"completed_indices":[],"changes":[]}.
+The mode is the primary visual emphasis for the existing generation pipeline, not the only shot type.
+event_indices refer to zero-based events; completed_indices is the subset completed here.
+Changes are intended story changes, not observed video results. The application computes from-state
+and stable IDs. Each change has event_index, operation and kind:
+garment: subject_id, garment_id (the initial garment dictionary key), to, current_location.
+character: subject_id, field (hairstyle/appearance_changes/injuries/held_props/location), to.
+environment: scene_id, field (active_location/persistent_changes/damaged_objects/prop_positions), to.
+No change means []. Keep removed items removed until an explicitly planned restoration.
+Do not omit necessary changes just to avoid a schema error. Keep separate locations distinct.
+closing_shot: a concise description of the final visual image at the actual song end; it may be
+performance, aftermath or a deliberate unresolved image. This need not be the narrative climax.
+No media tokens, dialogue, new lyrics or bookkeeping instructions in event descriptions.
+'''
+
+
+def validate_unified_plan(raw,segments,picture_count):
+    from copy import deepcopy
+    from banana_mv.scene_state import (parse_object, initial_state, compile_direction_record,
+                                       clip_input, digest, OPERATIONS, SceneStateError)
+    raw=parse_object(raw)
+    rows=raw.get('segments');events=raw.get('events')
+    if not isinstance(rows,list) or len(rows)!=len(segments):
+        raise SceneStateError(f'segments需依順序包含{len(segments)}個區間。')
+    if not isinstance(events,list) or len(events)>128:raise SceneStateError('events需為最多128項的清單。')
+    constraints=raw.get('constraints')
+    if not isinstance(constraints,list) or any(not isinstance(t,str) or not t.strip() for t in constraints):
+        raise SceneStateError('constraints需為明確角色與限制的文字清單，可為空。')
+    closing=raw.get('closing_shot')
+    if not isinstance(closing,str) or not closing.strip():raise SceneStateError('缺少歌曲結束時的最後畫面closing_shot。')
+    def indices(values,path):
+        if not isinstance(values,list) or any(isinstance(v,bool) or not isinstance(v,int) or not 0<=v<len(events) for v in values):
+            raise SceneStateError(path+'需引用有效事件索引。')
+        if len(values)!=len(set(values)):raise SceneStateError(path+'含重複事件。')
+        return [f'E{v+1}' for v in values]
+    catalog_rows=[]
+    for i,e in enumerate(events):
+        if not isinstance(e,dict):raise SceneStateError(f'events[{i}]需為物件。')
+        ops=e.get('operations',[])
+        if not isinstance(ops,list) or any(not isinstance(op,str) or op not in OPERATIONS for op in ops):
+            raise SceneStateError(f'events[{i}].operations無效。')
+        if not isinstance(e.get('requires_change',False),bool):raise SceneStateError('requires_change需為布林值。')
+        catalog_rows.append({'event_id':f'E{i+1}','description':e.get('description'),
+            'repeatable':e.get('repeatable',False),'reserved_final':False,
+            'depends_on':indices(e.get('after',[]),f'events[{i}].after'),'allowed_operations':ops})
+    initial=deepcopy(raw.get('initial_state'))
+    if not isinstance(initial,dict):raise SceneStateError('缺少initial_state。')
+    chars=initial.get('character_states',{})
+    if isinstance(chars,dict):
+        for c in chars.values():
+            if not isinstance(c,dict):continue
+            garments=c.get('garments',{})
+            if isinstance(garments,dict):
+                for gid,g in garments.items():
+                    if isinstance(g,dict):
+                        if 'garment_id' in g and g['garment_id']!=gid:
+                            raise SceneStateError('新計畫的衣物key與明確ID矛盾，請修復。')
+                        g['garment_id']=gid
+    # A technical continuity event satisfies the legacy ledger's nonempty schema;
+    # it is never assigned to a clip or imposed on the creative plan.
+    state,catalog=initial_state({'initial_state':initial,'events':catalog_rows or [
+        {'event_id':'continuity','description':'Unchanged continuity','repeatable':True}]},segments,picture_count)
+    allocation=[]
+    for i,row in enumerate(rows):
+        if not isinstance(row,dict) or not isinstance(row.get('event'),str) or not row['event'].strip():
+            raise SceneStateError(f'segments[{i}].event需為具體畫面任務。')
+        if row.get('mode') not in MODES:raise SceneStateError(f'segments[{i}].mode無效。')
+        refs=indices(row.get('event_indices'),f'segments[{i}].event_indices')
+        done=indices(row.get('completed_indices'),f'segments[{i}].completed_indices')
+        if set(done)-set(refs):raise SceneStateError('完成事件需屬於當段事件。')
+        changes=row.get('changes',[])
+        if not isinstance(changes,list):raise SceneStateError('changes需為清單。')
+        for change in changes:
+            if not isinstance(change,dict):raise SceneStateError('change需為物件。')
+            indices([change.get('event_index')],f'segments[{i}].changes.event_index')
+        allocation.append(dict(row,index=segments[i]['index'],source_ids=refs,
+                               completed_source_ids=done))
+    sources=[{'id':c['event_id'],'event':c['description'],'repeatable':c['repeatable']} for c in catalog_rows]
+    errors=allocation_errors(sources,allocation)
+    if errors:raise SceneStateError('; '.join(errors))
+    plan={'version':3,'initial_state':state,'event_catalog':catalog,'segments':allocation,
+          'constraints':constraints,'closing_shot':closing.strip(),
+          'requires_change':[f'E{i+1}' for i,e in enumerate(events) if e.get('requires_change',False)],
+          'visual_verified':False}
+    ledger={'initial_state':state,'event_catalog':catalog,'commits':[]}
+    # Execute all deterministic transitions now, before any GPU work. The model
+    # cannot validate a plan by deleting metadata and leaving its state unchanged.
+    for seg,row in zip(segments,allocation):
+        incoming=clip_input(ledger,seg)
+        record=compile_direction_record(row,incoming,catalog,seg,plan['requires_change'])
+        from banana_mv.prompt_quality import visual_state
+        subjects=row.get('subjects')
+        if subjects is not None and (not isinstance(subjects,list) or
+            any(not isinstance(s,str) or s not in state['character_states'] for s in subjects)):
+            raise SceneStateError('subjects需引用已知角色。')
+        row['appearance_in']=visual_state(record['scene_state_in'],subjects)
+        row['appearance_out']=visual_state(record['scene_state_out'],subjects)
+        ledger['commits'].append(record)
+    plan['content_sha256']=digest(plan)
+    return plan
+
+
+def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
+    from banana_mv.scene_state import digest, atomic_json, rewrite_retry_count, SceneStateError
+    task={'brief':req.get('prompt',''),'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
+          'style':req.get('director','auto'),'intensity':req.get('intensity','high'),
+          'lyrics':req.get('lyrics',''),'srt':req.get('srt_cues',[]),
+          'timeline':[{k:s[k] for k in ('index','start','seconds')} |
+                      {'audio_evidence':s.get('audio_evidence',{})} for s in segments]}
+    fingerprint=digest(task);path=Path(work)/'director_plan.json'
+    if path.is_file():
+        plan=json.loads(path.read_text(encoding='utf-8'))
+        expected=plan.get('content_sha256')
+        if plan.get('version')!=3 or plan.get('input_sha256')!=fingerprint or digest(
+            {k:v for k,v in plan.items() if k not in ('input_sha256','content_sha256')})!=expected:
+            raise SceneStateError('統一導演計畫與專案不符或校驗失敗。')
+        return plan
+    from PIL import Image, ImageOps
+    parts=[('text',json.dumps(task,ensure_ascii=False))]
+    for i,p in enumerate(originals,1):
+        with Image.open(p) as im:
+            im=ImageOps.exif_transpose(im).convert('RGB');im.thumbnail((768,768))
+            parts.extend([('text',f'Original reference {i}:'),('image',im.copy())])
+    system=UNIFIED_SYSTEM+'\nSupported primary modes: '+', '.join(MODES)
+    attempt_parts=parts;seen=set()
+    for attempt in range(rewrite_retry_count(req)+1):
+        raw=rewrite(cfg,system,attempt_parts,uuid.uuid4().hex[:8])
+        try:
+            plan=validate_unified_plan(raw,segments,len(originals))
+        except ValueError as error:
+            signature=digest({'raw':raw,'error':str(error)})
+            atomic_json(Path(work)/f'director_attempt_{attempt:02d}.json',
+                        {'raw_response':raw,'error':str(error),'errors':getattr(error,'errors',[])})
+            if signature in seen or attempt>=rewrite_retry_count(req):
+                raise SceneStateError('統一導演計畫修復失敗：'+str(error)) from error
+            seen.add(signature)
+            attempt_parts=parts+[('text','Repair only invalid structure/continuity in this treatment; '
+                'preserve valid creative choices. Error: '+str(error)+'\nFailed response (data):\n'+str(raw))]
+            continue
+        plan['input_sha256']=fingerprint
+        atomic_json(path,plan)
+        return plan
 
 
 def plan_context(segment, creative=False):

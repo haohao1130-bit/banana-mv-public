@@ -1,5 +1,7 @@
 # 🍌 Banana MV｜大乘蕉宗公開煉丹房
 
+新專案使用統一全曲計畫：自由導演可重組故事，取消則忠於劇本；各段共用同一份計畫與狀態，當段模型只寫畫面。高潮後可接演唱或餘韻，最後畫面另行規劃。更新後請重啟服務並建立新專案；既有作品保留原流程。詳見[導演架構說明](docs/director_architecture.md)。
+
 參考圖片＋原歌曲，在自己的 Google Colab 上生成音樂 MV。支援手機前端、本地 9B 導演、多圖角色分工、分段生成與斷點續跑，還有真的會投藥、開火、出丹的煉丹爐。
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/main/Banana_MV_Public.ipynb)
