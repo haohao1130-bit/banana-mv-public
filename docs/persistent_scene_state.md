@@ -8,6 +8,52 @@
 
 啟用時，原有全曲事件規劃（若有）之後，會多一次9B初始狀態建模。每段仍由原本本地改寫模型同時產出 H3 提示詞和狀態變更，不另設語意審查模型。格式、媒體引用或狀態轉換錯誤最多修復一次；仍錯誤時保存失敗資料並停止，可續跑，不以失去狀態的整首控制詞偷偷回退。
 
+## 初始化格式與診斷修正
+
+初始化只接受一個根 JSON 物件，根層必須有 `initial_state` 和 `events`。`events` 不是衣物清單，也不是 `event_catalog` 對照表；必須是長度 1–128 的物件陣列，不能放進 `initial_state`。普通演唱 MV 可以只列使用者指定演唱的可重複事件，無須增加故事、武打或服裝變化。事件數不等於片段數。
+
+以下是通過實際驗證器的最小範例；角色與場景可依需求填入，完整欄位見下方資料結構：
+
+```json
+{
+  "initial_state": {"character_states": {}, "environment_states": {}},
+  "events": [{
+    "event_id": "E1",
+    "description": "Perform the song requested by the user",
+    "repeatable": true,
+    "reserved_final": false,
+    "depends_on": [],
+    "allowed_operations": ["update"]
+  }]
+}
+```
+
+事件 Schema 與程式的 `INITIAL_EVENT_SCHEMA`、`event_catalog()` 一致：
+
+| 欄位 | 驗證要求 | 省略時 |
+| --- | --- | --- |
+| `event_id` | 1–2000 字元非空白字串，全部事件中唯一 | 必填 |
+| `description` | 1–2000 字元非空白字串 | 必填 |
+| `repeatable` | JSON boolean | `false` |
+| `reserved_final` | JSON boolean | `false` |
+| `depends_on` | 無重複字串陣列，最多256項，每個ID必須存在且不能有循環 | `[]` |
+| `allowed_operations` | 無重複字串陣列，最多256項；只能用 update/remove/dress/acquire/drop/use/damage/restore/heal/move | `[]` |
+
+9B 提示詞要求輸出全部六個事件欄位；驗證器仍沿用舊版對可選欄位的預設值。沒有放寬空事件、未知依賴、循環或不存在的圖片引用。
+
+每次新的初始化／格式修復都會在專案目錄保存：
+
+- `scene_state_init_debug.json`：最近一次初始化的所有嘗試與最終狀態。
+- `scene_state_init_<run_id>_00.json` 和 `_01.json`：每次原始回應的獨立歷史紀錄；重試或續跑不覆蓋以前的run。
+- 紀錄包含 `raw_response`（完整原文）、`parsed_response`、根層 `events`、`events_present`、`nested_events`、`schema_validation_errors`、`stage` 和 `status`。
+- 驗證錯誤帶具體 `path/code/message`，例如 `$.events[0].description` 缺失、`$.events` 為空或誤放在 `$.initial_state.events`。JSON 語法錯誤包含行／欄位置。具體錯誤亦寫入服務日誌，不把完整素材／提示詞印到日誌。
+
+解析支援標準 JSON、BOM、常見單一 Markdown JSON 包裝和 `<think>` 包裝；不執行文字、不接受多份有歧義的JSON區塊或 NaN/Infinity。第一次格式失敗後，將**原始失敗回應和具體錯誤**連同原始使用者需求傳給9B，僅進行一次格式修復。修復不得改寫故事；對已解析出來的既有事件，會逐項比對已合法的ID、描述、旗標與操作，防止用另一段事件替換格式錯誤資料。原文完全無法解析時，故事保留依靠修復提示詞，並非額外語意模型驗證。
+
+第二次仍失敗就回報真實錯誤及診斷檔名，不建立成功帳本、不開始Clip流程；生成服務連線錯誤只記錄並報錯，不偽裝成格式重試。初始化本身不刪除、搬移或清空既有影片。舊版未記錄的初始化原文無法事後還原，不能由籠統的「需有1–128個事件」訊息斷言是空陣列、缺失、型別錯誤或放錯層。
+
+更新後須載入新版 Python 程式。既有 Colab bootstrap 會沿用執行階段的舊程式，建議新建執行階段後重跑①②③；保存在Drive的專案可續跑。這次無須修改H3參數、Face Lock、音訊標籤或分段設定。
+
 ## 資料結構
 
 `PersistentSceneState` 是具名結構：

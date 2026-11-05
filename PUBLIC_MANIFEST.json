@@ -64,7 +64,7 @@
     },
     {
       "path": "banana_mv/scene_state.py",
-      "sha256": "d46f6ab6b7228bdf6f8d40bcd005319e92e5f54aa74ee2669da78a88fd45516f"
+      "sha256": "7a32d0f213ba2539f87536a6144978f0a6eeb6e2906847bec1a22c6b71b438bd"
     },
     {
       "path": "banana_mv/server.py",
@@ -88,7 +88,7 @@
     },
     {
       "path": "docs/persistent_scene_state.md",
-      "sha256": "067e8cac9f999075f3a45602a43bde8fc0755fff95c91796df118f8ebf0ec2f4"
+      "sha256": "fd61bbb8a6007bda6096500e7ad88e7fd70c6871fc3d1e29dad50c442d3a4ae1"
     },
     {
       "path": "tests/check_ui.cjs",
@@ -137,6 +137,10 @@
     {
       "path": "tests/test_scene_state.py",
       "sha256": "f8511b0ba83a5741f2d1f9f3748e8f036fbfa407fd340951039ad7ce801eceb0"
+    },
+    {
+      "path": "tests/test_scene_state_init.py",
+      "sha256": "d723897ffa5ec206e01933739a977ef104234e99670181dba04140289f478ab2"
     },
     {
       "path": "tests/test_server.py",
