@@ -72,11 +72,11 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "494d231459e7d81e8500c3fd107890b7f37f93d4d5e66d133b758e8448a0d1df"
+      "sha256": "b075d449ab7057fb7195fb7c1d8ae1dc29af952af951c783c4b3ba1a8688fe74"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "80dc27e20c6ac1841a00e78d4b9dfb5ccbda8f6db5fbd4af07b8b3e62e5d3496"
+      "sha256": "a92b72c42d83357edc20dad807ecc7e54976c4315c0a284d752b934f1397c3ce"
     },
     {
       "path": "tests/test_audio_analysis.py",

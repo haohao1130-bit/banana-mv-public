@@ -8,6 +8,9 @@ class Element{
   setAttribute(key,value){this[key]=value;}
   addEventListener(name,fn){this.events[name]=fn;}
   focus(){this.focused=true;}
+  showModal(){this.open=true;}
+  close(){this.open=false;this.events.close?.();}
+  getBoundingClientRect(){return {left:20,right:680,top:20,bottom:800};}
   select(){this.selected=true;}
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
@@ -30,6 +33,15 @@ vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
+  const originalPrompt=els.prompt.value;
+  assert(!els['help-dialog'].open);els['open-help'].onclick();assert.equal(els['help-dialog'].open,true);
+  els['help-dialog'].scrollTop=42;els['open-help'].onclick();assert.equal(els['help-dialog'].scrollTop,42);
+  els['help-dialog'].events.click({target:els['help-dialog'],clientX:100,clientY:100});assert.equal(els['help-dialog'].open,true);
+  els['help-dialog'].events.click({target:els['close-help'],clientX:0,clientY:0});assert.equal(els['help-dialog'].open,true);
+  els['help-dialog'].events.click({target:els['help-dialog'],clientX:0,clientY:0});assert.equal(els['help-dialog'].open,false);assert(els['open-help'].focused);
+  els['open-help'].onclick();assert.equal(els['help-dialog'].scrollTop,0);els['close-help'].onclick();assert.equal(els['help-dialog'].open,false);
+  assert.equal(els.prompt.value,originalPrompt);assert.equal(posts.length,0);
+
   for(const [job,state] of [
     [{status:'analyzing_audio'},'planning'],[{status:'planning_story'},'planning'],
     [{status:'running',segments:[{status:'rewriting'}]},'planning'],
