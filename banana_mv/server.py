@@ -25,7 +25,7 @@ from banana_mv.lyrics_reference import (normalize_references, clip_reference, cl
 from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_input, state_context,
                                    plan_clip, save_clip, commit_clip, cached_clip, reconcile_history,
                                    final_context, CLIP_SYSTEM, parse_object as parse_scene_object,
-                                   atomic_json as write_scene_json, rewrite_retry_count, digest as scene_digest)
+                                   atomic_json as write_scene_json, update_scene_memory, rewrite_retry_count, digest as scene_digest)
 from banana_mv.song_context import segment_context
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
@@ -96,6 +96,9 @@ def graph_options(req, seconds, segment=None):
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
     director, mode = director_prompt(req, segment['seconds'], segment)
+    if scene_input is not None:
+        director=director.replace('Preserve costumes, locations and source audio; do not invent lyrics.',
+                                  'Preserve current scene-state appearance, locations and source audio; follow explicit appearance changes and do not invent lyrics.')
     segment['director_mode'] = mode
     originals = original if isinstance(original, list) else [original]
     from banana_mv.core import normalize_mv_prompt, map_image_mentions, MediaReferenceError
@@ -201,6 +204,8 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
             if scene_input is not None:
                 record=plan_clip(raw,scene_input,event_catalog,segment)
                 rewritten=normalize_mv_prompt(record['clip_prompt'],picture_count)
+                record=update_scene_memory(cfg,req,segment,scene_input,event_catalog,record,
+                                           backend.rewrite_local,progress=progress)
                 segment['scene_state_debug']=record
             else:
                 rewritten=normalize_mv_prompt(raw,picture_count)

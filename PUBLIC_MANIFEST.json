@@ -60,15 +60,15 @@
     },
     {
       "path": "banana_mv/prompt_quality.py",
-      "sha256": "61c7acd5561bed22fb4dd442f8f7accf132a1c586c47c5db92bb33672f23e033"
+      "sha256": "dd54c13a8602855f7f792696adc06d1f7bb5ad33a43249e611b5753c12652dca"
     },
     {
       "path": "banana_mv/scene_state.py",
-      "sha256": "fab144e1c97fc6fd4269a98f03773965e8bc68299d64a9397c31cf0aec808ca1"
+      "sha256": "a41a38a821166fc77f7e8a93b6827f159e12be8fcaafe6c30d23a459d89866f4"
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "0b6841e7b6203e10975d75d13812648abbf6d5560c3142a68915e1c665f52a63"
+      "sha256": "c0aa3c3a81cf4d12f8f8d18c794acabf025670ea10273113126c672bc06db5a7"
     },
     {
       "path": "banana_mv/services.py",
@@ -84,11 +84,11 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "40fb28fc494601ed6429f6ccaf38069b639db5e2b8eb99e81db9cf1beba2ca24"
+      "sha256": "eb3ce487c5451f2dda7b4660284640b9262ed4de602ca79b5b9ebd4804b4f736"
     },
     {
       "path": "docs/persistent_scene_state.md",
-      "sha256": "8eeb01806b1abb24b611e6fb6e223c6abd1c9b72f4744725a18aab7145402168"
+      "sha256": "010e123ddfb506efaf5ab221fd87ccdb6e2c6f9f64071cc64721aa274a2d0701"
     },
     {
       "path": "tests/check_ui.cjs",
@@ -136,7 +136,7 @@
     },
     {
       "path": "tests/test_scene_state.py",
-      "sha256": "27cb9f8576ee1c417fe4efea8b857024e0ab18c479bab5ea3cac1221a453b700"
+      "sha256": "df8fad4be6740d59feec7341f7ea212cce7cbe4e3c9fc2d51946b4047cc0563f"
     },
     {
       "path": "tests/test_scene_state_init.py",

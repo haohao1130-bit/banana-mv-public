@@ -83,7 +83,8 @@ Recurring performance can be repeatable; a one-time action is NOT repeatable jus
 Allowed operation names: update, remove, dress, acquire, drop, use, damage, restore, heal, move.
 Grant dress/restore/heal ONLY to events explicitly requested to restore a prior state. Removal never
 implies redressing. Do not reserve all intermediate changes for the finale; reserved_final is only
-for full-song final resolution/terminal actions. Dependencies must reference other event IDs without cycles.
+for full-song final resolution/terminal actions. If the brief offers alternative endings, keep them as
+candidates rather than requiring all alternatives to happen. Dependencies must reference other event IDs without cycles.
 Use the full brief, measured timeline, lyric references and existing event allocation as material.
 Preserve user priority, identities and vocal/scene roles. No fixed cast, genre or camera setup.
 Initial state and all event changes are planned, not visually verified.
@@ -133,8 +134,32 @@ can become worn ONLY via a dress operation on an event explicitly authorized for
 The application computes canonical scene_state_out and remaining events from these deltas. Do not emit
 or replace full snapshots, pending lists or timeline values. Keep clip_prompt compatible with the existing
 H3 media tags and audio rules. Do not copy the whole-song outline or initial costumes into the clip.
-On final clips, finish the reserved final events. Non-final clips may end their local shot without a finale.
+On the final clip, give the MV a deliberate, coherent closing shot that fits the source song ending and
+the user's required final scene/vocal roles. Reserved final events are candidate options, not a checklist:
+choose a compatible subset; unused alternatives may be omitted without errors or warnings. Do not combine
+mutually exclusive endings or fabricate completion to empty the list. A closing shot may finish the music
+video without completing every plot idea or optional narrative prerequisite. Non-final clips still cannot
+consume reserved final events. Physical from/to state must remain truthful even for a closing event.
 ''' + RULES
+
+MEMORY_SYSTEM = '''Record intended state changes from the supplied CURRENT clip_prompt, not from the
+whole-song brief or future event descriptions. This is a compact memory-writing step, not a creative
+review or video analysis. Never rewrite the prompt or invent actions that it does not explicitly stage.
+Return ONE JSON object with planned_events, completed_events, state_transitions ONLY.
+Use only the supplied draft_event_ids. Preserve event identity. Mark a milestone complete when its
+explicit result occurs in this clip; don't keep repeating a finished milestone because incidental camera
+or dance wording differs. If an action is only started, keep its event unfinished and record the actual
+intermediate state. If nothing changes, return empty transitions rather than fabricate change.
+Use the exact stable subject/garment/scene IDs and exact from values in scene_state_in.
+A garment change has kind, subject_id, garment_id, from, to, current_location, event_id, operation.
+Valid garment statuses: worn, unfastened, partially_removed, removed, held, placed. If the script says a
+coat is taken off and placed on a chair, it is placed at that chair, not still worn; do not replay removal.
+Other character fields are hairstyle, appearance_changes, injuries, held_props, location. Environment
+fields are active_location, persistent_changes, damaged_objects, prop_positions. Each delta has kind,
+subject_id or scene_id, field, from, to, event_id, operation, following the provided state contract.
+Do not infer undressing, redressing, healing, restoration or acquiring props from a cut or camera move.
+Use only operations authorized by the event catalog. Preserve source-song and character roles.
+Only record the prompt's intended changes, never claim they were visually observed.'''
 
 
 class SceneStateError(ValueError):
@@ -179,6 +204,7 @@ def parse_object(raw,expected=None):
             if not objects and not invalid and non_objects:
                 raise SceneStateError('狀態資料必須是 JSON 物件；實際為 '+', '.join(non_objects)+'。')
             contracts={'clip':{'clip_prompt','planned_events','completed_events','state_transitions'},
+                       'memory':{'planned_events','completed_events','state_transitions'},
                        'initial':{'initial_state','events'}}
             required=contracts.get(expected,set())
             complete=[value for value in objects if required and required<=set(value)]
@@ -427,7 +453,8 @@ def plan_clip(raw,state,catalog,segment):
             raise SceneStateError(message,[{'path':f'$.planned_events[{index}]','code':'completed_event_replay',
                                            'event_id':eid,'description':event['description'],'message':message}])
         if event['reserved_final'] and not is_final:raise SceneStateError('非最終段不得消耗保留終局事件。')
-        if set(event['depends_on'])-available:raise SceneStateError('事件的前置條件尚未完成。')
+        if set(event['depends_on'])-available and not (is_final and event['reserved_final']):
+            raise SceneStateError('事件的前置條件尚未完成。')
         if eid in done:available.add(eid)
     if set(done)-set(planned):raise SceneStateError('完成事件必須是本段規劃的事件。')
     for change in changes:
@@ -472,13 +499,13 @@ def plan_clip(raw,state,catalog,segment):
     n['current_event']=next((e for e in reversed(planned) if e not in done),None)
     n['pending_events']=[e for e,v in catalog.items() if e not in n['completed_events'] and not v['reserved_final']]
     n['reserved_final_events']=[e for e,v in catalog.items() if e not in n['completed_events'] and v['reserved_final']]
-    if is_final and n['reserved_final_events']:raise SceneStateError('最終段尚未完成保留終局事件。')
     # Reject any model-supplied snapshot which differs; never accept a silent replacement/reset.
     if 'scene_state_out' in raw and raw['scene_state_out']!=out:raise SceneStateError('scene_state_out 與結構化變更不符。')
     if 'pending_events' in raw and raw['pending_events']!=n['pending_events']:raise SceneStateError('pending_events 與事件進度不符。')
     return {'version':VERSION,'clip_index':segment['index'],'visual_verified':False,'status':'planned',
             'scene_state_in':deepcopy(state),'planned_events':planned,'state_transitions':deepcopy(changes),
             'completed_events':done,'pending_events':n['pending_events'], 'scene_state_out':out,
+            'unused_final_options':list(n['reserved_final_events']) if is_final else [],
             'input_sha256':digest(state),'output_sha256':digest(out),'clip_prompt':raw['clip_prompt'].strip()}
 
 
@@ -492,9 +519,58 @@ def state_context(state,catalog,continuation=False):
     return RULES+'\nSTRUCTURED SCENE INPUT (planned, not visually verified):\n'+json.dumps(
         {'scene_state_in':state,'event_catalog':selectable,
          'completed_history_only_do_not_replay':history,'reserved_future_only_do_not_execute':reserved,
+         'ending_direction':('FINAL source interval: plan a coherent visual closing shot at the song ending; '
+                             'respect the user final scene and vocal roles. Reserved IDs are options, not a checklist; '
+                             'unused alternatives may be omitted. Do not combine incompatible endings.' if is_final else
+                             'NON-FINAL interval: keep whole-song closing options reserved.'),
          'continuation_without_new_milestone':{'planned_events':[],'completed_events':[],'state_transitions':[]},
          'uploaded_original_to_connected_picture':{str(c['identity_reference']):f'<Picture {c["identity_reference"]+int(continuation)}>'
             for c in state['character_states'].values() if c['identity_reference'] is not None}},ensure_ascii=False)
+
+
+def needs_memory_update(record,catalog):
+    # Long prompt writing can omit all deltas despite scripting a change. Extract memory separately
+    # for mutation-capable milestones; ordinary performance-only events incur no extra inference.
+    mutable={'remove','dress','acquire','drop','damage','restore','heal','move'}
+    return not record['state_transitions'] and any(
+        not catalog[eid]['repeatable'] and mutable.intersection(catalog[eid]['allowed_operations'])
+        for eid in record['planned_events'])
+
+
+def update_scene_memory(cfg,req,segment,state,catalog,record,rewrite,*,progress=None):
+    if not needs_memory_update(record,catalog):return record
+    draft_ids=set(record['planned_events']);attempts=[];retries=rewrite_retry_count(req)
+    task={'clip_prompt':record['clip_prompt'],'draft_event_ids':record['planned_events'],
+          'draft_completed_events':record['completed_events'],'scene_state_in':state,
+          'event_catalog':{eid:catalog[eid] for eid in record['planned_events']}}
+    parts=[('text',json.dumps(task,ensure_ascii=False))]
+    for attempt in range(retries+1):
+        raw=None
+        try:
+            if progress:progress({'stage':'rewriting','phase':'memory','clip_index':segment['index'],
+                                  'attempt':attempt+1,'max_attempts':retries+1})
+            raw=rewrite(cfg,MEMORY_SYSTEM,parts,uuid.uuid4().hex[:8])
+            parsed=parse_object(raw,expected='memory')
+            if set(parsed)-{'planned_events','completed_events','state_transitions'}:
+                raise SceneStateError('記憶更新只接受事件清單與狀態變化，不得改寫提示詞。')
+            if not set(string_list(parsed.get('planned_events',[])))<=draft_ids:
+                raise SceneStateError('記憶更新不得加入本段正文以外的新事件。')
+            updated=plan_clip(dict(parsed,clip_prompt=record['clip_prompt']),state,catalog,segment)
+            attempts.append({'attempt':attempt,'raw_response':raw,'status':'validated'})
+            updated['memory_update']={'status':'updated' if updated['state_transitions'] else 'unchanged',
+                                      'attempts':attempts,'visual_verified':False}
+            return updated
+        except Exception as error:
+            attempts.append({'attempt':attempt,'raw_response':raw,'error':str(error),'status':'failed'})
+            if attempt>=retries or raw is None:break
+            parts=[('text',json.dumps(task,ensure_ascii=False)),('text','Repair only the memory JSON using the '
+                'same clip text and input state. Failed response: '+json.dumps(raw,ensure_ascii=False)+'\nError: '+str(error))]
+    # Do not invent missing deltas or claim success, and do not kill video generation with a second
+    # creative judge. The explicit warning remains in the clip debug/UI for user review.
+    record=deepcopy(record)
+    record['memory_update']={'status':'failed','attempts':attempts,'visual_verified':False,
+                             'message':'本段狀態記錄未成功，沿用前段規劃狀態，請查看Debug。'}
+    return record
 
 
 def save_clip(work,record):
@@ -630,11 +706,24 @@ def reconcile_history(job,work,ledger,is_valid):
 
 
 def final_context(record):
-    """Only this clip's input/delta/output reaches H3; future event descriptions stay with 9B."""
-    return RULES+'\nCURRENT CLIP PLANNED STATE (no visual verification):\n'+json.dumps({
-        'scene_state_in':{k:v for k,v in record['scene_state_in'].items() if k!='narrative_states'},
-        'planned_events':record['planned_events'],'state_transitions':record['state_transitions'],
-        'scene_state_out':{k:v for k,v in record['scene_state_out'].items() if k!='narrative_states'}},ensure_ascii=False)
+    """H3 gets appearance for this clip, not a second director-output contract or old wardrobe history."""
+    def appearance(state):
+        chars={}
+        for sid,c in state['character_states'].items():
+            chars[sid]={'wearing':[c['garments'][gid] for gid in c['current_outfit']],
+                        'not_wearing':[{'garment_id':gid,'location':c['garments'][gid]['current_location']}
+                                       for gid in c['removed_garments']],
+                        **{key:c[key] for key in ('hairstyle','appearance_changes','injuries','held_props','location')}}
+        return {'characters':chars,'environments':state['environment_states']}
+    return ('[BANANA_PERSISTENT_SCENE_STATE_V1]\nCURRENT CLIP APPEARANCE CONTINUITY:\n'
+            'Original reference images define facial identity. Use the following current appearance; '
+            'do not restore an initial outfit or removed prop from the reference image. '
+            'START is before the scripted changes; END is after them, not a second reset. '
+            'Items under not_wearing remain off the character unless a scripted change explicitly restores them.\n'+
+            json.dumps({'clip_start':appearance(record['scene_state_in']),
+                        'scripted_changes':record['state_transitions'],
+                        'clip_end':appearance(record['scene_state_out'])},ensure_ascii=False)+
+            '\n[/BANANA_PERSISTENT_SCENE_STATE_V1]')
 
 
 def cached_clip(work,ledger,segment):

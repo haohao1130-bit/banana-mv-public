@@ -49,6 +49,94 @@ def garment(gid,before='worn',after='removed',eid=None,operation='remove'):
 
 
 class SceneStateTests(unittest.TestCase):
+    def test_explicit_coat_change_in_prose_is_written_to_memory_when_writer_omits_deltas(self):
+        from PIL import Image
+        from banana_mv import server
+        ledger=ledger_for();segs=segments();incoming=clip_input(ledger,segs[0]);original=deepcopy(incoming)
+        draft=response(['coat'],prompt='The performer removes the coat and hangs it on the chair. The other garments remain worn.')
+        draft['completed_events']=[]
+        metadata={'planned_events':['coat'],'completed_events':['coat'],
+                  'state_transitions':[dict(garment('coat',after='placed'),current_location='chair_back')]}
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);image=root/'ref.png';Image.new('RGB',(16,16)).save(image)
+            guide=root/'guide.md';guide.write_text('H3 guide')
+            req={'prompt':'The performer removes the coat, then later continues the performance.',
+                 'rewrite':True,'optimizer_version':1,'scene_state_version':1}
+            progress=[]
+            with patch.object(server.backend,'rewrite_local',side_effect=[json.dumps(draft),json.dumps(metadata)]) as model:
+                prompt=server.local_prompt({'guides':{'ref':str(guide)}},req,segs[0],[image],None,
+                                          scene_input=incoming,event_catalog=ledger['event_catalog'],progress=progress.append)
+            self.assertEqual(model.call_count,2);self.assertIn('compact memory-writing step',model.call_args.args[1])
+            self.assertEqual(progress[-1]['phase'],'memory');self.assertEqual(incoming,original)
+            record=segs[0]['scene_state_debug'];self.assertEqual(record['memory_update']['status'],'updated')
+            self.assertEqual(record['scene_state_out']['character_states']['S1']['garments']['coat']['current_status'],'placed')
+            self.assertEqual(record['scene_state_out']['character_states']['S1']['garments']['coat']['current_location'],'chair_back')
+            self.assertIn('coat',record['completed_events']);self.assertIn(draft['clip_prompt'],prompt)
+            self.assertNotIn('Return structured event IDs',prompt.split('CURRENT CLIP APPEARANCE CONTINUITY:')[-1])
+            commit_clip(root,ledger,record);next_state=clip_input(ledger,segs[1])
+            self.assertNotIn('coat',next_state['character_states']['S1']['current_outfit'])
+            self.assertIn('coat',next_state['character_states']['S1']['removed_garments'])
+            self.assertNotIn('Preserve costumes, locations',prompt)
+
+    def test_memory_failure_is_visible_without_fabricating_changes_or_killing_generation(self):
+        from banana_mv.scene_state import update_scene_memory
+        ledger=ledger_for();seg=segments()[0];state=clip_input(ledger,seg)
+        record=plan_clip(dict(response(['coat']),completed_events=[]),state,ledger['event_catalog'],seg)
+        with patch('banana_mv.services.rewrite_local',return_value='bad JSON') as model:
+            result=update_scene_memory({}, {'rewrite_retries':0},seg,state,ledger['event_catalog'],record,model)
+        self.assertEqual(model.call_count,1);self.assertEqual(result['memory_update']['status'],'failed')
+        self.assertEqual(result['scene_state_out'],record['scene_state_out'])
+        self.assertEqual(result['completed_events'],[]);self.assertEqual(result['state_transitions'],[])
+
+    def test_memory_writer_is_generic_for_props_and_environment_damage(self):
+        from banana_mv.scene_state import update_scene_memory
+        from unittest.mock import Mock
+        raw=fixture();raw['events']=[event('take','take the key',ops=['acquire']),
+                                     event('tip','knock over the table',ops=['damage'])]
+        ledger=ledger_for(raw);seg=segments()[0];state=clip_input(ledger,seg)
+        record=plan_clip(dict(response(['take','tip'],prompt='The character takes a key and knocks over the table.'),
+                              completed_events=[]),state,ledger['event_catalog'],seg)
+        metadata={'planned_events':['take','tip'],'completed_events':['take','tip'],'state_transitions':[
+            {'kind':'character','subject_id':'S1','field':'held_props','from':[],'to':['key'],
+             'event_id':'take','operation':'acquire'},
+            {'kind':'environment','scene_id':'stage','field':'damaged_objects','from':{'table':'intact'},
+             'to':{'table':'toppled'},'event_id':'tip','operation':'damage'}]}
+        model=Mock(return_value=json.dumps(metadata))
+        result=update_scene_memory({}, {},seg,state,ledger['event_catalog'],record,model)
+        self.assertEqual(result['scene_state_out']['character_states']['S1']['held_props'],['key'])
+        self.assertEqual(result['scene_state_out']['environment_states']['stage']['damaged_objects'],{'table':'toppled'})
+        self.assertEqual(result['scene_state_out']['character_states']['S1']['current_outfit'],state['character_states']['S1']['current_outfit'])
+
+    def test_final_clip_can_close_without_consuming_all_options_and_preserves_five_commits(self):
+        from PIL import Image
+        from banana_mv import server
+        raw=fixture();raw['events']=[event('sing','ongoing song performance',repeat=True),
+            event('optional_scene','optional audience reaction'),
+            event('end_stage','final stage close-up',final=True,deps=['optional_scene']),
+            event('end_lights','alternative final lights',final=True)]
+        segs=segments(6);ledger=ledger_for(raw,segs=segs)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);image=root/'ref.png';Image.new('RGB',(16,16)).save(image)
+            guide=root/'guide.md';guide.write_text('H3 guide')
+            for seg in segs[:5]:
+                commit_clip(root,ledger,plan_clip(response(['sing']),clip_input(ledger,seg),ledger['event_catalog'],seg))
+            previous=deepcopy(ledger['commits']);incoming=clip_input(ledger,segs[-1])
+            req={'prompt':'Close the MV on the singer finishing the source song. Other ending ideas are optional.',
+                 'rewrite':True,'optimizer_version':1,'scene_state_version':1}
+            ending=response(['end_stage'],prompt='The singer finishes the final source-audio phrase in a steady close-up; hold the final expression.')
+            with patch.object(server.backend,'rewrite_local',return_value=json.dumps(ending)) as model:
+                server.local_prompt({'guides':{'ref':str(guide)}},req,segs[-1],[image],None,
+                                    scene_input=incoming,event_catalog=ledger['event_catalog'])
+            self.assertEqual(model.call_count,1)
+            self.assertIn('deliberate, coherent closing shot',model.call_args.args[1])
+            record=segs[-1]['scene_state_debug']
+            self.assertEqual(record['unused_final_options'],['end_lights'])
+            self.assertNotIn('end_lights',record['completed_events'])
+            self.assertEqual(record.get('warnings',[]),[])
+            commit_clip(root,ledger,record)
+            self.assertEqual(ledger['commits'][:5],previous);self.assertEqual(len(ledger['commits']),6)
+            self.assertEqual(cached_clip(root,ledger,segs[-1])['output_sha256'],record['output_sha256'])
+
     def test_clip_retry_count_progress_and_resume_validation_are_bounded(self):
         from PIL import Image
         from banana_mv import server
@@ -274,8 +362,11 @@ class SceneStateTests(unittest.TestCase):
         with self.assertRaisesRegex(SceneStateError,'前置'):
             plan_clip(response(['vest']),state,ledger['event_catalog'],segments()[3])
         state['timeline'].update(current_clip_index=4,current_start_time=40,current_end_time=50)
-        with self.assertRaisesRegex(SceneStateError,'最終段'):
-            plan_clip(response(['intro']),state,ledger['event_catalog'],segments()[-1])
+        record=plan_clip(response(['intro']),state,ledger['event_catalog'],segments()[-1])
+        self.assertEqual(record['unused_final_options'],['final'])
+        self.assertEqual(record.get('warnings',[]),[])
+        self.assertEqual(record['scene_state_out']['narrative_states']['reserved_final_events'],['final'])
+        self.assertNotIn('final',record['scene_state_out']['narrative_states']['completed_events'])
 
     def test_rejects_snapshot_reset_stale_from_identity_and_unbound_changes(self):
         ledger=ledger_for();seg=segments()[0];incoming=clip_input(ledger,seg)

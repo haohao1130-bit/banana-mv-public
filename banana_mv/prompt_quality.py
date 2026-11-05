@@ -76,6 +76,8 @@ def reference_policy(picture_count, continuation=False, mutable_appearance=False
                               'Keep facial identities and roles distinct; current structured scene state governs hair, clothing and other mutable appearance.')
         policy=policy.replace('type, colors and materials consistent for that recurring character across shots and clips;',
                               'type, colors and materials consistent until an explicit story/state transition changes them;')
+        policy=policy.replace('Preserve explicit user/reference costumes and intended exposed skin;',
+                              'Preserve the current scene-state appearance and user-specified changes; original reference costumes establish only the initial appearance;')
     return mapping + f'Connected pictures: {picture_count}. ' + policy + '\n' + MV_POLICY
 
 
