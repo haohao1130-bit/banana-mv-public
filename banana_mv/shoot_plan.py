@@ -39,16 +39,27 @@ Fit the actual duration without cramming a new action chain into the final fract
 use remaining time for continuation or residue when appropriate. Respect ending holds.
 """
 
-DYNAMIC_EDITING = """Use flexible shot lengths, with no minimum shot duration or fixed cut interval.
-A scene passage may contain a purposeful cluster of brief shots before an intercut,
-or remain one flowing shot. Choose distinct, event-appropriate viewpoints rather than
-mechanically alternating locations or camera tricks. Keep contact, response and vocal
-phrases readable; let sustained performance, mood, suspense or comedy breathe.
+DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial coverage, not just camera
+movement. Separate changes of storyline from changes of viewpoint within a scene.
+For an energetic passage with several distinct action or performance accents, use
+purposeful short-shot coverage within that scene as well as intercuts. A scene visit
+is not automatically one shot. Give each actual cut its own numbered Shot and local
+cut time in detailed_description, with a distinct composition and continuing action.
+Select viewpoints that reveal a meaningful subject, spatial relationship, action
+turn, reaction, performance detail or visual accent; do not merely rename the same
+framing. A push-in, pan or subject moving closer remains one shot, not an editorial cut.
+Choose flexible lengths with no minimum duration or fixed shot quota. Keep contact,
+response and vocal phrases readable across cuts. Sustain a shot where a specific
+performance, suspense, comic pause or explicit continuous-take request needs it;
+do not default an entire busy scene to a wide shot followed by a slow push-in.
 """
 
 CLIP_INTENSITY = {
     'normal':'Use restrained, grounded performance and camera movement appropriate to the passage.',
-    'high':'Use expressive performance, purposeful camera movement and musical visual accents, preserving clarity.',
+    'high':'''Use energetic, readable performance and purposeful camera movement. When dynamic
+editing is enabled, express musical and action accents through varied shot scale,
+viewpoint and motivated cuts as well as motion; increased movement alone is not
+increased editorial variety.''',
     'extreme':"""Build cinematic peaks through contrast in shot scale, perspective, movement,
 performance energy and cutting rhythm. Where editing is allowed, use purposeful short
 shot clusters within a scene as well as intercuts, balanced with sustained images.
@@ -84,6 +95,10 @@ Parallel performance and story strands may intercut; no singer quota, mandatory 
 attendance, shot list or complete dramatic arc per interval. Allocate a feasible amount
 of action to each duration. Respect local_srt cue timing and each interval's ending.
 Distribute the developed story across intervals, splitting a sequence when needed.
+Allocate opening, development and resolution across the available time; do not finish
+all events early and copy the finale to fill remaining slots. Each one-time event
+occurs once; later intervals continue from its consequence. A short tail sustains or
+completes the ending already underway, not another complete replay of the ending.
 Do not shorten it into generic beats or add unrelated plot. Do not add shot lists;
 retain special camera directions already supplied by the user with their events.
 Use exactly these plain-text boundaries, every requested index, then END:
@@ -115,6 +130,19 @@ def _text(raw):
 
 def _bound(text,count):
     return normalize_mv_prompt(map_image_mentions(text,count),count)
+
+
+def _check_distinct_events(rows):
+    # Catch copied long event blocks, not recurring short performance/ending holds.
+    seen={}
+    for row in rows:
+        event=re.sub(r'^\s*Mode:[^\n]*\n', '', row['event'], flags=re.I)
+        key=re.sub(r'\s+', '', event)
+        if len(key)<200:
+            continue
+        if key in seen:
+            raise SceneStateError(f"第 {row['index']+1} 段重複第 {seen[key]+1} 段的完整事件；請分配連續進展，勿複製事件填滿時長。")
+        seen[key]=row['index']
 
 
 def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
@@ -159,6 +187,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                     raise SceneStateError('分段大綱順序或模式錯誤。')
                 result.append({'index':seg['index'],'mode':row['mode'],
                                'event':_bound(row['prompt'],len(originals))})
+            _check_distinct_events(result)
             plan={'version':5,'shared_setup':shared,'segments':result,'visual_verified':False,
                   'ending_contract':task['ending_contract'],'project_scope':req.get('project_scope','full')}
             plan['content_sha256']=digest(plan);plan['input_sha256']=fingerprint
@@ -170,7 +199,8 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('分段大綱交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Deliver the original fixed settings in SETUP and ALL CLIP scripts, then END. '
-                            'No analysis. Delivery error: '+str(error))]
+                            'Preserve the original story and redistribute events across the supplied intervals. '
+                            'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
