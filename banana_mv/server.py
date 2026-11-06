@@ -97,6 +97,10 @@ def graph_options(req, seconds, segment=None):
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
+    if req.get('director_schema')==5 and req.get('rewrite',True):
+        from banana_mv.shoot_plan import write_shoot_prompt
+        originals=original if isinstance(original,list) else [original]
+        return write_shoot_prompt(cfg,req,segment,originals,tail,backend.rewrite_local,progress)
     if req.get('director_schema')==4 and req.get('rewrite',True):
         from banana_mv.core import normalize_mv_prompt
         originals=original if isinstance(original,list) else [original]
@@ -331,9 +335,9 @@ def worker(job, cfg, original, song, drive):
                                      'pulse': music_analysis['pulse']}
             job['status'] = 'running'; write_state(job)
         needs_plan = (job['request'].get('director_version', 1) >= 2
-                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4))
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
                       and job['request'].get('rewrite', True)
-                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4))
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5))
                       and any(not (s.get('status') == 'done' and valid_part(work/f'{s["index"]:02d}_part.mp4', s, job['size']))
                               and not (job.get('resuming') and (work/f'{s["index"]:02d}_prompt.txt').is_file()
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -344,6 +348,9 @@ def worker(job, cfg, original, song, drive):
             plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
+                if plan['version']==5:
+                    seg['shoot_setup']=plan['shared_setup']
+                    seg['direction_ending_contract']=plan['ending_contract']
                 if plan['version']==4:
                     seg['prompt']=row['prompt']
                     (work/f'{seg["index"]:02d}_prompt.txt').write_text(row['prompt'],encoding='utf-8')
@@ -355,7 +362,7 @@ def worker(job, cfg, original, song, drive):
                     if 'project_scope' in plan:
                         seg['direction_ending_plan']=plan.get('ending_plan')
                         seg['direction_ending_contract']=plan['ending_contract']
-                if index:
+                if index and plan['version']!=5:
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
             job['status']='running'; write_state(job)
@@ -488,7 +495,7 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=4,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=5,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
@@ -497,7 +504,7 @@ def start(req):
     req['rewrite_retries']=rewrite_retry_count(req)
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
-    # New projects receive final prompts upstream. Saved old projects keep their
+    # New projects allocate once, then write each isolated native prompt. Old projects keep their
     # original request fields when resumed; creating a new job never re-enables it.
     req.update(scene_state_version=0,persistent_scene_state=False)
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):

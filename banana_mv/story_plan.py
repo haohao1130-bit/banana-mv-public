@@ -279,6 +279,9 @@ Do not output shot lists, mandatory cuts, media tokens, music, new lyrics or ana
 
 def ensure_plan(cfg, req, segments, originals, work, rewrite):
     """Plan once, then complete missing content in application-owned clip slots."""
+    if req.get('director_schema')==5:
+        from banana_mv.shoot_plan import ensure_shoot_plan
+        return ensure_shoot_plan(cfg,req,segments,originals,work,rewrite)
     if req.get('director_schema') in (3,4):
         return ensure_unified_plan(cfg,req,segments,originals,work,rewrite)
     content = plan_input(req, segments)
