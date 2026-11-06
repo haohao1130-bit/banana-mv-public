@@ -132,6 +132,25 @@ class ShootPlanTests(unittest.TestCase):
                 graph=server.build_workflow(['one.png','two.png'],'song.wav',32,32,245,got,42)
                 self.assertEqual(graph['7']['inputs']['prompt'],camera)
 
+    def test_copied_long_event_retries_without_losing_original_story(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root);req['rewrite_retries']=1
+            event='The courier arrives, opens the parcel, delivers its contents and leaves. '*8
+            bad=('=== SETUP ===\nKeep <Picture 1> and <Picture 2> separate.\n'
+                 '=== CLIP 0 story ===\nMode: story\n'+event+
+                 '\n=== CLIP 1 action ===\nMode: action\n'+event+
+                 '\n=== CLIP 2 story ===\nHold the delivered parcel.\n=== END ===')
+            model=Mock(side_effect=[bad,allocation()])
+            plan=ensure_plan(cfg,req,timeline(),images,root,model)
+            self.assertEqual(model.call_count,2)
+            self.assertEqual(plan['segments'][1]['mode'],'action')
+            self.assertIn('PRIVATE_FULL_STORY',model.call_args.args[2][0][1])
+            self.assertIn('重複',json.loads((root/'director_attempt_00.json').read_text())['error'])
+
+    def test_short_repeated_holds_are_allowed(self):
+        from banana_mv.shoot_plan import _check_distinct_events
+        _check_distinct_events([{'index':i,'event':'Hold the final pose.'} for i in range(3)])
+
     def test_bad_delivery_retries_compactly_without_story_replanning_per_slot(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root);req['rewrite_retries']=1
