@@ -91,8 +91,7 @@ class ShootPlanTests(unittest.TestCase):
 
     def test_native_enhancement_keeps_parallel_script_and_authored_camera_prose(self):
         # Simulated model delivery tests routing/preservation, not 9B quality.
-        from banana_mv.director import ORIGINAL_CUT_GUIDANCE
-        from banana_mv.shoot_plan import NATIVE_ENHANCER_SYSTEM
+        from banana_mv.shoot_plan import NATIVE_ENHANCER_SYSTEM, DYNAMIC_EDITING
         setup=('<Picture 1> sings only on the concert stage. <Picture 2> is the '
                'silent courier in a separate station. These spaces never merge.')
         script=('Intercut the singer leaning into the microphone and the courier '
@@ -127,7 +126,8 @@ class ShootPlanTests(unittest.TestCase):
                 self.assertIn('Original prompt:\nShared world and reference roles:\n'+setup,text)
                 self.assertIn('Current clip script:\n'+script,text)
                 self.assertIn('Allocate shot durations and cut timing',text)
-                self.assertEqual(ORIGINAL_CUT_GUIDANCE in text,dynamic)
+                self.assertEqual(DYNAMIC_EDITING in text,dynamic)
+                self.assertNotIn('3–5',text)
                 if not dynamic:self.assertIn('Prefer motivated longer takes.',text)
                 graph=server.build_workflow(['one.png','two.png'],'song.wav',32,32,245,got,42)
                 self.assertEqual(graph['7']['inputs']['prompt'],camera)
@@ -144,6 +144,37 @@ class ShootPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'校驗失敗'):
                 ensure_plan(cfg,req,timeline(),images,root,model)
             self.assertEqual(model.call_count,2)
+
+    def test_cross_genre_scripts_keep_scope_with_all_intensities(self):
+        from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING
+        cases={
+            'band':'The singer turns toward the guitarist; they finish the phrase together.',
+            'story':'The traveler opens a letter, pauses, and leaves it on the table.',
+            'comedy':'The server catches a falling cup, notices the empty tray, and holds still.',
+            'action':'The dancer pivots, lands, and passes a ribbon to the waiting partner.',
+            'fantasy':'An empty courtyard fills with drifting fog; no character enters.'}
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            for mode,script in cases.items():
+                for intensity in ('normal','high','extreme'):
+                    for dynamic in (False,True):
+                        with self.subTest(mode=mode,intensity=intensity,dynamic=dynamic):
+                            row={'index':0,'mode':mode,'event':script}
+                            seg=dict(timeline()[0],seconds=15,director_plan=copy.deepcopy(row),
+                                     shoot_setup='Keep supplied identities and separate locations.')
+                            writer=Mock(return_value=native_prompt(0))
+                            with patch.object(server.backend,'rewrite_local',writer):
+                                got=server.local_prompt(cfg,dict(req,intensity=intensity,dynamic_cuts=dynamic),seg,images,None)
+                            self.assertEqual(got,native_prompt(0));self.assertEqual(writer.call_count,1)
+                            self.assertEqual(seg['director_plan'],row)
+                            text=writer.call_args.args[2][0][1]
+                            self.assertIn('Current clip script:\n'+script+'\n\n',text)
+                            self.assertIn(AUTO_FILMING,text)
+                            self.assertIn(CLIP_INTENSITY[intensity],text)
+                            self.assertEqual(DYNAMIC_EDITING in text,dynamic)
+                            self.assertNotIn('3–5',text)
+                            for other in cases.values():
+                                if other!=script:self.assertNotIn(other,text)
 
     def test_incomplete_or_unconnected_allocations_never_reach_clip_writer(self):
         for bad in (allocation().replace('=== END ===',''),

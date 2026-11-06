@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
-from banana_mv.director import MODES, INTENSITY, ORIGINAL_CUT_GUIDANCE
+from banana_mv.director import MODES
 from banana_mv.lyrics_reference import excerpt
 from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
@@ -22,6 +22,43 @@ NATIVE_ENHANCER_SYSTEM = (
     "Follow the guide below and return only its six sections in order, "
     "with plain-text headers on separate lines and no Markdown fences.\n\n"
 )
+
+AUTO_FILMING = """Choose filming methods from the actual content of each passage; primary_mode
+is a tendency, not a recipe for every shot. Freely develop compatible performance,
+staging and visual detail within the assigned story. Give gestures, gaze and reactions
+an appropriate target or intention; stillness can be meaningful. Turn these choices
+into concrete shot composition, perspective, light and camera movement in the native
+description, not a list of cinematic adjectives or a separate planning table.
+Decide intercuts between storylines separately from coverage within each scene.
+Let information, action, attention, emotion, musical phrasing or visual rhythm motivate
+a viewpoint change; new plot information is not required for every cut.
+Carry the same ongoing action, positions, held objects and consequences across cuts,
+including time spent off-screen; do not replay an event on returning to it.
+Budget the necessary action and its readable result before choosing shot count.
+Fit the actual duration without cramming a new action chain into the final fraction;
+use remaining time for continuation or residue when appropriate. Respect ending holds.
+"""
+
+DYNAMIC_EDITING = """Use flexible shot lengths, with no minimum shot duration or fixed cut interval.
+A scene passage may contain a purposeful cluster of brief shots before an intercut,
+or remain one flowing shot. Choose distinct, event-appropriate viewpoints rather than
+mechanically alternating locations or camera tricks. Keep contact, response and vocal
+phrases readable; let sustained performance, mood, suspense or comedy breathe.
+"""
+
+CLIP_INTENSITY = {
+    'normal':'Use restrained, grounded performance and camera movement appropriate to the passage.',
+    'high':'Use expressive performance, purposeful camera movement and musical visual accents, preserving clarity.',
+    'extreme':"""Build cinematic peaks through contrast in shot scale, perspective, movement,
+performance energy and cutting rhythm. Where editing is allowed, use purposeful short
+shot clusters within a scene as well as intercuts, balanced with sustained images.
+An accent can land through an action, reaction, reveal or lighting change without a cut.
+Let intensity serve performance, emotion, comedy, action or environment as appropriate;
+do not turn every passage into combat, constant speed, camera shake or explosions.
+Preserve complete actions and their consequences; honor quiet passages, continuous-take
+requests and the ending rather than forcing a climax into every clip.
+"""
+}
 
 
 ALLOCATION_SYSTEM = """Prepare a filmable music-video story across the given source intervals.
@@ -163,7 +200,7 @@ keep separate locations distinct, intercutting them rather than merging their se
 placing their casts in one shared frame. Only actors needed by this script appear.
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
-reference clothing. Freely choose shots, staging and editing that express this script.
+reference clothing.
 Identity references do not freeze pose, expression, gaze or camera view unless assigned
 as frame anchors. All shot times are LOCAL and within the target duration; alignment
 padding adds no story time. Continue actions across cuts, without replaying the event.
@@ -173,8 +210,10 @@ lyrics, subtitles, sound layers or replacement song. Supplied SRT is timing evid
 Follow this clip's ending; an ongoing clip needs no whole-work finale.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """
-    text+='\n'+(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer takes.')
-    text+='\n'+INTENSITY[req.get('intensity','high')]
+    text+='\n'+AUTO_FILMING
+    text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
+                'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
+    text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
     text+='\n\nClip timing and audio context:\n'+json.dumps(context,ensure_ascii=False)
