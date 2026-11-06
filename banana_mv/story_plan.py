@@ -412,14 +412,24 @@ EVERY segment_template row. Return ONLY JSON:
  "location":"current set"}]}],
  "closing_shot":"final visible image",
  "ending_plan":null}.
-Each cast entry describes ONLY an actor visible in that clip. 'picture' is its
-original reference image number (null for an actor without a picture). Use
-the SAME stable actor ID for the same person throughout; transformed identities
-may use a new actor ID/reference if the supplied story says so. Images of
-places or objects are NOT cast members. Give the correct CURRENT appearance in
-every clip, including attire after transformations or costume changes.
-An empty cast [] is valid for a character-free clip. Intercuts may have actors
-from separate sets, each with their own location. The segment event is the
+Each cast entry describes an actor visible at ANY instant of that clip, not
+only its opening or ending. 'picture' is the ORIGINAL uploaded image number
+(null only for a subject without a supplied image): NEVER renumber pictures
+when somebody leaves, enters, changes costume, or changes identity. Keep a
+stable actor ID and picture reference across clips. Images of places or
+objects are NOT cast members. Include BOTH before and after identities in cast
+when the script changes from one referenced identity to another WITHIN a clip.
+For these handoffs, add optional transitions:[{"from":"S1","to":"S5"}] in that
+clip; these IDs must be in its cast. They describe only this clip's event,
+not past/future history, and are not simultaneous actors unless requested.
+An optional cast.visibility is opening, closing, throughout or intermittent;
+default is throughout. For changing a SAME actor's appearance within the
+clip, give appearance as the initial look and optional end_appearance as the
+final look. Do not re-enact the change on later clips. Include correct
+CURRENT look and location for each actor whenever visible, including attire
+after costume changes. Empty cast [] is valid for a character-free clip.
+Intercuts may have actors from separate sets, each with their own location.
+The segment event is the
 complete 10–15s script assigned to the camera writer, not a summary or recap.
 Do NOT output events, event_indices, completed_indices, requires_change,
 changes, initial_state, history, transition logs or previous clips.
@@ -450,6 +460,7 @@ def validate_isolated_plan(raw, segments, picture_count, req):
     if req.get('project_scope')!='excerpt' and not closing.strip():
         raise SceneStateError('整首 MV 必須指定最後畫面。')
     allocation=[]
+    stable_references={}
     for seg,row in zip(segments,rows):
         if not isinstance(row,dict) or not isinstance(row.get('event'),str) or not row['event'].strip():
             raise SceneStateError(f'第 {seg["index"]+1} 段缺少具體劇本。')
@@ -461,6 +472,8 @@ def validate_isolated_plan(raw, segments, picture_count, req):
         if not isinstance(cast,list) or len(cast)>32:
             raise SceneStateError(f'第 {seg["index"]+1} 段需有 cast 清單，可為空。')
         chars={}
+        ending_looks={}
+        visibility={}
         for actor in cast:
             if not isinstance(actor,dict):
                 raise SceneStateError('cast 成員必須是角色物件。')
@@ -470,18 +483,51 @@ def validate_isolated_plan(raw, segments, picture_count, req):
             if ref is not None and (isinstance(ref,bool) or not isinstance(ref,int)
                                     or not 1<=ref<=picture_count):
                 raise SceneStateError('角色圖片編號不存在。')
+            if sid in stable_references and stable_references[sid]!=ref:
+                raise SceneStateError(f'角色 {sid} 在不同段落引用不同原始圖片。')
+            stable_references[sid]=ref
             look=actor.get('appearance','');location=actor.get('location','')
-            if not isinstance(look,str) or not isinstance(location,str):
+            ending=actor.get('end_appearance',look)
+            end_location=actor.get('end_location',location)
+            timing=actor.get('visibility','throughout')
+            if (not isinstance(look,str) or not isinstance(location,str)
+                    or not isinstance(ending,str) or not isinstance(end_location,str)):
                 raise SceneStateError('角色外觀與位置必須是文字。')
+            if timing not in ('opening','closing','throughout','intermittent'):
+                raise SceneStateError('角色 visibility 必須是 opening、closing、throughout 或 intermittent。')
+            visibility[sid]=timing
             chars[sid]={'original_reference':ref,'hairstyle':'','location':location,
                         'wearing':[],'not_wearing':[],
                         'appearance_changes':[look] if look.strip() else [],
                         'injuries':[],'held_props':[]}
+            if ending!=look or end_location!=location:
+                ending_looks[sid]=(ending,end_location)
+        transitions=row.get('transitions',[])
+        if not isinstance(transitions,list):
+            raise SceneStateError('transitions 必須是清單。')
+        normalized=[]
+        for transition in transitions:
+            if (not isinstance(transition,dict)
+                    or transition.get('from') not in chars
+                    or transition.get('to') not in chars
+                    or transition['from']==transition['to']):
+                raise SceneStateError('角色交接的 from/to 必須指向當段兩個不同 cast ID。')
+            normalized.append({'from':transition['from'],'to':transition['to']})
+            if visibility[transition['from']]=='throughout':
+                visibility[transition['from']]='opening'
+            if visibility[transition['to']]=='throughout':
+                visibility[transition['to']]='closing'
         appearance={'characters':chars,'environments':{}}
+        after_chars={sid:dict(actor) for sid,actor in chars.items()}
+        for sid,(ending,location) in ending_looks.items():
+            after_chars[sid]['appearance_changes']=[ending] if ending.strip() else []
+            after_chars[sid]['location']=location
+        ending_appearance={'characters':after_chars,'environments':{}}
         allocation.append({'index':seg['index'],'event':row['event'].strip(),
                            'mode':row['mode'],'subjects':list(chars),
+                           'cast_visibility':visibility,'transitions':normalized,
                            'source_ids':[],'completed_source_ids':[],
-                           'appearance_in':appearance,'appearance_out':appearance})
+                           'appearance_in':appearance,'appearance_out':ending_appearance})
     plan={'version':3,'initial_state':{},'event_catalog':{},
           'segments':allocation,'constraints':constraints,'closing_shot':closing,
           'requires_change':[],'visual_verified':False,'isolated_shoot_orders':True}

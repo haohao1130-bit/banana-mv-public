@@ -161,5 +161,42 @@ class CompilerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 director_shot_fallback('',appearance())
 
+    def test_three_to_five_second_cuts_and_reference_slots(self):
+        from banana_mv.h3_prompt import target_shot_count, director_shot_fallback
+        self.assertEqual(target_shot_count(10),3)
+        self.assertEqual(target_shot_count(15),4)
+        self.assertEqual(target_shot_count(4),1)
+        self.assertEqual(target_shot_count(10,False),1)
+        self.assertEqual(target_shot_count(10,True,True),1)
+        a={'characters':{
+            'S5':{'connected_reference':'<Picture 2>','location':'hall','appearance_changes':['new form']},
+            'S3':{'connected_reference':'<Picture 4>','location':'hall','appearance_changes':['opponent']}},
+            'environments':{}}
+        one='[Shot 1] <Subject 5> confronts <Subject 3>.'
+        with self.assertRaisesRegex(ValueError,'鏡頭數不足'):
+            validate_shots(one,10,a,5,required_shots=3)
+        multi=director_shot_fallback('The actor approaches, exchanges a prop, and reacts to the opponent.',
+                                     a,seconds=10,shot_count=3)
+        self.assertEqual(multi.count('[Shot '),3)
+        text=compile_prompt(multi,10,a,5,required_shots=3)
+        self.assertIn('<Subject 5> is the same individual shown in <Picture 2>',text)
+        self.assertIn('<Subject 3> is the same individual shown in <Picture 4>',text)
+        self.assertNotIn('shown in <Picture 1>',text)
+
+    def test_fallback_orders_actor_handoff_without_coappearance(self):
+        from banana_mv.h3_prompt import director_shot_fallback
+        a={'characters':{'S1':{'connected_reference':'<Picture 1>'},
+                         'S5':{'connected_reference':'<Picture 2>'}},
+           'environments':{}}
+        shots=director_shot_fallback('The initial actor acts, changes form, and the successor takes over.',
+                                      a,seconds=10,shot_count=3,
+                                      transitions=[{'from':'S1','to':'S5'}])
+        parts=shots.split('[Shot ')
+        self.assertIn('<Subject 1>',parts[1])
+        self.assertNotIn('<Subject 5>',parts[1])
+        self.assertIn('<Subject 5>',parts[-1])
+        self.assertNotIn('<Subject 1>',parts[-1])
+        validate_shots(shots,10,a,2,required_shots=3)
+
 
 if __name__=='__main__':unittest.main()
