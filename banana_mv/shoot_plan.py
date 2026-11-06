@@ -11,6 +11,19 @@ from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
 
 
+# Match Toybox's native Ref2VA enhancement role, rather than treating the
+# specialized rewriter as a general JSON-task executor. The official guide stays
+# authoritative for shot prose and output structure; MV source-audio rules follow
+# in the user message. No additional writer or fixed camera recipe is involved.
+NATIVE_ENHANCER_SYSTEM = (
+    "You enhance prompts for reference-conditioned video and audio generation (Ref2VA). "
+    "Infer reference roles from the user's prompt and supplied media. "
+    "Preserve intent and explicit constraints while adding relevant visual and sound details. "
+    "Follow the guide below and return only its six sections in order, "
+    "with plain-text headers on separate lines and no Markdown fences.\n\n"
+)
+
+
 ALLOCATION_SYSTEM = """Prepare a filmable music-video story across the given source intervals.
 If the user supplies only a backbone, develop concrete actions along it. If the user
 already supplies a detailed script, retain its actions, causal links and specified
@@ -129,35 +142,44 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     def connected(text):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
-    task={'seconds':segment['seconds'],
-          'primary_mode':row['mode'],
-          'shared_world_and_roles':connected(segment['shoot_setup']),
-          'current_clip':connected(row['event']),
+    context={'seconds':segment['seconds'],'primary_mode':row['mode'],
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
-    if tail:task['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
+    if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
-    system=guide+"""\nWrite the final native H3 prompt for this ONE music-video clip.
-The supplied current_clip is the complete assigned script, not a synopsis to expand
+    system=NATIVE_ENHANCER_SYSTEM+guide
+    text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
+          "Inspect the reference images labeled <Picture N> and use them according to the user's instructions.\n"
+          "Choose shots that best express the original intent. "
+          "Allocate shot durations and cut timing within the target duration according to content and pacing. "
+          "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
+          "Original prompt:\nShared world and reference roles:\n"+connected(segment['shoot_setup'])+
+          "\n\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
+    text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
+including its per-shot composition, lighting, actions and camera movement.
+The current clip script is complete for this interval, not a synopsis to expand
 into other story chapters. Shared settings retain the user's locations and asset roles;
 keep separate locations distinct, intercutting them rather than merging their sets or
 placing their casts in one shared frame. Only actors needed by this script appear.
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
 reference clothing. Freely choose shots, staging and editing that express this script.
-All shot times are LOCAL and within seconds; alignment padding adds no story time.
+Identity references do not freeze pose, expression, gaze or camera view unless assigned
+as frame anchors. All shot times are LOCAL and within the target duration; alignment
+padding adds no story time. Continue actions across cuts, without replaying the event.
 Use only connected pictures and <Audio 1>: fully_copy. The source audio is supplied to
 H3, not heard by you. Only the assigned vocalist may lip-sync. Add no new speech,
-lyrics, subtitles or replacement song. Supplied SRT is timing evidence, not dialogue.
+lyrics, subtitles, sound layers or replacement song. Supplied SRT is timing evidence, not dialogue.
 Follow this clip's ending; an ongoing clip needs no whole-work finale.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """
-    system+='\n'+(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer takes.')
-    system+='\n'+INTENSITY[req.get('intensity','high')]
-    if req.get('face_identity',True):system+='\nPreserve the assigned reference identities through motion and expressions.'
-    system+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
+    text+='\n'+(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer takes.')
+    text+='\n'+INTENSITY[req.get('intensity','high')]
+    if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
+    text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
+    text+='\n\nClip timing and audio context:\n'+json.dumps(context,ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
-    parts=[('text',json.dumps(task,ensure_ascii=False))]+_pictures(refs)
+    parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
     for attempt in range(rewrite_retry_count(req)+1):
         if progress:progress({'stage':'rewriting','clip_index':segment['index'],
@@ -174,3 +196,4 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
+

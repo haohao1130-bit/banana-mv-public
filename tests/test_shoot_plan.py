@@ -65,7 +65,7 @@ class ShootPlanTests(unittest.TestCase):
             for forbidden in ('PRIVATE_FULL_STORY','FUTURE_STORY_MARKER','HUMAN_OPENING',
                               'FINAL_BEAT','WHOLE_SONG_LYRIC_MARKER','OPENING_CUE','HISTORY_LEAK'):
                 self.assertNotIn(forbidden,text)
-            task=json.loads(text)
+            task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
             self.assertEqual(task['local_srt'][0]['clip_start'],1)
             self.assertEqual(task['local_srt'][0]['text'],'CURRENT_CUE')
             self.assertEqual(task['ending']['phase'],'resolving')
@@ -80,13 +80,57 @@ class ShootPlanTests(unittest.TestCase):
             writer=Mock(return_value=native_prompt(1,1))
             with patch.object(server.backend,'rewrite_local',writer):
                 server.local_prompt(cfg,req,seg,images,images[0])
-            task=json.loads(writer.call_args.args[2][0][1])
-            self.assertIn('<Picture 2> is the human',task['shared_world_and_roles'])
-            self.assertIn('<Picture 3> is the non-singing hero',task['shared_world_and_roles'])
-            self.assertIn('<Picture 3>',task['current_clip'])
+            text=writer.call_args.args[2][0][1]
+            task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
+            self.assertIn('<Picture 2> is the human',text)
+            self.assertIn('<Picture 3> is the non-singing hero',text)
+            self.assertIn('<Picture 3>, already transformed',text)
             labels=[value for kind,value in writer.call_args.args[2] if kind=='text'][1:]
             self.assertEqual(labels,['<Picture 1>:','<Picture 2>:','<Picture 3>:'])
             self.assertIn('<Picture 1>',task['first_frame'])
+
+    def test_native_enhancement_keeps_parallel_script_and_authored_camera_prose(self):
+        # Simulated model delivery tests routing/preservation, not 9B quality.
+        from banana_mv.director import ORIGINAL_CUT_GUIDANCE
+        from banana_mv.shoot_plan import NATIVE_ENHANCER_SYSTEM
+        setup=('<Picture 1> sings only on the concert stage. <Picture 2> is the '
+               'silent courier in a separate station. These spaces never merge.')
+        script=('Intercut the singer leaning into the microphone and the courier '
+                'catching a falling parcel. The courier checks the label; return '
+                'to the singer reaching toward the audience. Preserve this order.')
+        camera=('subject_definitions:\n<Subject 1> comes from <Picture 1>. '
+                '<Subject 2> comes from <Picture 2>.\nsummary:\n[reference generation + audio reuse] '
+                'Parallel performance and story.\nretention_analysis:\n<Audio 1>: fully_copy.\n'
+                'detailed_description:\n[Shot 1] A low stage-edge close-up of <Subject 1>, '
+                'hands soft in the foreground, red backlight; the camera tracks left as she leans in.\n'
+                '[Shot 2] At 00:03.500, cut over <Subject 2>\'s shoulder in the station; '
+                'a long-lens view compresses the platform lights as the parcel drops into frame.\n'
+                '[Shot 3] At 00:07.000, return to a high oblique close-up of <Subject 1> '
+                'reaching toward the audience, a diagonal microphone line against blue haze.\n'
+                'overall_soundscape:\n<Audio 1>: fully_copy.\nnon_diegetic_music:\nN/A')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            for dynamic in (True,False):
+                seg=dict(timeline()[0],seconds=10,shoot_setup=setup,
+                         director_plan={'index':0,'mode':'story','event':script})
+                before=copy.deepcopy(seg)
+                writer=Mock(return_value=camera)
+                with patch.object(server.backend,'rewrite_local',writer):
+                    got=server.local_prompt(cfg,dict(req,dynamic_cuts=dynamic),seg,images,None)
+                self.assertEqual(got,camera)
+                self.assertEqual(seg['director_plan'],before['director_plan'])
+                self.assertEqual(seg['shoot_setup'],setup)
+                self.assertEqual(writer.call_count,1)
+                system=writer.call_args.args[1];text=writer.call_args.args[2][0][1]
+                self.assertEqual(system,NATIVE_ENHANCER_SYSTEM+'OFFICIAL_NATIVE_GUIDE_MARKER')
+                self.assertTrue(text.startswith('Target video duration: 10.000000 seconds.'))
+                self.assertIn('Original prompt:\nShared world and reference roles:\n'+setup,text)
+                self.assertIn('Current clip script:\n'+script,text)
+                self.assertIn('Allocate shot durations and cut timing',text)
+                self.assertEqual(ORIGINAL_CUT_GUIDANCE in text,dynamic)
+                if not dynamic:self.assertIn('Prefer motivated longer takes.',text)
+                graph=server.build_workflow(['one.png','two.png'],'song.wav',32,32,245,got,42)
+                self.assertEqual(graph['7']['inputs']['prompt'],camera)
 
     def test_bad_delivery_retries_compactly_without_story_replanning_per_slot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,3 +200,4 @@ class ShootPlanTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
