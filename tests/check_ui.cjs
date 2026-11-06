@@ -14,8 +14,8 @@ class Element{
   select(){this.selected=true;}
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
-Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
-const posts=[],uploads=[],resumes=[],copied=[];
+Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
+const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
   setTimeout:()=>0,clearTimeout:()=>{},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
@@ -24,13 +24,17 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     if(url==='api/mv/start'){posts.push(JSON.parse(options.body));return {id:'abcd'};}
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
+    if(url==='api/mv/retake'){retakes.push(JSON.parse(options.body));return {...reviewJob,status:'retaking'};}
+    if(url==='api/mv/select-take'){selections.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
+    if(url==='api/mv/status?id=review123')return reviewJob;
     if(url==='api/mv/status?id=low480')return {id:'low480',title:'L4 test',duration:10,status:'interrupted',request:{mode:'independent',aspect:'16:9',width:854},segments:[]};
-    if(url==='api/mv/status?id=saved123')return {id:'saved123',title:'雲端歌曲',duration:180,seed:0,status:'interrupted',request:{mode:'independent',aspect:'9:16',segment_seconds:15,prompt:'saved story',lyrics:'已存歌詞',srt_reference:'已存SRT',face_identity:false},segments:[{start:0,seconds:15,status:'done'},{start:15,seconds:15}]};
+    if(url==='api/mv/status?id=saved123')return {id:'saved123',title:'雲端歌曲',duration:180,seed:0,status:'interrupted',request:{mode:'independent',aspect:'9:16',segment_seconds:15,project_scope:'excerpt',prompt:'saved story',lyrics:'已存歌詞',srt_reference:'已存SRT',face_identity:false},segments:[{start:0,seconds:15,status:'done'},{start:15,seconds:15}]};
     if(url==='api/mv/status?id=broken-plan')return {status:'error',error:'plan parse failed',error_stage:'planning_story',request:{director_version:2},segments:[{index:0,start:0,seconds:10,director_plan:{mode:'story',event:'x'.repeat(800)}}]};
     if(url==='status-error')return {status:'error',error:'bad media tag',segments:[]};
     return {status:'done',seed:42,segments:[]};
   }})});
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
+vm.runInContext(fs.readFileSync('banana_mv/web/clip_review.js','utf8'),context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
@@ -81,9 +85,9 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['srt-file'].files=[{name:'song.srt',size:100,text:async()=>srt}];await els['srt-file'].onchange();assert.equal(els['srt-reference'].value,srt);
   els.lyrics.value='全曲歌詞';
   els.image.files=[file('main.png')];els.image.onchange();els.song.files=[file('song.wav')];
-  let req=await submit();assert.equal(req.rewrite_retries,3);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.persistent_scene_state,true);assert.equal(req.audio_analysis,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.equal(req.image_ids,undefined);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
+  let req=await submit();assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,3);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.persistent_scene_state,true);assert.equal(req.audio_analysis,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.equal(req.image_ids,undefined);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
   assert.deepEqual(uploads,['main.png','song.wav']);
-  els.story_plan.checked=false;els.audio_analysis.checked=false;els.face_identity.checked=false;els.kitchen_attention.checked=false;els.sparse_attention.checked=true;els.motion_lora.checked=false;req=await submit();assert.equal(req.story_plan,false);assert.equal(req.audio_analysis,false);assert.equal(req.face_identity,false);assert.equal(req.kitchen_attention,false);assert.equal(req.sparse_attention,true);assert.equal(req.motion_lora,false);
+  els.project_scope.value='excerpt';els.story_plan.checked=false;els.audio_analysis.checked=false;els.face_identity.checked=false;els.kitchen_attention.checked=false;els.sparse_attention.checked=true;els.motion_lora.checked=false;req=await submit();assert.equal(req.project_scope,'excerpt');assert.equal(req.story_plan,false);assert.equal(req.audio_analysis,false);assert.equal(req.face_identity,false);assert.equal(req.kitchen_attention,false);assert.equal(req.sparse_attention,true);assert.equal(req.motion_lora,false);
   els['toggle-multiref'].onclick();assert.equal(els['multi-panel'].hidden,false);
   els['extra-images'].files=[file('side.png'),file('scene.png')];els['extra-images'].onchange();
   req=await submit();assert.deepEqual(req.image_ids,['main.png','side.png','scene.png']);
@@ -109,7 +113,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   // A tenth reference must be rejected without losing the existing selection.
   els['extra-images'].files=Array.from({length:8},(_,i)=>file(`extra${i}.png`));els['extra-images'].onchange();
   req=await submit();assert.equal(req.image_ids.length,2);
-  await els['open-last'].onclick();assert.equal(els.kitchen_attention.checked,true);assert.equal(els.sparse_attention.checked,true);assert.equal(els['job-seed'].textContent,'本次 Seed：0');assert.equal(els.prompt.value,'saved story');assert.equal(els.aspect.value,'9:16');assert.equal(els.seed.value,'0');assert.equal(els.face_identity.checked,false);assert.equal(els['resume-project'].hidden,false);assert(els['project-summary'].textContent.includes('雲端歌曲'));
+  await els['open-last'].onclick();assert.equal(els.project_scope.value,'excerpt');assert.equal(els.kitchen_attention.checked,true);assert.equal(els.sparse_attention.checked,true);assert.equal(els['job-seed'].textContent,'本次 Seed：0');assert.equal(els.prompt.value,'saved story');assert.equal(els.aspect.value,'9:16');assert.equal(els.seed.value,'0');assert.equal(els.face_identity.checked,false);assert.equal(els['resume-project'].hidden,false);assert(els['project-summary'].textContent.includes('雲端歌曲'));
   assert.equal(els.resolution.value,'720p');assert.equal(els.width.value,'720');
   assert.equal(els['srt-reference'].value,'已存SRT');assert.equal(els.lyrics.value,'已存歌詞');
   assert.equal(els.persistent_scene_state.checked,false);assert.equal(els.audio_analysis.checked,false);assert.equal(els.story_plan.checked,false);
@@ -120,6 +124,22 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   await els['resume-project'].onclick();assert.deepEqual(resumes,[{id:'saved123',rewrite_retries:3}]);
   vm.runInContext("renderRewriteAttempt({status:'running',rewrite_attempt:{stage:'rewriting',clip_index:1,attempt:2,max_attempts:4}})",context);assert(els['rewrite-status'].textContent.includes('第 2 / 4 次'));
   vm.runInContext("renderRewriteAttempt({status:'done'})",context);assert.equal(els['rewrite-status'].textContent,'');
-  await vm.runInContext("openProject('low480')",context);assert.equal(els.resolution.value,'480p');assert.equal(els.width.value,'854');
+  await vm.runInContext("openProject('low480')",context);assert.equal(els.project_scope.value,'full');assert.equal(els.resolution.value,'480p');assert.equal(els.width.value,'854');
+  reviewJob={id:'review123',status:'done',seed:42,request:{mode:'chain'},segments:Array.from({length:4},(_,i)=>({index:i,start:i*10,seconds:10,status:'done',preview:`/clip-${i}`,selected_take:'original',takes:[{id:'original',status:'ready',seed:42+i,preview:`/clip-${i}-original`},{id:'abcdef123456',status:'ready',seed:900+i,preview:`/clip-${i}-new`}]}))};
+  vm.runInContext(`active='review123';renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(els['clip-review'].hidden,false);assert.equal(els['clip-chain-note'].hidden,false);
+  const rows=vm.runInContext('[...clipView.rows.values()]',context);
+  assert.equal(rows.length,4);assert.equal(rows[0].video.muted,true);assert.equal(rows[0].video.preload,'none');
+  rows[1].check.checked=true;rows[2].check.checked=true;rows[1].check.onchange();
+  assert(els['clips-retake'].textContent.includes('2 顆'));assert.equal(els['clips-retake'].disabled,false);
+  vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,status:'running'})})`,context);
+  assert.equal(els['clips-retake'].disabled,true);assert.equal(rows[1].check.disabled,false);
+  assert.equal(els['clip-list'].children[1].children[1],rows[1].video);assert.equal(rows[1].check.checked,true);
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);await els['clips-retake'].onclick();
+  assert.deepEqual(retakes,[{id:'review123',indices:[1,2]}]);
+  rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
+  await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
+  els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
   console.log('UI checks passed: collapsed default, legacy single image, multi upload, toggle exclusion, retained selections, removal numbering and count limit.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+

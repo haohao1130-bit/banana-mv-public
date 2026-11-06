@@ -216,6 +216,7 @@ if __name__=='__main__':unittest.main()
 
 
 class EnvironmentFormatTests(unittest.TestCase):
+
     def test_redundant_scene_id_and_empty_map_arrays_are_lossless_and_idempotent(self):
         from banana_mv.scene_state import normalize_environment
         raw={'scene_id':'room','active_location':'studio','persistent_changes':[],
@@ -265,3 +266,4 @@ class EnvironmentFormatTests(unittest.TestCase):
                 self.assertEqual(model.call_count,1)
                 self.assertEqual(len(plan['segments']),8)
         self.assertEqual(calls[0],calls[1])
+

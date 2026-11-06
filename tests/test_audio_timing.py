@@ -15,10 +15,7 @@ class AudioTimingTests(unittest.TestCase):
             command(['ffmpeg','-v','error','-y','-f','lavfi','-i','sine=frequency=440:duration=60',
                      '-c:a','libmp3lame',song])
             measured=source_audio_duration(song)
-            # Newer FFmpeg reports gapless MP3 duration exactly; older versions include padding.
-            self.assertGreaterEqual(duration(song),60)
-            with patch('banana_mv.core.duration',return_value=60.04):
-                self.assertEqual(len(segments(source_audio_duration(song),15)),4)
+            self.assertGreater(duration(song),60)
             self.assertAlmostEqual(measured,60,places=3)
             plan=segments(measured,15)
             self.assertEqual(len(plan),4)
