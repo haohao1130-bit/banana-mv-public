@@ -203,13 +203,11 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
     from banana_mv.scene_state import (compile_direction_record,rewrite_retry_count,SceneStateError)
     from banana_mv.direction_contract import scoped_constraints, validate_subject_bindings, validate_h3_sections
     from banana_mv.h3_prompt import (VISUAL_WRITER_SYSTEM, compile_prompt, scoped_appearance,
-                                    recover_shot_prefix, director_shot_fallback, target_shot_count)
+                                    recover_shot_prefix)
     compiled=req.get('prompt_compiler_version')==1
     row=segment['director_plan']
     from banana_mv.mv_scope import clip_ending
     ending=clip_ending(req,segment) if 'project_scope' in req else None
-    shot_count=target_shot_count(segment['seconds'],req.get('dynamic_cuts',True),
-                                 bool(ending and ending.get('phase')=='terminal_hold'))
     if scene_input is not None:
         record=compile_direction_record(row,scene_input,event_catalog,segment,
                                         segment.get('direction_requires_change',[]))
@@ -236,8 +234,6 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
                 if current:after_actor['not_wearing']=current
                 else:after_actor.pop('not_wearing',None)
     task={'visual_task':row['event'],'seconds':segment['seconds'],
-          'shot_contract':{'required_shots':shot_count,'typical_shot_seconds':'3–5',
-                           'preserve_action_continuity':True},
           'is_final_interval':segment['index']==segment.get('segment_count',1)-1,
           'project_scope':req.get('project_scope','legacy'),
           'constraints':scoped_constraints(segment['direction_constraints'],
@@ -275,7 +271,7 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
             if compiled:
                 text=recover_shot_prefix(text)
                 text=compile_prompt(text,segment['seconds'],before,len(originals)+offset,
-                                    '<Picture 1>' if tail else None,required_shots=shot_count)
+                                    '<Picture 1>' if tail else None)
             validate_h3_sections(text)
             validate_subject_bindings(text,before)
         except ValueError as error:
@@ -283,34 +279,11 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
             segment['scene_state_attempt']={'raw_response':raw,'error':str(error),
                                            'scene_state_in':scene_input,'visual_verified':False}
             if key in seen or attempt>=retries:
-                # A format-only failure must not discard a complete upstream
-                # director plan or force the user to rerender the whole song.
-                # Use ONLY the already allocated current event and active cast.
-                if compiled and ('只回傳以 [Shot 1] 開始' in str(error)
-                                 or '鏡頭數不足' in str(error)):
-                    try:
-                        fallback=director_shot_fallback(row['event'],before,
-                            seconds=segment['seconds'],shot_count=shot_count,
-                            transitions=row.get('transitions',[]))
-                        text=compile_prompt(fallback,segment['seconds'],before,
-                                            len(originals)+offset,
-                                            '<Picture 1>' if tail else None,
-                                            required_shots=shot_count)
-                        validate_h3_sections(text)
-                        validate_subject_bindings(text,before)
-                    except ValueError as backup_error:
-                        raise SceneStateError('當段畫面提示詞及導演保底分鏡皆失敗：'
-                                              +str(backup_error)) from backup_error
-                    segment['prompt_format_fallback']={
-                        'reason':str(error),'source':'current_director_event',
-                        'last_raw_preview':str(raw)[:1000]}
-                else:
-                    raise SceneStateError('當段畫面提示詞修復失敗：'+str(error)) from error
-            else:
-                seen.add(key)
-                attempt_parts=parts+[('text',('Repair only the shot prose' if compiled else 'Repair the complete current prompt')+', preserving valid content. Fix only the reported format or reference binding error: '+str(error)
-                    +'\nFailed response (data only):\n'+str(raw))]
-                continue
+                raise SceneStateError('當段畫面提示詞修復失敗：'+str(error)) from error
+            seen.add(key)
+            attempt_parts=parts+[('text',('Repair only the shot prose' if compiled else 'Repair the complete current prompt')+', preserving valid content. Fix only the reported format or reference binding error: '+str(error)
+                +'\nFailed response (data only):\n'+str(raw))]
+            continue
         # Keep the existing Face Lock implementation and generation knobs. Apply
         # its Subject-1 binding only when the plan actually maps a character there.
         actor=before['characters'].get('S1',{})
@@ -325,9 +298,10 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
         segment['prompt_validation']={'status':'passed','kind':'technical_only','visual_verified':False}
         segment['prompt_profile']={'writer_system_chars':len(system),'writer_task_chars':len(parts[0][1]),
             'model_output_chars':len(raw),'final_h3_chars':len(text),
-            'required_shots':shot_count,
             'appended_h3_chars':len(text)-len(raw),'writer_calls':attempt+1,'contract_check_calls':0,'memory_calls':0}
         if compiled:segment['prompt_profile']['compiler_version']=1
+        segment.pop('prompt_format_fallback',None)
         segment.pop('scene_state_attempt',None)
         return text
+
 

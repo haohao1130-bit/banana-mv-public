@@ -38,6 +38,27 @@ def shoot_orders():
 
 
 class IsolatedUpstreamTests(unittest.TestCase):
+    def test_full_work_ending_survives_actor_end_appearance_and_location(self):
+        from banana_mv.mv_scope import clip_ending
+        raw=shoot_orders()
+        expected={'start_time':20,'resolved_by':28,'resolution':'Resolve the contest and hold the final image.'}
+        raw.update(ending_plan=expected,closing_shot='Hold the hero image.')
+        raw['segments'][-1]['cast'][-1].update(end_appearance='changed armor',end_location='exit')
+        req={'project_scope':'full'}
+        plan=validate_isolated_plan(raw,clips(),3,req)
+        self.assertEqual(plan['ending_plan'],expected)
+        seg=dict(clips()[-1],song_seconds=30,segment_count=3,direction_ending_plan=plan['ending_plan'],
+                 direction_ending_contract=plan['ending_contract'])
+        ending=clip_ending(req,seg)
+        self.assertEqual(ending['local_resolution_by'],8)
+        self.assertEqual(ending['resolution'],expected['resolution'])
+        self.assertEqual(plan['segments'][-1]['appearance_out']['characters']['S3']['location'],'exit')
+
+    def test_excerpt_keeps_null_ending_with_multiple_cast_and_changes(self):
+        raw=shoot_orders();raw['segments'][-1]['cast'][-1]['end_appearance']='changed armor'
+        plan=validate_isolated_plan(raw,clips(),3,{'project_scope':'excerpt'})
+        self.assertIsNone(plan['ending_plan'])
+
     def test_missing_change_ledger_is_not_an_error(self):
         raw=shoot_orders()
         # Simulate the old response's misleading completion metadata:
@@ -77,12 +98,30 @@ class IsolatedUpstreamTests(unittest.TestCase):
             plan=ensure_plan({},req,clips(),images,temp,model)
             self.assertEqual(model.call_count,1)
             self.assertTrue(plan["isolated_shoot_orders"])
+            self.assertIsNone(plan['ending_plan'])
             system=model.call_args.args[1]
             self.assertIn("ONE whole-song director",system)
             self.assertNotIn("initial_state={",system)
             self.assertEqual(len(plan["segments"]),3)
             self.assertEqual(ensure_plan({},req,clips(),images,temp,Mock(
                 side_effect=AssertionError("must not replan"))),plan)
+
+    def test_invalid_cached_ending_is_reported_without_silent_replanning(self):
+        from banana_mv.scene_state import digest
+        req={'director_schema':3,'scene_state_version':0,'project_scope':'excerpt',
+             'prompt':'same brief','rewrite_retries':0}
+        with tempfile.TemporaryDirectory() as temp:
+            raw=shoot_orders()
+            for row in raw['segments']:
+                for actor in row['cast']:actor['picture']=None
+            plan=ensure_plan({},req,clips(),[],temp,Mock(return_value=json.dumps(raw)))
+            plan['ending_plan']='old corrupted costume text'
+            plan['content_sha256']=digest({k:v for k,v in plan.items() if k not in ('input_sha256','content_sha256')})
+            (Path(temp)/'director_plan.json').write_text(json.dumps(plan))
+            no_model=Mock(side_effect=AssertionError('do not overwrite saved projects'))
+            with self.assertRaisesRegex(SceneStateError,'結尾資料無效'):
+                ensure_plan({},req,clips(),[],temp,no_model)
+            no_model.assert_not_called()
 
     def test_clip_local_transition_uses_both_fixed_original_refs(self):
         raw=shoot_orders()
@@ -116,3 +155,4 @@ class IsolatedUpstreamTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+

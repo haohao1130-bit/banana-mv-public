@@ -139,64 +139,56 @@ class CompilerTests(unittest.TestCase):
         self.assertIn('[Shot 2]',body)
         validate_shots(body,4,appearance(),3)
 
-    def test_invalid_9b_format_uses_only_current_director_event(self):
-        from banana_mv.h3_prompt import director_shot_fallback
+    def test_invalid_format_does_not_fabricate_a_director_storyboard(self):
         plan=validate_unified_plan(treatment(),timeline(),1)
         with tempfile.TemporaryDirectory() as tmp:
-            photo=Path(tmp)/'ref.png'
-            Image.new('RGB',(8,8)).save(photo)
+            photo=Path(tmp)/'ref.png';Image.new('RGB',(8,8)).save(photo)
             seg=dict(timeline()[0],director_plan=deepcopy(plan['segments'][0]),
                      direction_constraints=[],direction_closing_shot='')
-            seg['previous_planned_event']='PRIVATE PREVIOUS TRANSFORMATION'
-            invalid='I will describe the shot now, but without any shot headings.'
+            invalid='Unformatted prose without any authored shot sequence.'
             with patch('banana_mv.services.rewrite_local',return_value=invalid) as model:
-                result=write_directed_clip({},request(prompt_compiler_version=1,
-                    rewrite_retries=0),seg,[photo],None)
+                with self.assertRaises(SceneStateError):
+                    write_directed_clip({},request(prompt_compiler_version=1,rewrite_retries=0),seg,[photo],None)
             self.assertEqual(model.call_count,1)
-            self.assertIn(plan['segments'][0]['event'],result)
-            self.assertIn('<Subject 1>',result)
-            self.assertNotIn('PRIVATE PREVIOUS TRANSFORMATION',result)
-            self.assertEqual(seg['prompt_format_fallback']['source'],'current_director_event')
-            self.assertEqual(seg['prompt_validation']['status'],'passed')
-            with self.assertRaises(ValueError):
-                director_shot_fallback('',appearance())
+            self.assertNotIn('prompt_validation',seg)
+            self.assertNotIn('prompt_format_fallback',seg)
 
-    def test_three_to_five_second_cuts_and_reference_slots(self):
-        from banana_mv.h3_prompt import target_shot_count, director_shot_fallback
-        self.assertEqual(target_shot_count(10),3)
-        self.assertEqual(target_shot_count(15),4)
-        self.assertEqual(target_shot_count(4),1)
-        self.assertEqual(target_shot_count(10,False),1)
-        self.assertEqual(target_shot_count(10,True,True),1)
-        a={'characters':{
-            'S5':{'connected_reference':'<Picture 2>','location':'hall','appearance_changes':['new form']},
-            'S3':{'connected_reference':'<Picture 4>','location':'hall','appearance_changes':['opponent']}},
-            'environments':{}}
-        one='[Shot 1] <Subject 5> confronts <Subject 3>.'
-        with self.assertRaisesRegex(ValueError,'鏡頭數不足'):
-            validate_shots(one,10,a,5,required_shots=3)
-        multi=director_shot_fallback('The actor approaches, exchanges a prop, and reacts to the opponent.',
-                                     a,seconds=10,shot_count=3)
-        self.assertEqual(multi.count('[Shot '),3)
-        text=compile_prompt(multi,10,a,5,required_shots=3)
-        self.assertIn('<Subject 5> is the same individual shown in <Picture 2>',text)
-        self.assertIn('<Subject 3> is the same individual shown in <Picture 4>',text)
-        self.assertNotIn('shown in <Picture 1>',text)
+    def test_single_shot_is_valid_without_a_hard_count_or_rewrite(self):
+        from banana_mv.director import ORIGINAL_CUT_GUIDANCE, clip_cinematography
+        original=('Use motivated editorial cuts and distinct camera compositions around 3–5 seconds where possible; '
+                  'short transition shots may appear anywhere. Cuts are flexible, not fixed to segment boundaries.')
+        self.assertEqual(ORIGINAL_CUT_GUIDANCE,original)
+        plan=validate_unified_plan(treatment(),timeline(),1)
+        with tempfile.TemporaryDirectory() as tmp:
+            photo=Path(tmp)/'ref.png';Image.new('RGB',(8,8)).save(photo)
+            for seconds in (10,15):
+                body='[Shot 1] <Subject 1> holds a sustained singing phrase with a natural hand gesture.'
+                seg=dict(timeline()[0],seconds=seconds,director_plan=deepcopy(plan['segments'][0]),
+                         direction_constraints=[],direction_closing_shot='')
+                with patch('banana_mv.services.rewrite_local',return_value=body) as model:
+                    result=write_directed_clip({},request(prompt_compiler_version=1),seg,[photo],None)
+                self.assertEqual(model.call_count,1)
+                self.assertIn(body,result)
+                task=json.loads(model.call_args.args[2][0][1])
+                self.assertNotIn('shot_contract',task)
+                self.assertIn(ORIGINAL_CUT_GUIDANCE,task['cinematography'])
+                self.assertNotIn('required_shots',seg['prompt_profile'])
+                self.assertNotIn('prompt_format_fallback',seg)
+        self.assertNotIn('3–5',clip_cinematography({'dynamic_cuts':False},'performance',10))
+        self.assertNotIn('3–5',clip_cinematography({},'performance',10,{'phase':'terminal_hold'}))
 
-    def test_fallback_orders_actor_handoff_without_coappearance(self):
-        from banana_mv.h3_prompt import director_shot_fallback
-        a={'characters':{'S1':{'connected_reference':'<Picture 1>'},
-                         'S5':{'connected_reference':'<Picture 2>'}},
-           'environments':{}}
-        shots=director_shot_fallback('The initial actor acts, changes form, and the successor takes over.',
-                                      a,seconds=10,shot_count=3,
-                                      transitions=[{'from':'S1','to':'S5'}])
-        parts=shots.split('[Shot ')
-        self.assertIn('<Subject 1>',parts[1])
-        self.assertNotIn('<Subject 5>',parts[1])
-        self.assertIn('<Subject 5>',parts[-1])
-        self.assertNotIn('<Subject 1>',parts[-1])
-        validate_shots(shots,10,a,2,required_shots=3)
+    def test_separate_sets_and_actor_handoff_keep_authored_shots_and_sparse_ids(self):
+        a={'characters':{'S2':{'connected_reference':'<Picture 2>','location':'stage'},
+                         'S5':{'connected_reference':'<Picture 4>','location':'arena'}},'environments':{}}
+        body='[Shot 1] <Subject 2> sings on stage. [Shot 2] At 00:04.000, <Subject 5> counters in the arena.'
+        text=compile_prompt(body,10,a,5)
+        self.assertIn(body,text)
+        self.assertIn('<Subject 2> is the same individual shown in <Picture 2>',text)
+        self.assertIn('<Subject 5> is the same individual shown in <Picture 4>',text)
+        self.assertIn('<Subject 2> (appears in [Shot 1])',text)
+        self.assertIn('<Subject 5> (appears in [Shot 2])',text)
+        self.assertNotIn('<Subject 1>',text)
 
 
 if __name__=='__main__':unittest.main()
+

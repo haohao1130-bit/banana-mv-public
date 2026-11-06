@@ -13,6 +13,8 @@ MODES={
 }
 KEYWORDS=[('action','武打 打鬥 切磋 戰鬥 fight battle'),('dance','跳舞 舞蹈 熱舞 dance'),('band','樂團 吉他 鼓手 貝斯 band guitar'),('chase','追逐 跑酷 飛車 chase parkour'),('fantasy','魔法 法術 變身 召喚 magic'),('horror','恐怖 驚悚 懸疑 horror'),('comedy','搞笑 惡搞 爆笑 comedy'),('story','劇情 回憶 愛情 失戀 story romance')]
 INTENSITY={'normal':'Natural grounded action.','high':'Energetic but readable action and camera movement.','extreme':'Cinematic peaks, preserve readable motion and identity.'}
+ORIGINAL_CUT_GUIDANCE = ('Use motivated editorial cuts and distinct camera compositions around 3–5 seconds where possible; '
+                         'short transition shots may appear anywhere. Cuts are flexible, not fixed to segment boundaries.')
 def _legacy_director_prompt(req, seconds):
     mode=req.get('director','auto')
     if mode=='auto':
@@ -25,7 +27,7 @@ def _legacy_director_prompt(req, seconds):
            'Event first, then character action, attention, camera and editing.',
            'Preserve performer identity, costumes, geography and source-audio lip synchronization. Do not invent lyrics.']
     if req.get('dynamic_cuts',True):
-        lines.append('Use motivated editorial cuts and distinct camera compositions around 3–5 seconds where possible; short transition shots may appear anywhere. Cuts are flexible, not fixed to segment boundaries.')
+        lines.append(ORIGINAL_CUT_GUIDANCE)
     else: lines.append('Prefer motivated longer continuous takes.')
     return '\n'.join(lines),mode
 
@@ -228,18 +230,14 @@ def director_prompt(req, seconds, segment=None):
 
 
 def clip_cinematography(req, mode, seconds, ending=None):
-    """One relevant recipe for the compact writer; no duplicated scope/ledger."""
+    """Original prompt-only shooting style, scoped to the current allocated beat."""
     if ending and ending.get('phase')=='terminal_hold':
         return 'Hold the established final composition with natural residual motion; introduce no new event.'
-    lines=['Event -> character action -> attention -> camera -> edit. Keep geography and consequences readable.',
-           'One main camera move per shot. Visible singing uses waist-up or closer; other events may use wider shots.',
-           RECIPES[mode]]
-    lines.append({'normal':'Use restrained movement; let the action breathe.',
-                  'high':'Amplify purposeful movement and one motivated camera move.',
-                  'extreme':'Emphasize a supported turning point with scale or speed contrast, then its reaction; intensity does not require constant speed.'}[req.get('intensity','high')])
-    lines.append('Use motivated 3–5 second editorial shots with distinct angles and framing. '
-                 'Cut on changes of attention and consequence, not arbitrary resets; '
-                 'keep contact and recoil or a continuous performance phrase readable.'
-                 if req.get('dynamic_cuts',True) else 'Prefer a motivated continuous take.')
+    lines=['DIRECTOR GUIDANCE:',mode+': '+MODES[mode],INTENSITY[req.get('intensity','high')],
+           'Event first, then character action, attention, camera and editing.',
+           'Preserve performer identity, costumes, geography and source-audio lip synchronization. Do not invent lyrics.',
+           'When the assigned singer is visible, use waist-up or closer; other shots may show the supplied story or environment.']
+    lines.append(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer continuous takes.')
     if seconds<=5:lines.append('Short interval: one readable beat or completion of an ongoing action.')
     return ' '.join(lines)
+

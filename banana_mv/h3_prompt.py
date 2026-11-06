@@ -25,11 +25,6 @@ or wardrobe changes. Starting wardrobe/identity is the present situation, not an
 to perform. Develop framing, light, movement and edits, not new plot milestones.
 Keep distinct locations separate using full-frame edits unless split screen is requested.
 Use current appearance throughout; if appearance_end differs, show that change once.
-Respect shot_contract.required_shots: give at least that many distinct camera shots,
-usually one motivated cut every 3–5 seconds for dynamic editing. Change framing,
-distance or angle while keeping action and consequences continuous; do NOT add
-new story events, force a cut mid-impact, or replace cuts with one long moving take.
-If shot_contract.required_shots is one, a continuous shot is allowed.
 First shot: [Shot 1] with no timestamp. Later cuts: [Shot N] At MM:SS.mmm, ...,
 numbered consecutively at increasing times strictly inside seconds, never padding.
 Only the assigned vocalist lip-syncs; the source recording owns all words and timing.
@@ -43,13 +38,6 @@ Return only the visible shots, not instructions to another writer."""
 
 
 
-def target_shot_count(seconds, dynamic_cuts=True, terminal_hold=False):
-    """Small technical editing target; not a demand for new story beats."""
-    if not dynamic_cuts or terminal_hold or float(seconds)<=5.5:
-        return 1
-    return max(2, round(float(seconds)/3.75))
-
-
 def recover_shot_prefix(raw):
     """Trim harmless 9B preambles without changing any actual shot or cast."""
     body=raw.strip()
@@ -61,62 +49,6 @@ def recover_shot_prefix(raw):
     return body
 
 
-def director_shot_fallback(event, appearance, seconds=4, shot_count=1, transitions=None):
-    """Last-resort current-event storyboard, without inventing new story beats.
-
-    Divide the existing event into sequential clauses; maintain original picture
-    references and clip-local before/after subject handoffs. Never use history.
-    """
-    script=re.sub(r'<(?:Subject|Picture|Audio|Video) \d+>', '', event).strip()
-    if not script:
-        raise ValueError('導演當段劇本為空，無法建立安全的保底分鏡。')
-    count=max(1,int(shot_count))
-    beats=[x.strip() for x in re.split(r'(?<=[，,；;。.!?！？])\s*',script) if x.strip()]
-    if not beats:beats=[script]
-    # Fall back to whitespace-delimited beats for short English prose; Chinese
-    # scene scripts are normally already separated by commas and punctuation.
-    words=script.split()
-    if len(beats)<count and len(words)>=count:
-        beats=words
-    # Distribute consecutive clauses without reordering or repeating plot events.
-    groups=[]
-    if len(beats)<count:
-        groups=beats+['']*(count-len(beats))
-    else:
-        for i in range(count):
-            start=round(i*len(beats)/count)
-            end=round((i+1)*len(beats)/count)
-            groups.append(' '.join(beats[start:end]))
-    actors=list(appearance['characters'])
-    handoffs=transitions or []
-    outgoing={t['from'] for t in handoffs}
-    incoming={t['to'] for t in handoffs}
-    common=[sid for sid in actors if sid not in outgoing|incoming]
-    shots=[]
-    for i,part in enumerate(groups):
-        if i==0:
-            visible=common+[sid for sid in actors if sid in outgoing]
-        elif i<count//2:
-            visible=common+[sid for sid in actors if sid in outgoing]
-        else:
-            visible=common+[sid for sid in actors if sid in incoming]
-        # For a one-shot handoff, both forms are sequential, not simultaneous.
-        if count==1:visible=actors
-        labels=' '.join('<Subject '+sid[1:]+ '>' for sid in visible)
-        timestamp=''
-        # Times over a minute must keep the native MM:SS.mmm convention.
-        if i:
-            time=i*float(seconds)/count
-            mm=int(time//60);ss=time-mm*60
-            timestamp=f' At {mm:02d}:{ss:06.3f},'
-        framing=('wide spatial composition','medium action and response angle',
-                 'close view of the action consequence')[min(i,2)]
-        if not part:
-            part='Continue the same ongoing action with no replay or new event.'
-        shots.append(f'[Shot {i+1}]{timestamp} {labels} {framing}: {part}'.strip())
-    return '\n'.join(shots)
-
-
 def scoped_appearance(appearance):
     """Drop off-scene environments only when every visible actor has a known scene."""
     chars=appearance['characters'];env=appearance['environments']
@@ -126,7 +58,7 @@ def scoped_appearance(appearance):
     return appearance
 
 
-def validate_shots(body, seconds, appearance, picture_count, required_shots=1):
+def validate_shots(body, seconds, appearance, picture_count):
     body=body.strip()
     if not body.startswith('[Shot 1]') or re.search(
             r'```|<d>|\(S\d+\)|^\s*(?:'+'|'.join(H3_SECTIONS)+r')\s*:',body,re.M):
@@ -134,8 +66,6 @@ def validate_shots(body, seconds, appearance, picture_count, required_shots=1):
     markers=list(re.finditer(r'\[Shot (\d+)\](?:\s*At (\d{2}):(\d{2})\.(\d{3}),?)?',body))
     if len(re.findall(r'\[Shot\b',body))!=len(markers):
         raise ValueError('鏡頭標記需使用 [Shot N]。')
-    if len(markers)<required_shots:
-        raise ValueError(f'鏡頭數不足：本段需至少 {required_shots} 鏡，實際 {len(markers)} 鏡。')
     times=[]
     for i,m in enumerate(markers):
         if int(m[1])!=i+1 or (i==0 and m[2] is not None) or (i>0 and m[2] is None):
@@ -158,14 +88,14 @@ def validate_shots(body, seconds, appearance, picture_count, required_shots=1):
     return body,markers
 
 
-def compile_prompt(body, seconds, appearance, picture_count, previous_frame=None, required_shots=1):
+def compile_prompt(body, seconds, appearance, picture_count, previous_frame=None):
     # H3's specialized rewriter may retain its trained six-field output shape.
     # Accept that envelope, but never let its metadata override compiled facts.
     if body.lstrip().startswith('subject_definitions:'):
         validate_h3_sections(body)
         body=re.search(r'^\s*detailed_description\s*:(.*?)^\s*overall_soundscape\s*:',
                        body,re.M|re.S)[1].strip()
-    body,markers=validate_shots(body,seconds,appearance,picture_count,required_shots)
+    body,markers=validate_shots(body,seconds,appearance,picture_count)
     definitions=[];retained=[]
     for sid,c in appearance['characters'].items():
         label='<Subject '+sid[1:]+'>';ref=c.get('connected_reference')
@@ -200,3 +130,4 @@ def compile_prompt(body, seconds, appearance, picture_count, previous_frame=None
     text='\n\n'.join(name+':\n'+value for name,value in zip(H3_SECTIONS,values))
     validate_h3_sections(text)
     return text
+

@@ -19,18 +19,6 @@
       "sha256": "719f317d043ad05d516b2185847797497645321366276aa6a250b469725e82d5"
     },
     {
-      "path": "LICENSE",
-      "sha256": "c7f83e69fc1888277d1ec5c6db354949ab0599564745db4c090f3da01b9ad623"
-    },
-    {
-      "path": "README.md",
-      "sha256": "c7d0396a4d47a2e8140118571b5578324f1c18cde346c0e1760b8117f1f9a0eb"
-    },
-    {
-      "path": "THIRD_PARTY.md",
-      "sha256": "9e89356e28bee55131642d6490028f1f741e51df09488169b654720522046d82"
-    },
-    {
       "path": "banana_mv/__init__.py",
       "sha256": "5e392880d22fdfba32a65160f4583c0651e5b1b7b35bdcc4f162041c493280e2"
     },
@@ -48,7 +36,11 @@
     },
     {
       "path": "banana_mv/director.py",
-      "sha256": "4ae6059da08d9cfbb9cff417c2c919235735432ac9b5ebadd73438da749eeb4e"
+      "sha256": "397497e785d82621c3ebfaa4a19f8554032e2072749b43376d0783068f231b44"
+    },
+    {
+      "path": "banana_mv/h3_prompt.py",
+      "sha256": "8a30aa3b928a1ca5ae9180c5427f617715442ba80c333a976f744ec49a6fcead"
     },
     {
       "path": "banana_mv/http_server.py",
@@ -60,11 +52,11 @@
     },
     {
       "path": "banana_mv/prompt_quality.py",
-      "sha256": "dd54c13a8602855f7f792696adc06d1f7bb5ad33a43249e611b5753c12652dca"
+      "sha256": "f1d34a7098b0d5a070ceda488546ac75247f92c41fc1d2d83c5f36f0a55c3718"
     },
     {
       "path": "banana_mv/scene_state.py",
-      "sha256": "92fa6804c61be43bdde5a092d7030f9cc4ca4d66d089acbd3570b378f87ede1e"
+      "sha256": "3eb48e11bab478053404583a528cd158cff104a8fa54dbbdff102c38d3c78676"
     },
     {
       "path": "banana_mv/server.py",
@@ -80,15 +72,27 @@
     },
     {
       "path": "banana_mv/story_plan.py",
-      "sha256": "f88fdf5668843f7cf98e317b2099a1ab0c6efe73cb5af3bb551eb7ab69864923"
+      "sha256": "55875f483fe04c36f922296c07e7ec812787bfd27387953b8055bd1cb54a971c"
     },
     {
       "path": "banana_mv/web/index.html",
       "sha256": "4f8ca403436db08d800990e2c1f0155c28a70f949125dd7633a5e6c8b30008ce"
     },
     {
+      "path": "docs/director_architecture.md",
+      "sha256": "a62af315db8cf301f7c10349742099eb234d3a7ee689b066e4787aa2909d36c2"
+    },
+    {
       "path": "docs/persistent_scene_state.md",
       "sha256": "010e123ddfb506efaf5ab221fd87ccdb6e2c6f9f64071cc64721aa274a2d0701"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "c7f83e69fc1888277d1ec5c6db354949ab0599564745db4c090f3da01b9ad623"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c7d0396a4d47a2e8140118571b5578324f1c18cde346c0e1760b8117f1f9a0eb"
     },
     {
       "path": "tests/check_ui.cjs",
@@ -119,8 +123,24 @@
       "sha256": "6932830693b7b2036850d3e33c0be913b78ca3f0b6f01f1875e91fdb9fc33dbb"
     },
     {
+      "path": "tests/test_h3_prompt.py",
+      "sha256": "d89f056fd28de8318cf29b919bcb4a216a3942f41595fbfa304ed51315456f7a"
+    },
+    {
+      "path": "tests/test_isolated_upstream.py",
+      "sha256": "357e1432de54f86f977bfe97bfd6feab91e4777d3eab8a0982caf0e6c25a83cb"
+    },
+    {
+      "path": "tests/test_json_eof.py",
+      "sha256": "b457db6f2a78d6b18ce16049d178151b8d028a86f24df58020ee04b970641109"
+    },
+    {
       "path": "tests/test_lyrics_reference.py",
       "sha256": "8fee1d7bf181fcbff4fc4186d05db503e385dff3988d7f54c5eaf1c6803df1a3"
+    },
+    {
+      "path": "tests/test_mv_scope.py",
+      "sha256": "31377559af49f67c7e621ddca37ccf318942e8669cfb3b94e83e825c45830b75"
     },
     {
       "path": "tests/test_prompt_quality.py",
@@ -135,12 +155,12 @@
       "sha256": "324a6c5f612e27652ba3dd2a74764bc80e0bd7700b9bb9289026eb24640009d7"
     },
     {
-      "path": "tests/test_scene_state.py",
-      "sha256": "df8fad4be6740d59feec7341f7ea212cce7cbe4e3c9fc2d51946b4047cc0563f"
-    },
-    {
       "path": "tests/test_scene_state_init.py",
       "sha256": "24d0a17cbcc72395622ee76e52c048b5a23a7e59ecda624ca84eb5130c8a9aee"
+    },
+    {
+      "path": "tests/test_scene_state.py",
+      "sha256": "df8fad4be6740d59feec7341f7ea212cce7cbe4e3c9fc2d51946b4047cc0563f"
     },
     {
       "path": "tests/test_server.py",
@@ -149,6 +169,10 @@
     {
       "path": "tests/test_services.py",
       "sha256": "81c34fdbc234087a02c64de5788d65c7271cf6d2eabe569488988bc58634813b"
+    },
+    {
+      "path": "THIRD_PARTY.md",
+      "sha256": "9e89356e28bee55131642d6490028f1f741e51df09488169b654720522046d82"
     },
     {
       "path": "tools/build_notebook.py",

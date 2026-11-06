@@ -403,42 +403,34 @@ a climax can precede an outro. No media tokens, dialogue or new lyrics in event 
 
 
 
-ISOLATED_SYSTEM = """You are the ONE whole-song director. Allocate one independent shoot order for
-EVERY segment_template row. Return ONLY JSON:
+ISOLATED_SYSTEM = """You are the ONE whole-song director of a MUSIC VIDEO. Plan the supplied
+story backbone, causal order, turning points and requested result across EVERY
+segment_template row. FREE may condense optional plot and vary compatible coverage;
+FAITHFUL retains the supplied event order. Use music phrasing and supplied energy
+cues to intercut story, assigned vocal performance, reactions, details and atmosphere.
+Do not force a complete setup-development-payoff scene into each interval. Revisit
+supplied performance setups with variation; no fixed singer quota or literal lyric
+illustration. Only the assigned vocalist lip-syncs; other shots keep the song continuous.
+Return ONLY JSON:
 {"constraints":["fixed vocal roles and locations"],
- "segments":[{"index":0,"event":"only what happens in THIS clip",
+ "segments":[{"index":0,"event":"current visible action and any intercuts",
  "mode":"action","cast":[{"id":"S1","picture":1,
- "appearance":"CURRENT complete look and clothing; no history",
- "location":"current set"}]}],
- "closing_shot":"final visible image",
- "ending_plan":null}.
-Each cast entry describes an actor visible at ANY instant of that clip, not
-only its opening or ending. 'picture' is the ORIGINAL uploaded image number
-(null only for a subject without a supplied image): NEVER renumber pictures
-when somebody leaves, enters, changes costume, or changes identity. Keep a
-stable actor ID and picture reference across clips. Images of places or
-objects are NOT cast members. Include BOTH before and after identities in cast
-when the script changes from one referenced identity to another WITHIN a clip.
-For these handoffs, add optional transitions:[{"from":"S1","to":"S5"}] in that
-clip; these IDs must be in its cast. They describe only this clip's event,
-not past/future history, and are not simultaneous actors unless requested.
-An optional cast.visibility is opening, closing, throughout or intermittent;
-default is throughout. For changing a SAME actor's appearance within the
-clip, give appearance as the initial look and optional end_appearance as the
-final look. Do not re-enact the change on later clips. Include correct
-CURRENT look and location for each actor whenever visible, including attire
-after costume changes. Empty cast [] is valid for a character-free clip.
-Intercuts may have actors from separate sets, each with their own location.
-The segment event is the
-complete 10–15s script assigned to the camera writer, not a summary or recap.
-Do NOT output events, event_indices, completed_indices, requires_change,
-changes, initial_state, history, transition logs or previous clips.
-Plan story continuity YOURSELF before writing the independent clip orders.
-The camera writer is NOT told the past. Respect the user's singer assignments,
-reference image identity, wardrobe, separate sets and explicit narrative.
-Supported modes are provided separately. Do not invent dialogue or lyrics.
-Follow ending_contract if supplied; full-work ending_plan contains start_time,
-resolved_by and resolution; excerpt ending_plan is null and closing_shot empty."""
+ "appearance":"current complete look and clothing","location":"current set"}]}],
+ "closing_shot":"final visible image","ending_plan":null}.
+Each cast is the union of actors visible ANY TIME in that clip, not a request for
+all to share a frame. Keep stable actor IDs and ORIGINAL picture slots across clips;
+never renumber when cast members enter or leave. picture=null only without an image.
+Places and objects are not actors; cast=[] is valid. Keep separate sets separate.
+For an in-clip identity change, include both identities and optional
+transitions:[{"from":"S1","to":"S5"}], referencing two different IDs in that cast.
+They appear sequentially, not together unless requested. Optional cast.visibility
+is opening, closing, throughout or intermittent. For a same-actor look/location change,
+use initial appearance/location plus optional end_appearance/end_location.
+Every event and current look must stand alone: the camera writer is NOT told the past.
+Do not recap or replay how the actor acquired that identity, costume or prop.
+Keep continuity in your whole-song plan without outputting a history or state ledger.
+Use only supported modes. Obey ending_contract and user exclusions; no new dialogue
+or lyrics. Each interval contains only its allocated MV beat, never past/future events."""
 
 
 def validate_isolated_plan(raw, segments, picture_count, req):
@@ -453,7 +445,7 @@ def validate_isolated_plan(raw, segments, picture_count, req):
     constraints=raw.get('constraints',[])
     if not isinstance(constraints,list) or any(not isinstance(x,str) for x in constraints):
         raise SceneStateError('constraints 必須是文字清單。')
-    ending=validate_ending(raw,req,segments)
+    ending_plan=validate_ending(raw,req,segments)
     closing=raw.get('closing_shot','')
     if not isinstance(closing,str):
         raise SceneStateError('closing_shot 必須是文字。')
@@ -487,11 +479,11 @@ def validate_isolated_plan(raw, segments, picture_count, req):
                 raise SceneStateError(f'角色 {sid} 在不同段落引用不同原始圖片。')
             stable_references[sid]=ref
             look=actor.get('appearance','');location=actor.get('location','')
-            ending=actor.get('end_appearance',look)
+            end_look=actor.get('end_appearance',look)
             end_location=actor.get('end_location',location)
             timing=actor.get('visibility','throughout')
             if (not isinstance(look,str) or not isinstance(location,str)
-                    or not isinstance(ending,str) or not isinstance(end_location,str)):
+                    or not isinstance(end_look,str) or not isinstance(end_location,str)):
                 raise SceneStateError('角色外觀與位置必須是文字。')
             if timing not in ('opening','closing','throughout','intermittent'):
                 raise SceneStateError('角色 visibility 必須是 opening、closing、throughout 或 intermittent。')
@@ -500,8 +492,8 @@ def validate_isolated_plan(raw, segments, picture_count, req):
                         'wearing':[],'not_wearing':[],
                         'appearance_changes':[look] if look.strip() else [],
                         'injuries':[],'held_props':[]}
-            if ending!=look or end_location!=location:
-                ending_looks[sid]=(ending,end_location)
+            if end_look!=look or end_location!=location:
+                ending_looks[sid]=(end_look,end_location)
         transitions=row.get('transitions',[])
         if not isinstance(transitions,list):
             raise SceneStateError('transitions 必須是清單。')
@@ -519,8 +511,8 @@ def validate_isolated_plan(raw, segments, picture_count, req):
                 visibility[transition['to']]='closing'
         appearance={'characters':chars,'environments':{}}
         after_chars={sid:dict(actor) for sid,actor in chars.items()}
-        for sid,(ending,location) in ending_looks.items():
-            after_chars[sid]['appearance_changes']=[ending] if ending.strip() else []
+        for sid,(end_look,location) in ending_looks.items():
+            after_chars[sid]['appearance_changes']=[end_look] if end_look.strip() else []
             after_chars[sid]['location']=location
         ending_appearance={'characters':after_chars,'environments':{}}
         allocation.append({'index':seg['index'],'event':row['event'].strip(),
@@ -532,7 +524,7 @@ def validate_isolated_plan(raw, segments, picture_count, req):
           'segments':allocation,'constraints':constraints,'closing_shot':closing,
           'requires_change':[],'visual_verified':False,'isolated_shoot_orders':True}
     if 'project_scope' in req:
-        plan.update(project_scope=req['project_scope'],ending_plan=ending,
+        plan.update(project_scope=req['project_scope'],ending_plan=ending_plan,
                     ending_contract=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments))
     plan['content_sha256']=digest(plan)
     return plan
@@ -667,6 +659,12 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         if plan.get('version')!=3 or plan.get('input_sha256')!=fingerprint or digest(
             {k:v for k,v in plan.items() if k not in ('input_sha256','content_sha256')})!=expected:
             raise SceneStateError('統一導演計畫與專案不符或校驗失敗。')
+        if plan.get('isolated_shoot_orders') and 'project_scope' in req:
+            from banana_mv.mv_scope import validate_ending
+            try:
+                validate_ending(plan,req,segments)
+            except ValueError as error:
+                raise SceneStateError('已存導演計畫的結尾資料無效，請建立新任務重新規劃：'+str(error)) from error
         return plan
     isolated=req.get('scene_state_version',1)==0
     task['required_segment_count']=len(segments)
@@ -751,4 +749,5 @@ def plan_context(segment, creative=False):
     if previous:
         text += '\nPrevious planned event (not visually verified): ' + previous + '\nAdvance from its intended outcome; do not replay it.'
     return text
+
 

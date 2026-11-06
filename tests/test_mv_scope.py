@@ -102,7 +102,7 @@ class ScopeTests(unittest.TestCase):
                 with patch('banana_mv.services.rewrite_local',model):
                     write_directed_clip({'guides':{'ref':str(guide)}},req,seg,[photo],None)
                 task=json.loads(model.call_args.args[2][0][1])
-                self.assertIn('Hold the established final composition' if scope=='full' else 'Give the singer a purposeful response',task['cinematography'])
+                self.assertIn('Hold the established final composition' if scope=='full' else 'Visible lip-synced lead singing',task['cinematography'])
                 self.assertEqual(task['ending_contract']['finish_work'],scope=='full')
                 self.assertEqual('closing_shot' in task,scope=='full')
                 if scope=='excerpt':self.assertNotIn('Hold the final gesture',json.dumps(task))

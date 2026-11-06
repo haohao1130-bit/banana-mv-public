@@ -175,14 +175,38 @@ def rewrite_retry_count(request):
     return value
 
 
+def _decode_json(value):
+    """Close EOF containers only; never invent values, quotes or punctuation inside data."""
+    def strict(text):
+        return json.loads(text,parse_constant=lambda item:(_ for _ in ()).throw(
+            ValueError('非標準 JSON 常數：'+item)))
+    try:
+        return strict(value)
+    except json.JSONDecodeError as error:
+        if error.pos != len(value.rstrip()):
+            raise
+        stack=[];quoted=False;escaped=False
+        for char in value:
+            if quoted:
+                if escaped:escaped=False
+                elif char=='\\':escaped=True
+                elif char=='"':quoted=False
+            elif char=='"':quoted=True
+            elif char in '{[':stack.append('}' if char=='{' else ']')
+            elif char in '}]':
+                if not stack or stack.pop()!=char:raise error
+        if quoted or not stack:raise
+        result=strict(value+''.join(reversed(stack)))
+        logging.getLogger(__name__).warning('9B JSON: closed %d missing EOF containers',len(stack))
+        return result
+
+
 def parse_object(raw,expected=None):
     """Read JSON before Markdown, select a unique contract or merge lossless fragments only."""
     if isinstance(raw,str):
         if len(raw)>180000:raise SceneStateError('狀態資料過大。')
         source=re.sub(r'<think>.*?</think>','',raw,flags=re.S).strip().lstrip('\ufeff').strip()
-        def decode(value):
-            return json.loads(value,parse_constant=lambda value:(_ for _ in ()).throw(
-                ValueError('非標準 JSON 常數：'+value)))
+        decode=_decode_json
         try:
             # A JSON string may itself contain Markdown; never split valid outer JSON.
             raw=decode(source)
@@ -875,3 +899,4 @@ def cached_clip(work,ledger,segment):
     checked=plan_clip(record,record['scene_state_in'],ledger['event_catalog'],segment)
     if checked['output_sha256']!=record.get('output_sha256'):raise SceneStateError('快取狀態輸出不符。')
     return record
+
