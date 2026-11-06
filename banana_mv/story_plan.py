@@ -419,6 +419,9 @@ Return ONLY JSON:
  "closing_shot":"final visible image","ending_plan":null}.
 Each cast is the union of actors visible ANY TIME in that clip, not a request for
 all to share a frame. Keep stable actor IDs and ORIGINAL picture slots across clips;
+Include only actors actually appearing in that row's event, never every uploaded
+reference. Exclude a future identity before its transformation and the old identity
+afterward; include both only in the actual transformation interval.
 never renumber when cast members enter or leave. picture=null only without an image.
 Places and objects are not actors; cast=[] is valid. Keep separate sets separate.
 For an in-clip identity change, include both identities and optional

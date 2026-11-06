@@ -22,6 +22,20 @@ def appearance():
 
 
 class CompilerTests(unittest.TestCase):
+    def test_explicit_internal_ids_compile_without_rebinding_or_forcing_unused_cast(self):
+        a=appearance();a['characters']['S5']=dict(a['characters']['S2'],connected_reference='<Picture 5>')
+        text=compile_prompt('[Shot 1] S2 turns and blocks.',4,a,5,allow_subset=True)
+        self.assertIn('<Subject 2> turns and blocks.',text)
+        self.assertIn('shown in <Picture 3>',text)
+        self.assertNotIn('<Subject 5>',text)
+        self.assertNotIn('appears in )',text)
+        with self.assertRaises(ValueError):
+            compile_prompt('[Shot 1] S8 turns.',4,a,5,allow_subset=True)
+        empty=compile_prompt('[Shot 1] The camera crosses the empty arena.',4,a,5,allow_subset=True)
+        self.assertNotIn('<Subject',empty)
+        with self.assertRaises(ValueError):
+            compile_prompt('[Shot 1] S2 turns.',4,a,5)
+
     def test_non_singing_actor_and_opening_frame_keep_distinct_bindings(self):
         text=compile_prompt('[Shot 1] <Subject 2> slips the punch. [Shot 2] At 00:03.000, <Subject 2> counters.',
                             4,appearance(),3,'<Picture 1>')

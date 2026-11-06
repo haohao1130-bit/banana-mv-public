@@ -271,7 +271,8 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
             if compiled:
                 text=recover_shot_prefix(text)
                 text=compile_prompt(text,segment['seconds'],before,len(originals)+offset,
-                                    '<Picture 1>' if tail else None)
+                                    '<Picture 1>' if tail else None,
+                                    allow_subset=req.get('scene_state_version')==0)
             validate_h3_sections(text)
             validate_subject_bindings(text,before)
         except ValueError as error:
@@ -288,7 +289,7 @@ def write_directed_clip(cfg,req,segment,originals,tail,*,scene_input=None,event_
         # its Subject-1 binding only when the plan actually maps a character there.
         actor=before['characters'].get('S1',{})
         binding=re.fullmatch(r'<Picture (\d+)>',actor.get('connected_reference') or '')
-        if req.get('face_identity',True) and binding:
+        if req.get('face_identity',True) and binding and (not compiled or '<Subject 1>' in text):
             text=enforce_face_identity(text,int(binding[1]))
         # The only unconditional final invariant is source-audio/vocal-role routing.
         text+='\n\n'+OUTPUT_POLICY

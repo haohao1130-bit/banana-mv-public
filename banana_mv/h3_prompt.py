@@ -9,8 +9,9 @@ from banana_mv.direction_contract import H3_SECTIONS, validate_h3_sections
 
 VISUAL_WRITER_SYSTEM = """Write only English shot prose for THIS source interval, beginning [Shot 1].
 No JSON, headings, six-section prompt, dialogue, lyrics, subtitles or sound directions.
-Use <Subject N> for every character appearing ANY TIME in this clip's appearance_start,
-and no other Subject ID. The character list is the union across the clip, NOT a
+Use <Subject N> for the actors actually shown by visual_task, using only IDs in
+appearance_start. Never introduce an unused identity just to cover the cast list.
+The character list is available cast across the clip, NOT a
 request to put all characters in the same frame. Each connected_reference is an
 immutable ORIGINAL picture slot; never compact or remap picture numbers.
 Respect current_clip_visibility and current_clip_transitions when present:
@@ -58,7 +59,7 @@ def scoped_appearance(appearance):
     return appearance
 
 
-def validate_shots(body, seconds, appearance, picture_count):
+def validate_shots(body, seconds, appearance, picture_count, allow_subset=False):
     body=body.strip()
     if not body.startswith('[Shot 1]') or re.search(
             r'```|<d>|\(S\d+\)|^\s*(?:'+'|'.join(H3_SECTIONS)+r')\s*:',body,re.M):
@@ -80,24 +81,33 @@ def validate_shots(body, seconds, appearance, picture_count):
         times.append(time)
     known={'<Subject '+sid[1:]+'>' for sid in appearance['characters']}
     used=set(re.findall(r'<Subject \d+>',body))
-    if used!=known:
-        raise ValueError('鏡頭 Subject 必須與當段入鏡角色一致：'+(', '.join(sorted(known)) or '無固定角色'))
+    unknown=used-known
+    if unknown or (not allow_subset and used!=known):
+        raise ValueError('鏡頭角色標記不符；請使用 <Subject N>。可用：'+
+                         (', '.join(sorted(known)) or '無固定角色')+
+                         '；實際：'+(', '.join(sorted(used)) or '未找到標記')+
+                         ('；未知：'+', '.join(sorted(unknown)) if unknown else ''))
     for kind,n in re.findall(r'<(Picture|Audio|Video) (\d+)>',body):
         if kind=='Video' or not 1<=int(n)<=(picture_count if kind=='Picture' else 1):
             raise ValueError('鏡頭引用未連接的媒體：'+kind+' '+n)
     return body,markers
 
 
-def compile_prompt(body, seconds, appearance, picture_count, previous_frame=None):
+def compile_prompt(body, seconds, appearance, picture_count, previous_frame=None, allow_subset=False):
     # H3's specialized rewriter may retain its trained six-field output shape.
     # Accept that envelope, but never let its metadata override compiled facts.
     if body.lstrip().startswith('subject_definitions:'):
         validate_h3_sections(body)
         body=re.search(r'^\s*detailed_description\s*:(.*?)^\s*overall_soundscape\s*:',
                        body,re.M|re.S)[1].strip()
-    body,markers=validate_shots(body,seconds,appearance,picture_count)
+    # Canonicalize explicit internal IDs only; never guess identity from names or
+    # compact IDs when an actor is omitted. Unknown IDs remain validation errors.
+    body=re.sub(r'(?<![\w<])S([1-9]\d*)(?!\w|>)',r'<Subject \1>',body)
+    body,markers=validate_shots(body,seconds,appearance,picture_count,allow_subset)
+    used=set(re.findall(r'<Subject (\d+)>',body))
     definitions=[];retained=[]
     for sid,c in appearance['characters'].items():
+        if sid[1:] not in used:continue
         label='<Subject '+sid[1:]+'>';ref=c.get('connected_reference')
         identity=f'the same individual shown in {ref}' if ref else 'the recurring character specified by the directed event'
         details=[]
