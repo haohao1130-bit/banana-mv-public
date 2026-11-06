@@ -76,11 +76,11 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "08e704c9e348d86ae10f2df4f6d6943db3cc43b283743133b81d8c0d0612aeef"
+      "sha256": "a867930c741bac00b1498f2a26cd38fbe7c83e77d4f29dfa2ef10cf15479d9ec"
     },
     {
       "path": "docs/director_architecture.md",
-      "sha256": "dcf22bc3eca7276cbde58bcff23cb73befae57174c9853a2e963a2ba18e67620"
+      "sha256": "3e7704d78538f2d3d3b4228e7b8dbcb0f32d835b73a7c8af08a6d3078cefa597"
     },
     {
       "path": "docs/persistent_scene_state.md",
@@ -92,11 +92,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "8f5ddf2a3b3cc0ef152fe40dbf569f93e795f08ec64e84513736a5f7345c27d0"
+      "sha256": "69a7120069f58f017da097ec1e4e29af54f7d0973355c93682285d9331cedc34"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "0d8d33ad659829a609825ad112565044551098c447e35c31e12a373273d40474"
+      "sha256": "1efa21b287311ee102589cd15dca29455779047c89acd45fd46c0fe4ca090b7e"
     },
     {
       "path": "tests/test_audio_analysis.py",

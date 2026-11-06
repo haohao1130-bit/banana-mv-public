@@ -80,20 +80,20 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   const terminal=await vm.runInContext("api('status-error')",context);assert.equal(terminal.status,'error');assert.equal(terminal.error,'bad media tag');
   vm.runInContext('renderJobSeed({seed:0})',context);assert.equal(els['job-seed'].textContent,'本次 Seed：0');
   vm.runInContext('renderJobSeed({})',context);assert.equal(els['job-seed'].textContent,'本次 Seed：尚未取得');
-  assert.equal(els['multi-panel'].hidden,true);
+  assert.equal(Object.keys(els).filter(id=>/^reference-slot-\d+$/.test(id)).length,9);assert(!/<input[^>]*\bmultiple\b/.test(html));
   const srt='1\n00:00:00,000 --> 00:00:03,000\n歌詞參考';
   els['srt-file'].files=[{name:'song.srt',size:100,text:async()=>srt}];await els['srt-file'].onchange();assert.equal(els['srt-reference'].value,srt);
   els.lyrics.value='全曲歌詞';
   els.image.files=[file('main.png')];els.image.onchange();els.song.files=[file('song.wav')];
-  let req=await submit();assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,3);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.equal(req.image_ids,undefined);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
+  let req=await submit();assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,3);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.deepEqual(req.image_ids,['main.png']);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
   assert.deepEqual(uploads,['main.png','song.wav']);
   els.project_scope.value='excerpt';els.story_plan.checked=false;els.audio_analysis.checked=false;els.face_identity.checked=false;els.kitchen_attention.checked=false;els.sparse_attention.checked=true;els.motion_lora.checked=false;req=await submit();assert.equal(req.project_scope,'excerpt');assert.equal(req.story_plan,false);assert.equal(req.audio_analysis,false);assert.equal(req.face_identity,false);assert.equal(req.kitchen_attention,false);assert.equal(req.sparse_attention,true);assert.equal(req.motion_lora,false);
-  els['toggle-multiref'].onclick();assert.equal(els['multi-panel'].hidden,false);
-  els['extra-images'].files=[file('side.png'),file('scene.png')];els['extra-images'].onchange();
+  els['image-2'].files=[file('side.png')];els['image-2'].onchange();
+  els['image-3'].files=[file('scene.png')];els['image-3'].onchange();
   req=await submit();assert.deepEqual(req.image_ids,['main.png','side.png','scene.png']);
-  els['toggle-multiref'].onclick();assert.equal(els['multi-panel'].hidden,true);
-  req=await submit();assert.equal(req.image_ids,undefined);assert.deepEqual(uploads,['main.png','song.wav']);
-  els['toggle-multiref'].onclick();req=await submit();assert.equal(req.image_ids.length,3);
+  els['image-2'].files=[file('replacement.png')];els['image-2'].onchange();
+  req=await submit();assert.deepEqual(req.image_ids,['main.png','replacement.png','scene.png']);
+  assert.equal(els['image-name-3'].textContent,'scene.png');
   els.aspect.value='9:16';els.aspect.events.change();
   assert.equal(els.width.value,'720');assert(els['size-help'].textContent.includes('720 × 1280'));
   req=await submit();assert.equal(req.width,720);
@@ -106,13 +106,23 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   }
   els.resolution.value='720p';els.resolution.events.change();
   els.aspect.value='16:9';els.aspect.events.change();
-  // Removing one extra renumbers the remaining card and the actual request together.
-  els.previews.children[0].children[2].onclick();req=await submit();
-  assert.deepEqual(req.image_ids,['main.png','scene.png']);
-  assert(els.previews.children[0].children[1].textContent.startsWith('圖片2：'));
-  // A tenth reference must be rejected without losing the existing selection.
-  els['extra-images'].files=Array.from({length:8},(_,i)=>file(`extra${i}.png`));els['extra-images'].onchange();
-  req=await submit();assert.equal(req.image_ids.length,2);
+  // Clear a fixed slot: no renumbering or uploads until that gap is filled.
+  els['remove-image-2'].onclick();const beforeGap=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});
+  assert.equal(posts.length,beforeGap);assert.deepEqual(uploads,[]);
+  assert.equal(els['image-name-3'].textContent,'scene.png');assert(els.status.textContent.includes('圖片2尚未選取'));
+  els['image-2'].files=[file('actor2.png')];els['image-2'].onchange();
+  req=await submit();assert.deepEqual(req.image_ids,['main.png','actor2.png','scene.png']);
+  for(let n=4;n<=9;n++){els['image-'+n].files=[file(`slot${n}.png`)];els['image-'+n].onchange();}
+  req=await submit();assert.equal(req.image_ids.length,9);assert.equal(req.image_ids[8],'slot9.png');
+  els.mode.value='chain';els.mode.events.change();assert.equal(els['image-9'].disabled,true);
+  const beforeChain=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});assert.equal(posts.length,beforeChain);assert.deepEqual(uploads,[]);
+  els['remove-image-9'].onclick();req=await submit();assert.equal(req.image_ids.length,8);
+  assert.equal(req.image_ids[6],'slot7.png');assert.equal(req.image_ids[7],'slot8.png');
+  els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'].disabled,false);
+  // Clearing slot 1 also keeps every other binding in place.
+  els['remove-image-1'].onclick();const beforeMissingFirst=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});
+  assert.equal(posts.length,beforeMissingFirst);assert.equal(els['image-name-2'].textContent,'actor2.png');
+  els.image.files=[file('main.png')];els.image.onchange();
   await els['open-last'].onclick();assert.equal(els.project_scope.value,'excerpt');assert.equal(els.kitchen_attention.checked,true);assert.equal(els.sparse_attention.checked,true);assert.equal(els['job-seed'].textContent,'本次 Seed：0');assert.equal(els.prompt.value,'saved story');assert.equal(els.aspect.value,'9:16');assert.equal(els.seed.value,'0');assert.equal(els.face_identity.checked,false);assert.equal(els['resume-project'].hidden,false);assert(els['project-summary'].textContent.includes('雲端歌曲'));
   assert.equal(els.resolution.value,'720p');assert.equal(els.width.value,'720');
   assert.equal(els['srt-reference'].value,'已存SRT');assert.equal(els.lyrics.value,'已存歌詞');
@@ -140,6 +150,6 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
-  console.log('UI checks passed: collapsed default, legacy single image, multi upload, toggle exclusion, retained selections, removal numbering and count limit.');
+  console.log('UI checks passed: nine visible single-file slots, fixed numbering, replacements, gaps blocked before upload, chain limits, prompt review and retakes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
