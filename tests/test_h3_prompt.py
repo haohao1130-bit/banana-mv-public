@@ -177,7 +177,7 @@ class CompilerTests(unittest.TestCase):
             validate_shots(one,10,a,5,required_shots=3)
         multi=director_shot_fallback('The actor approaches, exchanges a prop, and reacts to the opponent.',
                                      a,seconds=10,shot_count=3)
-        self.assertEqual(len(__import__('re').findall(r'\\[Shot [1-3]\\]',multi)),3)
+        self.assertEqual(multi.count('[Shot '),3)
         text=compile_prompt(multi,10,a,5,required_shots=3)
         self.assertIn('<Subject 5> is the same individual shown in <Picture 2>',text)
         self.assertIn('<Subject 3> is the same individual shown in <Picture 4>',text)
