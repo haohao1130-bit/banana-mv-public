@@ -231,7 +231,7 @@ class EnvironmentFormatTests(unittest.TestCase):
     def test_conflicting_ids_nonempty_arrays_unknown_fields_and_null_keep_precise_errors(self):
         from banana_mv.scene_state import normalize_environment
         for raw,field in [({'scene_id':'elsewhere'},'scene_id'),
-                          ({'damaged_objects':['broken chair']},'damaged_objects'),
+                          ({'damaged_objects':['broken chair', 42]},'damaged_objects'),
                           ({'prop_positions':None},'prop_positions'),
                           ({'unknown':True},'unknown')]:
             with self.subTest(raw=raw),self.assertRaises(SceneStateError) as caught:
