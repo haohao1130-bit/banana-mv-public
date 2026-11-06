@@ -40,7 +40,7 @@
     },
     {
       "path": "banana_mv/h3_prompt.py",
-      "sha256": "56401920eddb3662c006b4aa8921b73f0e2305118d06a4310e674ad7c2c504e7"
+      "sha256": "7fe008b88e1c1deb904b9124f8744318a22482c6ddb52dad2e6bcfb3ede45664"
     },
     {
       "path": "banana_mv/http_server.py",
@@ -124,7 +124,7 @@
     },
     {
       "path": "tests/test_h3_prompt.py",
-      "sha256": "9999f32abf9a118e609b3a9e8ebc4ea25bde0aa99f635ceef677934400204254"
+      "sha256": "d95c77b1d2b3051aa83d8db9a47ef0e0e934bbbed322bd93922cbfd07aa7669f"
     },
     {
       "path": "tests/test_isolated_upstream.py",

@@ -22,6 +22,16 @@ def appearance():
 
 
 class CompilerTests(unittest.TestCase):
+    def test_plain_shot_labels_are_normalized_without_inventing_cuts_or_times(self):
+        from banana_mv.h3_prompt import recover_shot_prefix
+        raw='Shot 1: S2 evades.\n\nShot 2: At 00:02.400, S2 counters.'
+        body=recover_shot_prefix(raw)
+        self.assertEqual(body,'[Shot 1] S2 evades.\n\n[Shot 2] At 00:02.400, S2 counters.')
+        text=compile_prompt(body,4,appearance(),3)
+        self.assertIn('[Shot 2] At 00:02.400, <Subject 2> counters.',text)
+        with self.assertRaises(ValueError):
+            compile_prompt(recover_shot_prefix('Shot 1: S2 evades.\nShot 2: S2 counters.'),4,appearance(),3)
+
     def test_explicit_internal_ids_compile_without_rebinding_or_forcing_unused_cast(self):
         a=appearance();a['characters']['S5']=dict(a['characters']['S2'],connected_reference='<Picture 5>')
         text=compile_prompt('[Shot 1] S2 turns and blocks.',4,a,5,allow_subset=True)

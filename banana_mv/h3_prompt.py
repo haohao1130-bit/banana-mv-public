@@ -41,7 +41,8 @@ Return only the visible shots, not instructions to another writer."""
 
 def recover_shot_prefix(raw):
     """Trim harmless 9B preambles without changing any actual shot or cast."""
-    body=raw.strip()
+    body=re.sub(r'(?mi)^[ \t]*Shot[ \t]+([1-9]\d*)[ \t]*:[ \t]*',
+                r'[Shot \1] ',raw.strip())
     # Some local rewriters prepend a brief explanation before valid shot prose.
     # Keep only the authored shot sequence; the normal validator still owns it.
     match=re.search(r'\[Shot 1\]',body)
