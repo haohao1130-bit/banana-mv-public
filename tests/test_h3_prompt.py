@@ -131,4 +131,35 @@ class CompilerTests(unittest.TestCase):
                     self.assertEqual(task['ending_contract']['local_resolution_by'],0)
 
 
+    def test_shot_prefix_recovery_preserves_original_shots(self):
+        from banana_mv.h3_prompt import recover_shot_prefix
+        raw="Here is the requested camera sequence:\\n[Shot 1] <Subject 2> blocks. [Shot 2] At 00:02.000, <Subject 2> counters."
+        body=recover_shot_prefix(raw)
+        self.assertTrue(body.startswith('[Shot 1]'))
+        self.assertIn('[Shot 2]',body)
+        validate_shots(body,4,appearance(),3)
+
+    def test_invalid_9b_format_uses_only_current_director_event(self):
+        from banana_mv.h3_prompt import director_shot_fallback
+        plan=validate_unified_plan(treatment(),timeline(),1)
+        with tempfile.TemporaryDirectory() as tmp:
+            photo=Path(tmp)/'ref.png'
+            Image.new('RGB',(8,8)).save(photo)
+            seg=dict(timeline()[0],director_plan=deepcopy(plan['segments'][0]),
+                     direction_constraints=[],direction_closing_shot='')
+            seg['previous_planned_event']='PRIVATE PREVIOUS TRANSFORMATION'
+            invalid='I will describe the shot now, but without any shot headings.'
+            with patch('banana_mv.services.rewrite_local',return_value=invalid) as model:
+                result=write_directed_clip({},request(prompt_compiler_version=1,
+                    rewrite_retries=0),seg,[photo],None)
+            self.assertEqual(model.call_count,1)
+            self.assertIn(plan['segments'][0]['event'],result)
+            self.assertIn('<Subject 1>',result)
+            self.assertNotIn('PRIVATE PREVIOUS TRANSFORMATION',result)
+            self.assertEqual(seg['prompt_format_fallback']['source'],'current_director_event')
+            self.assertEqual(seg['prompt_validation']['status'],'passed')
+            with self.assertRaises(ValueError):
+                director_shot_fallback('',appearance())
+
+
 if __name__=='__main__':unittest.main()
