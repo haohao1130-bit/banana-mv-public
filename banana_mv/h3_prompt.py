@@ -73,12 +73,20 @@ def director_shot_fallback(event, appearance, seconds=4, shot_count=1, transitio
     count=max(1,int(shot_count))
     beats=[x.strip() for x in re.split(r'(?<=[，,；;。.!?！？])\s*',script) if x.strip()]
     if not beats:beats=[script]
+    # Fall back to whitespace-delimited beats for short English prose; Chinese
+    # scene scripts are normally already separated by commas and punctuation.
+    words=script.split()
+    if len(beats)<count and len(words)>=count:
+        beats=words
     # Distribute consecutive clauses without reordering or repeating plot events.
     groups=[]
-    for i in range(count):
-        start=round(i*len(beats)/count)
-        end=round((i+1)*len(beats)/count)
-        groups.append(' '.join(beats[start:end]))
+    if len(beats)<count:
+        groups=beats+['']*(count-len(beats))
+    else:
+        for i in range(count):
+            start=round(i*len(beats)/count)
+            end=round((i+1)*len(beats)/count)
+            groups.append(' '.join(beats[start:end]))
     actors=list(appearance['characters'])
     handoffs=transitions or []
     outgoing={t['from'] for t in handoffs}
@@ -88,14 +96,14 @@ def director_shot_fallback(event, appearance, seconds=4, shot_count=1, transitio
     for i,part in enumerate(groups):
         if i==0:
             visible=common+[sid for sid in actors if sid in outgoing]
-        elif i==count-1:
-            visible=common+[sid for sid in actors if sid in incoming]
+        elif i<count//2:
+            visible=common+[sid for sid in actors if sid in outgoing]
         else:
-            visible=common+[sid for sid in actors if sid in outgoing|incoming]
+            visible=common+[sid for sid in actors if sid in incoming]
         # For a one-shot handoff, both forms are sequential, not simultaneous.
         if count==1:visible=actors
         labels=' '.join('<Subject '+sid[1:]+ '>' for sid in visible)
-        timestamp='' if i==0 else f' At 00:{(i*float(seconds)/count):06.3f},'
+        timestamp=''
         # Times over a minute must keep the native MM:SS.mmm convention.
         if i:
             time=i*float(seconds)/count
