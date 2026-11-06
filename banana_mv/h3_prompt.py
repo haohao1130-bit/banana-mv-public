@@ -32,6 +32,32 @@ that reaches them in time. terminal_hold sustains it without a new event or scen
 Return only the visible shots, not instructions to another writer."""
 
 
+
+def recover_shot_prefix(raw):
+    """Trim harmless 9B preambles without changing any actual shot or cast."""
+    body=raw.strip()
+    # Some local rewriters prepend a brief explanation before valid shot prose.
+    # Keep only the authored shot sequence; the normal validator still owns it.
+    match=re.search(r'\[Shot 1\]',body)
+    if match and not body.startswith('[Shot 1]') and not body.startswith('subject_definitions:'):
+        return body[match.start():].strip().removesuffix('```').strip()
+    return body
+
+
+def director_shot_fallback(event, appearance):
+    """Last-resort deterministic single shot: only the assigned director event.
+
+    No past scenes, invented action, new actors, lyrics or model-written metadata.
+    """
+    cast=' '.join('<Subject '+sid[1:]+ '>' for sid in appearance['characters'])
+    # Director prose is authoritative but its free-form media mentions are not.
+    # Subject and picture bindings are owned by appearance/compile_prompt.
+    script=re.sub(r'<(?:Subject|Picture|Audio|Video) \d+>', '', event).strip()
+    if not script:
+        raise ValueError('導演當段劇本為空，無法建立安全的保底分鏡。')
+    return '[Shot 1] '+(cast+' ' if cast else '')+script
+
+
 def scoped_appearance(appearance):
     """Drop off-scene environments only when every visible actor has a known scene."""
     chars=appearance['characters'];env=appearance['environments']
