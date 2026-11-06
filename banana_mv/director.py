@@ -237,7 +237,9 @@ def clip_cinematography(req, mode, seconds, ending=None):
     lines.append({'normal':'Use restrained movement; let the action breathe.',
                   'high':'Amplify purposeful movement and one motivated camera move.',
                   'extreme':'Emphasize a supported turning point with scale or speed contrast, then its reaction; intensity does not require constant speed.'}[req.get('intensity','high')])
-    lines.append('Vary shot length with action and musical phrasing; no compulsory cut interval.'
+    lines.append('Use motivated 3–5 second editorial shots with distinct angles and framing. '
+                 'Cut on changes of attention and consequence, not arbitrary resets; '
+                 'keep contact and recoil or a continuous performance phrase readable.'
                  if req.get('dynamic_cuts',True) else 'Prefer a motivated continuous take.')
     if seconds<=5:lines.append('Short interval: one readable beat or completion of an ongoing action.')
     return ' '.join(lines)
