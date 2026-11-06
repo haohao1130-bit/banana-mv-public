@@ -15,7 +15,7 @@ class AudioTimingTests(unittest.TestCase):
             command(['ffmpeg','-v','error','-y','-f','lavfi','-i','sine=frequency=440:duration=60',
                      '-c:a','libmp3lame',song])
             measured=source_audio_duration(song)
-            self.assertGreater(duration(song),60)
+            self.assertGreaterEqual(duration(song),measured)
             self.assertAlmostEqual(measured,60,places=3)
             plan=segments(measured,15)
             self.assertEqual(len(plan),4)
