@@ -13,6 +13,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+if __name__=='__main__':
+    sys.modules['banana_mv.server']=sys.modules[__name__]
 from banana_mv.director import director_prompt
 from banana_mv.core import (FPS, assemble, audio_window, build_workflow, dimensions,
                             duration, enforce_face_identity, fallback_prompt, last_frame, output_dimensions,
@@ -116,6 +118,9 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
         normalize_mv_prompt(brief, picture_count)
     creative = director_led(req)
     scope = clip_scope(segment,brief,creative) if optimize else ''
+    if 'project_scope' in req:
+        from banana_mv.mv_scope import clip_ending
+        scope=json.dumps(clip_ending(req,segment),ensure_ascii=False)
     context = segment_context(segment)
     allocation = plan_context(segment,creative)
     if allocation:
@@ -338,6 +343,9 @@ def worker(job, cfg, original, song, drive):
                     seg['direction_constraints']=plan['constraints']
                     seg['direction_closing_shot']=plan['closing_shot']
                     seg['direction_requires_change']=plan['requires_change']
+                    if 'project_scope' in plan:
+                        seg['direction_ending_plan']=plan.get('ending_plan')
+                        seg['direction_ending_contract']=plan['ending_contract']
                 if index:
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
@@ -407,7 +415,7 @@ def worker(job, cfg, original, song, drive):
                 seg.pop('scene_state_prompt_sha256',None)
                 seg.pop('refresh_prompt',None) # the new prompt/state pair is now durable
             wf = build_workflow(job['images_comfy'],name,*job['size'],seg['model_frames'],prompt,
-                                (job['seed']+i) % (2**48),first,
+                                seg.get('render_seed',(job['seed']+i) % (2**48)),first,
                                 **graph_options(job['request'],seg['seconds'],seg))
             preflight(cfg,wf)
             (work/f'{i:02d}_workflow_api.json').write_text(json.dumps(wf,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -471,14 +479,19 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=3,
+             director_schema=3,prompt_compiler_version=1,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
+    from banana_mv.mv_scope import validate_scope
+    validate_scope(req['project_scope'])
     req['rewrite_retries']=rewrite_retry_count(req)
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
-    req['scene_state_version']=1 if req.get('persistent_scene_state',True) and req.get('rewrite',True) else 0
+    # New unified-director projects are self-contained per clip. The already
+    # allocated director_plan holds each clip's starting appearance and action.
+    # An explicit legacy toggle retains the old history ledger for existing workflows.
+    req['scene_state_version']=1 if req.get('persistent_scene_state',False) and req.get('rewrite',True) else 0
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):
         raise ValueError('face_identity 必須為布林值。')
     if not isinstance(req['audio_analysis'], bool):
@@ -641,6 +654,32 @@ def repair_unstarted_timeline(job, song):
     job.pop('director_plan',None)
 
 
+def restore_render_settings(job):
+    """Infer absent legacy render switches without changing saved choices."""
+    if 'sampling_steps' not in job['request']:
+        # Existing projects keep their saved schedule rather than silently mixing 6 and 8 steps.
+        saved=sorted(job_dir(job['id']).glob('*_workflow_api.json'))
+        saved_steps=6
+        if saved:
+            previous=json.loads(saved[0].read_text(encoding='utf-8'))
+            saved_steps=next((n['inputs']['steps'] for n in previous.values()
+                              if n['class_type']=='BasicScheduler'),6)
+        job['request']['sampling_steps']=saved_steps
+    # Older projects predate explicit feature switches. Infer only absent switches.
+    if not job.get('settings_version'):
+        workflows=sorted(job_dir(job['id']).glob('*_workflow_api.json'))
+        prompts=sorted(job_dir(job['id']).glob('*_prompt.txt'))
+        if workflows:
+            graph=json.loads(workflows[0].read_text(encoding='utf-8'))
+            kinds={n['class_type'] for n in graph.values()}
+            job['request'].setdefault('kitchen_attention','ModelAttentionBackend' in kinds)
+            job['request'].setdefault('sparse_attention','BlockSparseAttention' in kinds)
+            job['request'].setdefault('acceleration','BlockSparseAttention' in kinds)
+            job['request'].setdefault('motion_lora','LoraLoaderModelOnly' in kinds)
+        if prompts:
+            job['request'].setdefault('face_identity','[BANANA_FACE_IDENTITY_V1]' in prompts[0].read_text(encoding='utf-8'))
+
+
 def resume(job_id,rewrite_retries=None):
     retries=rewrite_retry_count({'rewrite_retries':rewrite_retries}) if rewrite_retries is not None else None
     if not GPU_LOCK.acquire(blocking=False):
@@ -656,28 +695,7 @@ def resume(job_id,rewrite_retries=None):
             raise ValueError('ComfyUI 仍在執行工作，請等佇列清空再續跑。')
         originals,song,drive=project_inputs(job,cfg)
         repair_unstarted_timeline(job,song)
-        if 'sampling_steps' not in job['request']:
-            # Existing projects keep their saved schedule rather than silently mixing 6 and 8 steps.
-            saved=sorted(job_dir(job_id).glob('*_workflow_api.json'))
-            saved_steps=6
-            if saved:
-                previous=json.loads(saved[0].read_text(encoding='utf-8'))
-                saved_steps=next((n['inputs']['steps'] for n in previous.values()
-                                  if n['class_type']=='BasicScheduler'),6)
-            job['request']['sampling_steps']=saved_steps
-        # Older projects predate explicit feature switches. Infer only absent switches.
-        if not job.get('settings_version'):
-            workflows=sorted(job_dir(job_id).glob('*_workflow_api.json'))
-            prompts=sorted(job_dir(job_id).glob('*_prompt.txt'))
-            if workflows:
-                graph=json.loads(workflows[0].read_text(encoding='utf-8'))
-                kinds={n['class_type'] for n in graph.values()}
-                job['request'].setdefault('kitchen_attention','ModelAttentionBackend' in kinds)
-                job['request'].setdefault('sparse_attention','BlockSparseAttention' in kinds)
-                job['request'].setdefault('acceleration','BlockSparseAttention' in kinds)
-                job['request'].setdefault('motion_lora','LoraLoaderModelOnly' in kinds)
-            if prompts:
-                job['request'].setdefault('face_identity','[BANANA_FACE_IDENTITY_V1]' in prompts[0].read_text(encoding='utf-8'))
+        restore_render_settings(job)
         missing=False
         for seg in job['segments']:
             part=job_dir(job_id)/f"{seg['index']:02d}_part.mp4"
@@ -708,6 +726,8 @@ class Handler(WebHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path in ('/','/mv'):
             return self.send_file(WEB/'index.html')
+        if url.path=='/clip_review.js':
+            return self.send_file(WEB/'clip_review.js')
         if url.path=='/api/health':
             return self.send_json({'service':'banana-mv','standalone':True})
         if url.path=='/api/config':
@@ -730,8 +750,16 @@ class Handler(WebHandler):
             return self.send_json(backend.library_index())
         if url.path=='/api/mv/status':
             try:
-                return self.send_json(read_state(dict(urllib.parse.parse_qsl(url.query))['id']))
+                from banana_mv.takes import describe
+                return self.send_json(describe(read_state(dict(urllib.parse.parse_qsl(url.query))['id'])))
             except Exception as e:
+                return self.send_json({'error':str(e)},400)
+        if url.path=='/api/mv/clip':
+            try:
+                from banana_mv.takes import preview
+                args=dict(urllib.parse.parse_qsl(url.query));job=read_state(args['id'])
+                return self.send_file(preview(job,int(args['index']),args.get('take','current')))
+            except (ValueError,KeyError,OSError,RuntimeError) as e:
                 return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/file':
             try:
@@ -757,6 +785,14 @@ class Handler(WebHandler):
             if path=='/api/mv/resume':
                 body=self.body_json()
                 return self.send_json(resume(body['id'],body.get('rewrite_retries')))
+            if path=='/api/mv/retake':
+                from banana_mv.takes import retake
+                body=self.body_json()
+                return self.send_json(retake(body['id'],body.get('indices')))
+            if path=='/api/mv/select-take':
+                from banana_mv.takes import select_take
+                body=self.body_json()
+                return self.send_json(select_take(body['id'],body.get('index'),body.get('take')))
             if path=='/api/mv/stop':
                 job_id=self.body_json()['id']; read_state(job_id); CANCEL.add(job_id)
                 return self.send_json({'ok':True,'message':'目前這段完成後停止。'})
@@ -777,4 +813,5 @@ if __name__=='__main__':
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
+
 

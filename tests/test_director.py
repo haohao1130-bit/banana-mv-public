@@ -200,6 +200,7 @@ class StoryPlanTests(unittest.TestCase):
             self.assertFalse(lock.locked())
 
 class UnifiedIntervalContractTests(unittest.TestCase):
+
     """Synthetic interval-count regressions; no user project data or real model."""
     def timeline(self):
         from banana_mv.core import segments
@@ -286,4 +287,5 @@ class UnifiedIntervalContractTests(unittest.TestCase):
             'to':'stage','operation':'update','event_index':0}]
         with self.assertRaises(SceneStateError):
             validate_unified_plan(raw,self.timeline(),0)
+
 

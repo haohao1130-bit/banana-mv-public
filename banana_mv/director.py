@@ -219,4 +219,25 @@ def director_prompt(req, seconds, segment=None):
                          'without resetting the event. Music accents are options, not compulsory cuts.')
     else:
         lines.append('Use a motivated longer take; reveal the change through blocking or camera movement rather than cuts.')
+    if 'project_scope' in req and segment is not None:
+        import json
+        from banana_mv.mv_scope import clip_ending
+        lines.append('SOURCE SCOPE / ENDING: '+json.dumps(clip_ending(req,segment),ensure_ascii=False))
     return '\n'.join(lines), primary
+
+
+
+def clip_cinematography(req, mode, seconds, ending=None):
+    """One relevant recipe for the compact writer; no duplicated scope/ledger."""
+    if ending and ending.get('phase')=='terminal_hold':
+        return 'Hold the established final composition with natural residual motion; introduce no new event.'
+    lines=['Event -> character action -> attention -> camera -> edit. Keep geography and consequences readable.',
+           'One main camera move per shot. Visible singing uses waist-up or closer; other events may use wider shots.',
+           RECIPES[mode]]
+    lines.append({'normal':'Use restrained movement; let the action breathe.',
+                  'high':'Amplify purposeful movement and one motivated camera move.',
+                  'extreme':'Emphasize a supported turning point with scale or speed contrast, then its reaction; intensity does not require constant speed.'}[req.get('intensity','high')])
+    lines.append('Vary shot length with action and musical phrasing; no compulsory cut interval.'
+                 if req.get('dynamic_cuts',True) else 'Prefer a motivated continuous take.')
+    if seconds<=5:lines.append('Short interval: one readable beat or completion of an ongoing action.')
+    return ' '.join(lines)

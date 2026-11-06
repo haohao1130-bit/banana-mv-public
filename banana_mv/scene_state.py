@@ -429,9 +429,18 @@ def normalize_environment(value, scene):
     for field,parser,default in [('active_location',text,''),('persistent_changes',string_list,[]),
                                  ('damaged_objects',string_map,{}),('prop_positions',string_map,{})]:
         item=result.get(field,deepcopy(default))
-        # Only the empty list is lossless. Nonempty lists, null and scalars remain errors.
-        if field in ('damaged_objects','prop_positions') and isinstance(item,list) and not item:
-            item={}
+        # 9B sometimes describes environment maps as lists. Preserve each
+        # statement verbatim under stable numbered keys rather than rejecting
+        # the whole director plan before the first video clip.
+        if field in ('damaged_objects','prop_positions') and isinstance(item,list):
+            if len(item)>128:
+                fail('.'+field,'too_many_items','場景狀態清單超過128項。')
+            if all(isinstance(entry,str) and entry.strip() for entry in item):
+                item={f'item_{index+1}':entry for index,entry in enumerate(item)}
+            elif not item:
+                item={}
+            else:
+                fail('.'+field,'invalid_list','場景狀態清單必須是文字敘述。')
         try:result[field]=parser(item)
         except SceneStateError as error:fail('.'+field,'type',str(error))
     return result
