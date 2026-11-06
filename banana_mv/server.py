@@ -97,6 +97,11 @@ def graph_options(req, seconds, segment=None):
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
+    if req.get('director_schema')==4 and req.get('rewrite',True):
+        from banana_mv.core import normalize_mv_prompt
+        originals=original if isinstance(original,list) else [original]
+        segment['director_mode']=segment['director_plan']['mode']
+        return normalize_mv_prompt(segment['director_plan']['prompt'],len(originals)+int(bool(tail)))
     if req.get('director_schema')==3 and req.get('rewrite',True):
         from banana_mv.prompt_quality import write_directed_clip
         originals=original if isinstance(original,list) else [original]
@@ -326,9 +331,9 @@ def worker(job, cfg, original, song, drive):
                                      'pulse': music_analysis['pulse']}
             job['status'] = 'running'; write_state(job)
         needs_plan = (job['request'].get('director_version', 1) >= 2
-                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema')==3)
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4))
                       and job['request'].get('rewrite', True)
-                      and (len(job['segments']) > 1 or job['request'].get('director_schema')==3)
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4))
                       and any(not (s.get('status') == 'done' and valid_part(work/f'{s["index"]:02d}_part.mp4', s, job['size']))
                               and not (job.get('resuming') and (work/f'{s["index"]:02d}_prompt.txt').is_file()
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -339,7 +344,11 @@ def worker(job, cfg, original, song, drive):
             plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
-                if plan['version']==3:
+                if plan['version']==4:
+                    seg['prompt']=row['prompt']
+                    (work/f'{seg["index"]:02d}_prompt.txt').write_text(row['prompt'],encoding='utf-8')
+                    seg['prompt_profile']={'source':'whole_song_director','writer_calls':0,'contract_check_calls':0}
+                if plan['version'] in (3,4):
                     seg['direction_constraints']=plan['constraints']
                     seg['direction_closing_shot']=plan['closing_shot']
                     seg['direction_requires_change']=plan['requires_change']
@@ -384,7 +393,7 @@ def worker(job, cfg, original, song, drive):
             if tail:
                 first = f'banana_{job["id"]}_{i}.png'
                 (inp/first).write_bytes(tail.read_bytes())
-            seg['status']='rewriting'; write_state(job)
+            seg['status']='preparing' if job['request'].get('director_schema')==4 else 'rewriting'; write_state(job)
             saved = work/f'{i:02d}_prompt.txt'
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
@@ -479,7 +488,7 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=3,prompt_compiler_version=1,project_scope=req.get('project_scope','full'),
+             director_schema=4,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
@@ -488,10 +497,9 @@ def start(req):
     req['rewrite_retries']=rewrite_retry_count(req)
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
-    # New unified-director projects are self-contained per clip. The already
-    # allocated director_plan holds each clip's starting appearance and action.
-    # An explicit legacy toggle retains the old history ledger for existing workflows.
-    req['scene_state_version']=1 if req.get('persistent_scene_state',False) and req.get('rewrite',True) else 0
+    # New projects receive final prompts upstream. Saved old projects keep their
+    # original request fields when resumed; creating a new job never re-enables it.
+    req.update(scene_state_version=0,persistent_scene_state=False)
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):
         raise ValueError('face_identity 必須為布林值。')
     if not isinstance(req['audio_analysis'], bool):
@@ -813,5 +821,6 @@ if __name__=='__main__':
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
+
 
 

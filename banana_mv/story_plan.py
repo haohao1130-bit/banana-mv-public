@@ -279,7 +279,7 @@ Do not output shot lists, mandatory cuts, media tokens, music, new lyrics or ana
 
 def ensure_plan(cfg, req, segments, originals, work, rewrite):
     """Plan once, then complete missing content in application-owned clip slots."""
-    if req.get('director_schema')==3:
+    if req.get('director_schema') in (3,4):
         return ensure_unified_plan(cfg,req,segments,originals,work,rewrite)
     content = plan_input(req, segments)
     fingerprint = hashlib.sha256(content.encode()).hexdigest()
@@ -640,9 +640,72 @@ def validate_unified_plan(raw,segments,picture_count,req=None):
     return plan
 
 
+DIRECT_PROMPT_SYSTEM = """You are the sole MUSIC VIDEO director. Develop the supplied story and deliver
+the FINAL H3 prompt for EVERY supplied interval in one response. No downstream
+writer will reinterpret your instructions. FREE permits compatible condensation
+and staging; FAITHFUL preserves the supplied event order. Preserve the main arc,
+causal turns, assigned vocal roles, separate sets, costumes, props and requested outcome.
+Each prompt is a self-contained native Ref2VA prompt using the supplied official
+guide: subject_definitions, summary, retention_analysis, detailed_description,
+overall_soundscape, non_diegetic_music. Write actual filming content, never a task
+for another director. Intercut story, permitted lip sync, details and atmosphere
+as a music video; do not turn every interval into a complete dramatic scene.
+Only actors assigned to that interval appear. References are available material,
+not mandatory cast. A transformation's two forms occur sequentially only in its
+assigned interval. Repeat CURRENT appearance/props/location without retelling how
+they were acquired. Keep original image slots; never compact them when actors leave.
+Original reference N maps to Picture N plus that interval's picture_offset.
+When picture_offset=1, Picture 1 is the supplied previous last frame, not an actor.
+All shot times are LOCAL to the interval, starting at zero, within visible seconds;
+source start/end are allocation context only. Use flexible motivated MV montage,
+not a shot quota. The original Audio 1 is fully_copy in every prompt; only the
+assigned vocalist lip-syncs, no new speech, lyrics, sound effects or subtitles.
+Honor ending_contract: excerpts remain open; full works resolve early enough to
+reach and sustain closing_shot. Only affected interval prompts stage that ending.
+Return ONLY JSON: {"constraints":[],"segments":[{"index":0,"event":"brief beat",
+"mode":"action","prompt":"complete final H3 prompt"}],
+"closing_shot":"final image or empty for excerpt","ending_plan":null}.
+Produce all interval rows; escape prompt newlines in JSON strings. Use concise
+prose and avoid redundant management text."""
+
+
+def validate_direct_prompts(raw,segments,picture_count,req):
+    """Check delivery completeness and connected media, never direct the shots again."""
+    from banana_mv.scene_state import parse_object, digest, SceneStateError
+    from banana_mv.core import normalize_mv_prompt
+    from banana_mv.mv_scope import validate_ending, ending_contract
+    raw=parse_object(raw);rows=raw.get('segments')
+    if not isinstance(rows,list) or len(rows)!=len(segments):
+        raise SceneStateError(f'導演需交齊 {len(segments)} 段最終提示詞。')
+    result=[]
+    for seg,row in zip(segments,rows):
+        if not isinstance(row,dict) or row.get('index')!=seg['index']:
+            raise SceneStateError('導演分段順序錯誤。')
+        if row.get('mode') not in MODES:
+            raise SceneStateError('導演模式無效。')
+        prompt=row.get('prompt')
+        if not isinstance(prompt,str) or not prompt.strip():
+            raise SceneStateError(f'第 {seg["index"]+1} 段缺少最終提示詞。')
+        offset=int(req.get('mode')=='chain' and seg['index']>0)
+        prompt=normalize_mv_prompt(prompt,picture_count+offset)
+        event=row.get('event','')
+        result.append({'index':seg['index'],'event':event if isinstance(event,str) else '',
+                       'mode':row['mode'],'prompt':prompt})
+    closing=raw.get('closing_shot','')
+    if not isinstance(closing,str):raise SceneStateError('closing_shot 必須是文字。')
+    plan={'version':4,'segments':result,'constraints':[],'requires_change':[],
+          'closing_shot':closing,'ending_plan':validate_ending(raw,req,segments),
+          'project_scope':req.get('project_scope','full'),
+          'ending_contract':ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments),
+          'visual_verified':False,'direct_prompts':True}
+    plan['content_sha256']=digest(plan)
+    return plan
+
+
 def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     from banana_mv.scene_state import (digest, atomic_json, rewrite_retry_count, SceneStateError,
                                        parse_object as parse_scene_object_for_diagnostics)
+    direct=req.get('director_schema')==4
     task={'brief':req.get('prompt',''),'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'style':req.get('director','auto'),'intensity':req.get('intensity','high'),
           'lyrics':req.get('lyrics',''),'srt':req.get('srt_cues',[]),
@@ -650,6 +713,10 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
                       {'audio_evidence':s.get('audio_evidence',{})} for s in segments]}
     if req.get('prompt_compiler_version')==1:
         task['prompt_compiler_version']=1
+    if direct:
+        task['direct_prompts']=True
+        for row in task['timeline']:
+            row['picture_offset']=int(req.get('mode')=='chain' and row['index']>0)
     if 'project_scope' in req:
         from banana_mv.mv_scope import ending_contract
         task['ending_contract']=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments)
@@ -659,7 +726,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     if path.is_file():
         plan=json.loads(path.read_text(encoding='utf-8'))
         expected=plan.get('content_sha256')
-        if plan.get('version')!=3 or plan.get('input_sha256')!=fingerprint or digest(
+        if plan.get('version')!=(4 if direct else 3) or plan.get('input_sha256')!=fingerprint or digest(
             {k:v for k,v in plan.items() if k not in ('input_sha256','content_sha256')})!=expected:
             raise SceneStateError('統一導演計畫與專案不符或校驗失敗。')
         if plan.get('isolated_shoot_orders') and 'project_scope' in req:
@@ -671,7 +738,10 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         return plan
     isolated=req.get('scene_state_version',1)==0
     task['required_segment_count']=len(segments)
-    if isolated:
+    if direct:
+        task['segment_template']=[{'index':s['index'],'event':'','mode':'performance','prompt':''} for s in segments]
+        task['prompt_word_budget']=max(40,min(180,(int(cfg.get('rewriter',{}).get('max_length',8192))-1000)//(2*len(segments))))
+    elif isolated:
         task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
                                    'cast':[]} for s in segments]
     else:
@@ -685,7 +755,14 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         with Image.open(p) as im:
             im=ImageOps.exif_transpose(im).convert('RGB');im.thumbnail((768,768))
             parts.extend([('text',f'Original reference {i}:'),('image',im.copy())])
-    system=(ISOLATED_SYSTEM if isolated else UNIFIED_SYSTEM)+'\nSupported primary modes: '+', '.join(MODES)+f'\nEXACTLY {len(segments)} segments.'
+    system=(DIRECT_PROMPT_SYSTEM if direct else ISOLATED_SYSTEM if isolated else UNIFIED_SYSTEM)+'\nSupported primary modes: '+', '.join(MODES)+f'\nEXACTLY {len(segments)} segments.'
+    if direct:
+        from banana_mv.director import ORIGINAL_CUT_GUIDANCE, INTENSITY
+        guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
+        system+='\n'+(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer takes.')
+        system+='\n'+INTENSITY[req.get('intensity','high')]
+        system+='\nWhen the assigned singer is visible, use waist-up or closer. '+('Preserve reference facial identity. ' if req.get('face_identity',True) else '')
+        system+='Keep each prompt within prompt_word_budget words.\nOFFICIAL H3 GUIDE:\n'+guide
     if req.get('prompt_compiler_version')==1 and not isolated:
         system+=('\nEach segment also needs subjects: a list of visible character IDs from initial_state, '
                  'including non-singing story actors; [] for a character-free scene. Include both casts '
@@ -705,7 +782,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     for attempt in range(rewrite_retry_count(req)+1):
         raw=rewrite(cfg,system,attempt_parts,uuid.uuid4().hex[:8])
         try:
-            plan=(validate_isolated_plan(raw,segments,len(originals),req) if isolated
+            plan=(validate_direct_prompts(raw,segments,len(originals),req) if direct else validate_isolated_plan(raw,segments,len(originals),req) if isolated
                   else validate_unified_plan(raw,segments,len(originals),req))
 
         except ValueError as error:

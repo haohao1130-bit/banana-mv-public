@@ -60,7 +60,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "c0aa3c3a81cf4d12f8f8d18c794acabf025670ea10273113126c672bc06db5a7"
+      "sha256": "cdd614f38e218150065dc63829ab7ed376dbe336d126ae6c3162248d221f2c6c"
     },
     {
       "path": "banana_mv/services.py",
@@ -72,15 +72,15 @@
     },
     {
       "path": "banana_mv/story_plan.py",
-      "sha256": "80b00e42a849ffd8b7583bb11e73111037276b186d13808c62bd9f5678ac0c4f"
+      "sha256": "edd8b3d44a14392288ca84a3f06250d1519d1a5ec7237c75b55072614bf38510"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "4f8ca403436db08d800990e2c1f0155c28a70f949125dd7633a5e6c8b30008ce"
+      "sha256": "08e704c9e348d86ae10f2df4f6d6943db3cc43b283743133b81d8c0d0612aeef"
     },
     {
       "path": "docs/director_architecture.md",
-      "sha256": "a62af315db8cf301f7c10349742099eb234d3a7ee689b066e4787aa2909d36c2"
+      "sha256": "32ab67ae08d53e0804230298d1ba7120abab376a726ce796b48a506269d78a8f"
     },
     {
       "path": "docs/persistent_scene_state.md",
@@ -92,11 +92,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "c7d0396a4d47a2e8140118571b5578324f1c18cde346c0e1760b8117f1f9a0eb"
+      "sha256": "8f5ddf2a3b3cc0ef152fe40dbf569f93e795f08ec64e84513736a5f7345c27d0"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "56addf1aebfea77ba058dd148a32546971929d3d0bd0f979d6f39b1d72ea5580"
+      "sha256": "0d8d33ad659829a609825ad112565044551098c447e35c31e12a373273d40474"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "07c1e9175a00db29c731c64923dd4a6c8e4da80ceb4e6484d5161f323bdb55e6"
+      "sha256": "77782a4b7cdb0763aba911f26034d74a40ebb5c10439be510b431f8f5f153d09"
     },
     {
       "path": "tests/test_services.py",
@@ -193,6 +193,10 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
+    },
+    {
+      "path": "tests/test_direct_prompts.py",
+      "sha256": "b44d630ce40b8e0b39165597f8c8d7960a5970da44bd4dce16322d5a2bb66d7c"
     }
   ]
 }
