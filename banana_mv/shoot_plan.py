@@ -11,23 +11,34 @@ from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
 
 
-ALLOCATION_SYSTEM = """Split the supplied music-video story across the given source intervals.
-You allocate WHAT happens; the native clip director later decides HOW to film it.
-Return a short shared SETUP containing only world, reference identities and vocal roles,
-then one self-contained shooting brief per interval. Keep original <Picture N> numbers.
+ALLOCATION_SYSTEM = """Prepare a filmable music-video story across the given source intervals.
+If the user supplies only a backbone, develop concrete actions along it. If the user
+already supplies a detailed script, retain its actions, causal links and specified
+ending and allocate it, rather than rewriting it. The native clip director later
+decides HOW to film each assigned part.
+Extract shared SETUP from the user's fixed world, reference and vocal-role settings.
+Keep their original wording and distinct locations; do not summarize or redesign them.
+Use the supplied pictures for appearance, not a generic textual replacement of the asset.
+Deliver self-contained interval scripts with concrete actions and interactions, not
+plot summaries. Allocate by story and source timing, not mechanically by paragraph.
+Keep original <Picture N> numbers.
 Each brief states the actors actually present, their CURRENT look, location and props,
 and ONLY this interval's events and necessary changes. Carry state, never a history recap.
 Identity changes happen once in their assigned interval; subsequent briefs start in the
 resulting identity. Shared SETUP contains no plot chronology, future events or finale.
 Preserve the supplied backbone, causal order, explicit cue-bound events and outcome.
-FREE permits compatible condensation; FAITHFUL preserves the supplied event order.
+Preserve essential supplied actions, recipients, props, outcomes and explicit special shots.
+FREE may develop compatible action, interactions and parallel intercuts along the backbone;
+FAITHFUL also preserves the supplied event order. Neither redesigns the fixed settings.
 Parallel performance and story strands may intercut; no singer quota, mandatory cast
 attendance, shot list or complete dramatic arc per interval. Allocate a feasible amount
 of action to each duration. Respect local_srt cue timing and each interval's ending.
-Keep each brief compact: current situation and allocated actions, not detailed shots.
+Distribute the developed story across intervals, splitting a sequence when needed.
+Do not shorten it into generic beats or add unrelated plot. Do not add shot lists;
+retain special camera directions already supplied by the user with their events.
 Use exactly these plain-text boundaries, every requested index, then END:
 === SETUP ===
-Shared world, original reference identities and singing assignments only.
+Original fixed world, separate scene definitions, reference roles and singing assignments.
 === CLIP 0 action ===
 Current situation and events for interval 0 only.
 === CLIP 1 story ===
@@ -57,7 +68,7 @@ def _bound(text,count):
 
 
 def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
-    """Persist compact orders; no shot prose, state ledger or per-slot replanning."""
+    """Persist allocated scripts and fixed settings, without replanning per slot."""
     contract=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments)
     timeline=[]
     for seg in segments:
@@ -108,7 +119,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                         {'raw_response':raw,'error':str(error)})
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('分段大綱交稿失敗：'+str(error)) from error
-            attempts=parts+[('text','Deliver the compact SETUP and ALL CLIP blocks, then END. '
+            attempts=parts+[('text','Deliver the original fixed settings in SETUP and ALL CLIP scripts, then END. '
                             'No analysis. Delivery error: '+str(error))]
 
 
@@ -128,8 +139,11 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     system=guide+"""\nWrite the final native H3 prompt for this ONE music-video clip.
 The supplied current_clip is the complete assigned script, not a synopsis to expand
-into other story chapters. Shared world/roles identify assets; only actors needed
-by this script appear. Preserve current looks and props rather than resetting to
+into other story chapters. Shared settings retain the user's locations and asset roles;
+keep separate locations distinct, intercutting them rather than merging their sets or
+placing their casts in one shared frame. Only actors needed by this script appear.
+Use the actual reference appearance, not a generic version of its species or object type.
+Preserve current looks and props rather than resetting to
 reference clothing. Freely choose shots, staging and editing that express this script.
 All shot times are LOCAL and within seconds; alignment padding adds no story time.
 Use only connected pictures and <Audio 1>: fully_copy. The source audio is supplied to
