@@ -80,7 +80,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "ea5891451de79720f9bb493c6fb6b97060fb22f3d56224ec8579d712a9901b57"
+      "sha256": "bf47451a0174834d53a8376c32984fdf138ca9d4b9aa4a2704fad16320808ec1"
     },
     {
       "path": "docs/director_architecture.md",
@@ -100,7 +100,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "3c38c4b2dda5defc08d6574e73c2434e6647239e1236ae13f80a4b8d95a3541b"
+      "sha256": "a46ac909f86ce1dd3e2ae4271db2b5b9a8d35cc2844901d8b8e73d2a08716466"
     },
     {
       "path": "tests/test_audio_analysis.py",

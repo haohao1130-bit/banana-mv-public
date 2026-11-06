@@ -6,12 +6,14 @@ class Element{
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=nodes;}
   setAttribute(key,value){this[key]=value;}
+  removeAttribute(key){delete this[key];}
   addEventListener(name,fn){this.events[name]=fn;}
   focus(){this.focused=true;}
   showModal(){this.open=true;}
   close(){this.open=false;this.events.close?.();}
   getBoundingClientRect(){return {left:20,right:680,top:20,bottom:800};}
   select(){this.selected=true;}
+  setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=this.selectionEnd=start+text.length;}
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
@@ -90,6 +92,19 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els.project_scope.value='excerpt';els.story_plan.checked=false;els.audio_analysis.checked=false;els.face_identity.checked=false;els.kitchen_attention.checked=false;els.sparse_attention.checked=true;els.motion_lora.checked=false;req=await submit();assert.equal(req.project_scope,'excerpt');assert.equal(req.story_plan,false);assert.equal(req.audio_analysis,false);assert.equal(req.face_identity,false);assert.equal(req.kitchen_attention,false);assert.equal(req.sparse_attention,true);assert.equal(req.motion_lora,false);
   els['image-2'].files=[file('side.png')];els['image-2'].onchange();
   els['image-3'].files=[file('scene.png')];els['image-3'].onchange();
+  const typeMention=(text,caret=text.length)=>{els.prompt.value=text;els.prompt.selectionStart=els.prompt.selectionEnd=caret;els.prompt.events.input({isComposing:false});};
+  typeMention('前文\n@ 後文',4);assert.equal(els['image-mentions'].hidden,false);assert.equal(els['image-mentions'].children.length,3);
+  assert.equal(els['image-mentions'].children[2].children[0].src,'blob:scene.png');assert.equal(els['image-mentions'].children[2].children[1].children[0].textContent,'scene.png');
+  let keptFocus=false;els['image-mentions'].children[2].onpointerdown({preventDefault(){keptFocus=true;}});assert(keptFocus);els['image-mentions'].children[2].onclick();
+  assert.equal(els.prompt.value,'前文\n@圖片3 後文');assert.equal(els.prompt.selectionStart,7);assert.equal(els['image-mentions'].hidden,true);assert.equal(els.prompt['aria-expanded'],'false');
+  typeMention('@');let prevented=false;els.prompt.events.keydown({key:'ArrowDown',preventDefault(){prevented=true;}});assert(prevented);assert.equal(els.prompt['aria-activedescendant'],'image-mention-2');
+  els.prompt.events.keydown({key:'Enter',preventDefault(){}});assert.equal(els.prompt.value,'@圖片2 ');
+  typeMention('讓@圖片3');assert.equal(els['image-mentions'].children.length,1);els['image-mentions'].children[0].onclick();assert.equal(els.prompt.value,'讓@圖片3 ');
+  typeMention('@image2');assert.equal(els['image-mentions'].children[0].id,'image-mention-2');
+  els.prompt.events.keydown({key:'Escape',preventDefault(){}});assert.equal(els['image-mentions'].hidden,true);
+  typeMention('mail@example');assert.equal(els['image-mentions'].hidden,true);
+  typeMention('@');els.prompt.events.compositionstart();assert.equal(els['image-mentions'].hidden,true);els.prompt.events.input({isComposing:true});assert.equal(els['image-mentions'].hidden,true);els.prompt.events.compositionend();assert.equal(els['image-mentions'].hidden,false);
+  els.prompt.events.keydown({key:'Enter',isComposing:true});assert.equal(els.prompt.value,'@');els.prompt.events.blur();assert.equal(els['image-mentions'].hidden,true);
   req=await submit();assert.deepEqual(req.image_ids,['main.png','side.png','scene.png']);
   els['image-2'].files=[file('replacement.png')];els['image-2'].onchange();
   req=await submit();assert.deepEqual(req.image_ids,['main.png','replacement.png','scene.png']);
@@ -110,11 +125,14 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['remove-image-2'].onclick();const beforeGap=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});
   assert.equal(posts.length,beforeGap);assert.deepEqual(uploads,[]);
   assert.equal(els['image-name-3'].textContent,'scene.png');assert(els.status.textContent.includes('圖片2尚未選取'));
+  typeMention('@');assert.deepEqual(els['image-mentions'].children.map(x=>x.id),['image-mention-1','image-mention-3']);
+  typeMention('@圖片2');assert(els['image-mentions'].children[0].textContent.includes('沒有符合'));assert.equal(els.prompt['aria-activedescendant'],undefined);
   els['image-2'].files=[file('actor2.png')];els['image-2'].onchange();
   req=await submit();assert.deepEqual(req.image_ids,['main.png','actor2.png','scene.png']);
   for(let n=4;n<=9;n++){els['image-'+n].files=[file(`slot${n}.png`)];els['image-'+n].onchange();}
   req=await submit();assert.equal(req.image_ids.length,9);assert.equal(req.image_ids[8],'slot9.png');
   els.mode.value='chain';els.mode.events.change();assert.equal(els['image-9'].disabled,true);
+  typeMention('@');assert.equal(els['image-mentions'].children.length,8);assert(!els['image-mentions'].children.some(x=>x.id==='image-mention-9'));
   const beforeChain=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});assert.equal(posts.length,beforeChain);assert.deepEqual(uploads,[]);
   els['remove-image-9'].onclick();req=await submit();assert.equal(req.image_ids.length,8);
   assert.equal(req.image_ids[6],'slot7.png');assert.equal(req.image_ids[7],'slot8.png');
@@ -126,6 +144,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   await els['open-last'].onclick();assert.equal(els.project_scope.value,'excerpt');assert.equal(els.kitchen_attention.checked,true);assert.equal(els.sparse_attention.checked,true);assert.equal(els['job-seed'].textContent,'本次 Seed：0');assert.equal(els.prompt.value,'saved story');assert.equal(els.aspect.value,'9:16');assert.equal(els.seed.value,'0');assert.equal(els.face_identity.checked,false);assert.equal(els['resume-project'].hidden,false);assert(els['project-summary'].textContent.includes('雲端歌曲'));
   assert.equal(els.resolution.value,'720p');assert.equal(els.width.value,'720');
   assert.equal(els['srt-reference'].value,'已存SRT');assert.equal(els.lyrics.value,'已存歌詞');
+  typeMention('@');assert.equal(els['image-mentions'].children.length,1);assert.equal(els['image-mentions'].children[0].children[0].src,'api/mv/reference?id=saved123&image=0');els['image-mentions'].children[0].onclick();assert.equal(els.prompt.value,'@圖片1 ');
   assert.equal(els.persistent_scene_state.checked,false);assert.equal(els.audio_analysis.checked,false);assert.equal(els.story_plan.checked,false);
   vm.runInContext("renderAudioAnalysis({audio_analysis:{status:'ready',pulse:{bpm_estimate:120}},request:{audio_analysis:true}})",context);assert(els['audio-summary'].textContent.includes('120 BPM'));
   vm.runInContext("renderDirectorPlan({director_plan:{status:'ready'}})",context);assert(els['director-summary'].textContent.includes('全曲故事、鏡頭與收尾已規劃'));
@@ -150,6 +169,6 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
-  console.log('UI checks passed: nine visible single-file slots, fixed numbering, replacements, gaps blocked before upload, chain limits, prompt review and retakes.');
+  console.log('UI checks passed: image mentions with thumbnails, caret insertion, keyboard/IME, fixed slots, saved references, chain limits, prompt review and retakes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
