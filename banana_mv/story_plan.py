@@ -354,74 +354,145 @@ def ensure_plan(cfg, req, segments, originals, work, rewrite):
     return plan
 
 
-UNIFIED_SYSTEM = '''Create a complete music-video treatment from the brief, references and measured timeline.
-In FREE mode, understand the story and develop compatible actions, interactions, contrasts and
-transitions. The brief is creative material, not a shot checklist. Omit optional ideas, expand
-useful developments and intercut performance/story strands to serve the song. In FAITHFUL mode,
-keep the supplied event meanings and order, adding staging and camera detail. In both modes,
-preserve identities, assigned singing roles, explicitly separate worlds and explicit hard limits.
-The selected style is a creative preference, not a ban on other content present in the brief.
-Do not impose a singer quota or a major new event in every interval. Revisit performance with
-variation; continue unfinished action without replaying an already completed one-time event.
-Use camera distance, viewpoint and movement motivated by what the characters do and notice.
-Choose a coherent narrative resolution or deliberate open ending, then the final visual image.
-A climax may occur before an outro. Fit short tails; don't postpone all developments to the end.
-Energy estimates do not identify lyrics, choruses, instruments or emotion. Preserve original audio.
-
-Return ONLY JSON with initial_state, constraints, events, segments, closing_shot.
-constraints: concise list of reference roles, vocal assignments and actual hard restrictions;
-do not turn every outline sentence into a restriction. These are the only brief rules sent onward.
-initial_state: {"character_states":{"S1":{"identity_reference":1,"location":"stage",
+UNIFIED_SYSTEM = """Plan the supplied MV once across segment_template.
+Preserve identities, vocal roles, separate locations, narrative goals, causal order,
+turning points and requested outcome. FREE permits compatible action detail, staging,
+reactions and intercut rhythm; FAITHFUL also preserves the supplied event order.
+Condense optional beats without changing actor, recipient or result. Intercut requested
+parallel strands; no fixed singer quota, new milestone per interval or unrelated twists.
+Music measurements provide timing/contrast, not lyrics or chorus detection.
+Return ONLY one JSON object with initial_state, constraints, events, segments,
+closing_shot, and ending_plan when ending_contract is supplied.
+initial_state={"character_states":{"S1":{"identity_reference":1,"location":"stage",
 "garments":{},"hairstyle":"","appearance_changes":[],"injuries":[],"held_props":[]}},
-"environment_states":{}}. Include only actual characters. References can depict people, groups,
-creatures, locations, architecture, garments or props. Never assume image 1 is an adult singer.
-identity_reference is an original uploaded picture index or null. If image 1 depicts a character,
-map its primary character to S1. S1 maps to <Subject 1>, S2 to <Subject 2> in the H3 text.
-Garments are optional: track only relevant wardrobe changes. For each dictionary key, describe
-garment_type, material, color, current_status, current_location. The application assigns garment_id
-from that key. Describe the actual starting state; future acquisitions must not start already worn.
+"environment_states":{}}. Include actual characters only; images may also be places,
+objects or alternate views. If image 1 is a character, map it to S1. S1 maps to <Subject 1>.
+identity_reference is the original picture index or null. Garments are optional; each
+key identifies an item with garment_type, material, color, current_status, current_location.
 Statuses: worn, unfastened, partially_removed, removed, held, placed.
-Environment entries can include active_location, persistent_changes (list), damaged_objects and
-prop_positions (string maps, use {} when empty, not []). The environment dictionary key is the
-scene ID; do not add scene_id inside its value. Do not invent objects solely for this example.
-
-events: selected milestones only, each {"description":"...","repeatable":false,
-"operations":["remove"],"requires_change":true,"after":[]}.
-Operations: update, remove, dress, acquire, drop, use, damage, restore, heal, move.
-requires_change=true ONLY when the milestone actually changes a tracked persistent value.
-An exchange, reaction, camera move or ordinary performance does not by itself require a delta.
-A location update must end at a location different from the inherited start. Do not invent a
-movement just to satisfy requires_change; use false and [] for actions without persistent change.
-For a real persistent change, record that change rather than disabling requires_change.
-after lists zero-based indices of events that genuinely must complete first, not all prior ideas.
-Do not catalogue every camera shot as another occurrence of the same milestone. events may be [].
-
-events and segments have DIFFERENT cardinalities: events are narrative milestones; segments are
-application-owned video intervals. Five milestones can span eight intervals. Continue unfinished
-action over intervals and complete it only once; use varied performance/aftermath without a new
-milestone when appropriate. Never duplicate a completed action merely to fill slots.
-segments: fill EVERY row of segment_template, EXACTLY required_segment_count rows in interval order.
-The supplied template is a structural scaffold, not a story or shot prescription.
-Keep each interval's index, fill its event and mode; never leave empty tasks or omit short tails.
-Each row has:
-{"event":"concrete actions, responses and camera tasks for this interval, including intercuts",
-"mode":"performance","event_indices":[],"completed_indices":[],"changes":[]}.
-The mode is the primary visual emphasis for the existing generation pipeline, not the only shot type.
-event_indices refer to zero-based events; completed_indices is the subset completed here.
-Changes are intended story changes, not observed video results. The application computes from-state
-and stable IDs. Each change has event_index, operation and kind:
-garment: subject_id, garment_id (the initial garment dictionary key), to, current_location.
-character: subject_id, field (hairstyle/appearance_changes/injuries/held_props/location), to.
+Each environment key is its scene ID; values may contain active_location,
+persistent_changes (list), damaged_objects and prop_positions (string maps, {} if empty).
+constraints is a concise string list of enduring role/location/camera requirements;
+keep terminal-image instructions only in closing_shot, never in shared constraints.
+events is a list of selected milestones, possibly [], each {"description":"...",
+"repeatable":false,"operations":[],"requires_change":false,"reserved_final":false,"after":[]}.
+after contains zero-based event indices genuinely required first. Mark reserved_final
+only for actions explicitly locked to the last interval. requires_change is true only
+for real persistent changes; camera moves, ordinary performance and exchanges need no delta.
+Fill EXACTLY every supplied segment_template row in order, including short tails:
+{"index":0,"event":"concrete action, response and any intercuts","mode":"performance",
+"event_indices":[],"completed_indices":[],"changes":[]}.
+Milestones and video intervals are different: a milestone may span intervals, completes
+once, and must not replay after completion unless repeatable. An interval may contain
+varied performance or aftermath without a new milestone. Mode is its main emphasis only.
+Each segment.event is an independent instruction for THIS interval, not a recap
+or preview. Start in its present situation; never restage completed events.
+Only segment.subjects may appear. After transformation use only the new identity
+until an explicitly planned return. Current clothes, props and injuries come
+from appearance_in/out; do not narrate how they got there. No previous event
+history is sent to the clip writer.
+changes use event_index, operation, kind plus target fields:
+garment: subject_id, garment_id (initial garment key), to (status), current_location;
+character: subject_id, field (hairstyle/appearance_changes/injuries/held_props/location), to;
 environment: scene_id, field (active_location/persistent_changes/damaged_objects/prop_positions), to.
-No change means []. Keep removed items removed until an explicitly planned restoration.
-Do not omit necessary changes just to avoid a schema error. Keep separate locations distinct.
-closing_shot: a concise description of the final visual image at the actual song end; it may be
-performance, aftermath or a deliberate unresolved image. This need not be the narrative climax.
-No media tokens, dialogue, new lyrics or bookkeeping instructions in event descriptions.
-'''
+Operations: update, remove, dress, acquire, drop, use, damage, restore, heal, move.
+Use [] for no changes. Record necessary changes, keep removed items removed, and never
+invent a no-op move or reset merely to satisfy the schema.
+closing_shot is the final visual image, respecting the supplied ending_contract;
+a climax can precede an outro. No media tokens, dialogue or new lyrics in event text."""
 
 
-def validate_unified_plan(raw,segments,picture_count):
+
+ISOLATED_SYSTEM = """You are the ONE whole-song director. Allocate one independent shoot order for
+EVERY segment_template row. Return ONLY JSON:
+{"constraints":["fixed vocal roles and locations"],
+ "segments":[{"index":0,"event":"only what happens in THIS clip",
+ "mode":"action","cast":[{"id":"S1","picture":1,
+ "appearance":"CURRENT complete look and clothing; no history",
+ "location":"current set"}]}],
+ "closing_shot":"final visible image",
+ "ending_plan":null}.
+Each cast entry describes ONLY an actor visible in that clip. 'picture' is its
+original reference image number (null for an actor without a picture). Use
+the SAME stable actor ID for the same person throughout; transformed identities
+may use a new actor ID/reference if the supplied story says so. Images of
+places or objects are NOT cast members. Give the correct CURRENT appearance in
+every clip, including attire after transformations or costume changes.
+An empty cast [] is valid for a character-free clip. Intercuts may have actors
+from separate sets, each with their own location. The segment event is the
+complete 10–15s script assigned to the camera writer, not a summary or recap.
+Do NOT output events, event_indices, completed_indices, requires_change,
+changes, initial_state, history, transition logs or previous clips.
+Plan story continuity YOURSELF before writing the independent clip orders.
+The camera writer is NOT told the past. Respect the user's singer assignments,
+reference image identity, wardrobe, separate sets and explicit narrative.
+Supported modes are provided separately. Do not invent dialogue or lyrics.
+Follow ending_contract if supplied; full-work ending_plan contains start_time,
+resolved_by and resolution; excerpt ending_plan is null and closing_shot empty."""
+
+
+def validate_isolated_plan(raw, segments, picture_count, req):
+    """Validate shoot orders without demanding a 9B-written state ledger."""
+    from banana_mv.scene_state import parse_object, digest, SceneStateError
+    from banana_mv.mv_scope import validate_ending, ending_contract
+    raw = parse_object(raw)
+    rows = raw.get('segments')
+    if not isinstance(rows,list) or len(rows)!=len(segments):
+        raise SceneStateError(f'需要 {len(segments)} 段獨立劇本，實際取得 '
+                              f'{len(rows) if isinstance(rows,list) else 0} 段。')
+    constraints=raw.get('constraints',[])
+    if not isinstance(constraints,list) or any(not isinstance(x,str) for x in constraints):
+        raise SceneStateError('constraints 必須是文字清單。')
+    ending=validate_ending(raw,req,segments)
+    closing=raw.get('closing_shot','')
+    if not isinstance(closing,str):
+        raise SceneStateError('closing_shot 必須是文字。')
+    if req.get('project_scope')!='excerpt' and not closing.strip():
+        raise SceneStateError('整首 MV 必須指定最後畫面。')
+    allocation=[]
+    for seg,row in zip(segments,rows):
+        if not isinstance(row,dict) or not isinstance(row.get('event'),str) or not row['event'].strip():
+            raise SceneStateError(f'第 {seg["index"]+1} 段缺少具體劇本。')
+        if row.get('mode') not in MODES:
+            raise SceneStateError(f'第 {seg["index"]+1} 段導演模式無效。')
+        if 'index' in row and row['index']!=seg['index']:
+            raise SceneStateError('導演分段順序錯誤。')
+        cast=row.get('cast')
+        if not isinstance(cast,list) or len(cast)>32:
+            raise SceneStateError(f'第 {seg["index"]+1} 段需有 cast 清單，可為空。')
+        chars={}
+        for actor in cast:
+            if not isinstance(actor,dict):
+                raise SceneStateError('cast 成員必須是角色物件。')
+            sid=actor.get('id');ref=actor.get('picture')
+            if not isinstance(sid,str) or not re.fullmatch(r'S[1-9]\d*',sid) or sid in chars:
+                raise SceneStateError('角色 ID 必須是獨立的 S1、S2 等。')
+            if ref is not None and (isinstance(ref,bool) or not isinstance(ref,int)
+                                    or not 1<=ref<=picture_count):
+                raise SceneStateError('角色圖片編號不存在。')
+            look=actor.get('appearance','');location=actor.get('location','')
+            if not isinstance(look,str) or not isinstance(location,str):
+                raise SceneStateError('角色外觀與位置必須是文字。')
+            chars[sid]={'original_reference':ref,'hairstyle':'','location':location,
+                        'wearing':[],'not_wearing':[],
+                        'appearance_changes':[look] if look.strip() else [],
+                        'injuries':[],'held_props':[]}
+        appearance={'characters':chars,'environments':{}}
+        allocation.append({'index':seg['index'],'event':row['event'].strip(),
+                           'mode':row['mode'],'subjects':list(chars),
+                           'source_ids':[],'completed_source_ids':[],
+                           'appearance_in':appearance,'appearance_out':appearance})
+    plan={'version':3,'initial_state':{},'event_catalog':{},
+          'segments':allocation,'constraints':constraints,'closing_shot':closing,
+          'requires_change':[],'visual_verified':False,'isolated_shoot_orders':True}
+    if 'project_scope' in req:
+        plan.update(project_scope=req['project_scope'],ending_plan=ending,
+                    ending_contract=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments))
+    plan['content_sha256']=digest(plan)
+    return plan
+
+
+def validate_unified_plan(raw,segments,picture_count,req=None):
     from copy import deepcopy
     from banana_mv.scene_state import (parse_object, initial_state, compile_direction_record,
                                        clip_input, digest, OPERATIONS, SceneStateError)
@@ -444,8 +515,12 @@ def validate_unified_plan(raw,segments,picture_count):
     constraints=raw.get('constraints')
     if not isinstance(constraints,list) or any(not isinstance(t,str) or not t.strip() for t in constraints):
         raise SceneStateError('constraints需為明確角色與限制的文字清單，可為空。')
+    from banana_mv.mv_scope import validate_ending
+    ending=validate_ending(raw,req or {},segments)
     closing=raw.get('closing_shot')
-    if not isinstance(closing,str) or not closing.strip():raise SceneStateError('缺少歌曲結束時的最後畫面closing_shot。')
+    excerpt=(req or {}).get('project_scope')=='excerpt'
+    if not excerpt and (not isinstance(closing,str) or not closing.strip()):raise SceneStateError('缺少歌曲結束時的最後畫面closing_shot。')
+    closing=closing or ''
     def indices(values,path):
         if not isinstance(values,list) or any(isinstance(v,bool) or not isinstance(v,int) or not 0<=v<len(events) for v in values):
             raise SceneStateError(path+'需引用有效事件索引。')
@@ -459,7 +534,7 @@ def validate_unified_plan(raw,segments,picture_count):
             raise SceneStateError(f'events[{i}].operations無效。')
         if not isinstance(e.get('requires_change',False),bool):raise SceneStateError('requires_change需為布林值。')
         catalog_rows.append({'event_id':f'E{i+1}','description':e.get('description'),
-            'repeatable':e.get('repeatable',False),'reserved_final':False,
+            'repeatable':e.get('repeatable',False),'reserved_final':e.get('reserved_final',False),
             'depends_on':indices(e.get('after',[]),f'events[{i}].after'),'allowed_operations':ops})
     initial=deepcopy(raw.get('initial_state'))
     if not isinstance(initial,dict):raise SceneStateError('缺少initial_state。')
@@ -500,6 +575,10 @@ def validate_unified_plan(raw,segments,picture_count):
           'constraints':constraints,'closing_shot':closing.strip(),
           'requires_change':[f'E{i+1}' for i,e in enumerate(events) if e.get('requires_change',False)],
           'visual_verified':False}
+    if req and 'project_scope' in req:
+        from banana_mv.mv_scope import ending_contract
+        plan.update(project_scope=req['project_scope'],ending_plan=ending,
+                    ending_contract=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments))
     ledger={'initial_state':state,'event_catalog':catalog,'commits':[]}
     # Execute all deterministic transitions now, before any GPU work. The model
     # cannot validate a plan by deleting metadata and leaving its state unchanged.
@@ -508,6 +587,8 @@ def validate_unified_plan(raw,segments,picture_count):
         record=compile_direction_record(row,incoming,catalog,seg,plan['requires_change'])
         from banana_mv.prompt_quality import visual_state
         subjects=row.get('subjects')
+        if (req or {}).get('prompt_compiler_version')==1 and subjects is None:
+            raise SceneStateError(f'segments[{i}].subjects需列出當段入鏡角色，無角色時為[]。')
         if subjects is not None and (not isinstance(subjects,list) or
             any(not isinstance(s,str) or s not in state['character_states'] for s in subjects)):
             raise SceneStateError('subjects需引用已知角色。')
@@ -526,6 +607,11 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
           'lyrics':req.get('lyrics',''),'srt':req.get('srt_cues',[]),
           'timeline':[{k:s[k] for k in ('index','start','seconds')} |
                       {'audio_evidence':s.get('audio_evidence',{})} for s in segments]}
+    if req.get('prompt_compiler_version')==1:
+        task['prompt_compiler_version']=1
+    if 'project_scope' in req:
+        from banana_mv.mv_scope import ending_contract
+        task['ending_contract']=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments)
     # Slot scaffolding is an output contract, not creative input: keep the saved
     # plan fingerprint compatible with already successful version-3 projects.
     fingerprint=digest(task);path=Path(work)/'director_plan.json'
@@ -536,23 +622,45 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
             {k:v for k,v in plan.items() if k not in ('input_sha256','content_sha256')})!=expected:
             raise SceneStateError('統一導演計畫與專案不符或校驗失敗。')
         return plan
+    isolated=req.get('scene_state_version',1)==0
     task['required_segment_count']=len(segments)
-    task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
-        'event_indices':[],'completed_indices':[],'changes':[]} for s in segments]
+    if isolated:
+        task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
+                                   'cast':[]} for s in segments]
+    else:
+        task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
+            'event_indices':[],'completed_indices':[],'changes':[]} for s in segments]
+        if req.get('prompt_compiler_version')==1:
+            for row in task['segment_template']:row['subjects']=[]
     from PIL import Image, ImageOps
     parts=[('text',json.dumps(task,ensure_ascii=False))]
     for i,p in enumerate(originals,1):
         with Image.open(p) as im:
             im=ImageOps.exif_transpose(im).convert('RGB');im.thumbnail((768,768))
             parts.extend([('text',f'Original reference {i}:'),('image',im.copy())])
-    system=(UNIFIED_SYSTEM+'\nSupported primary modes: '+', '.join(MODES)
-            +f'\nThis request requires EXACTLY {len(segments)} segments, irrespective of event count. '
-            +'Fill all supplied segment_template rows; return one complete treatment JSON object.')
+    system=(ISOLATED_SYSTEM if isolated else UNIFIED_SYSTEM)+'\nSupported primary modes: '+', '.join(MODES)+f'\nEXACTLY {len(segments)} segments.'
+    if req.get('prompt_compiler_version')==1 and not isolated:
+        system+=('\nEach segment also needs subjects: a list of visible character IDs from initial_state, '
+                 'including non-singing story actors; [] for a character-free scene. Include both casts '
+                 'for a full-frame intercut, never merge separate locations. Lyrics and SRT offer optional '
+                 'theme and timing, subordinate to the supplied visual story; do not illustrate each line '
+                 'or invent conflicting people, objects or events. A location or reference image is not a story action.')
+    if 'project_scope' in req:
+        system+=('\nENDING SCOPE OVERRIDES generic closing instructions: obey ending_contract. '
+                 'For excerpt return ending_plan=null and closing_shot=""; no full-work resolution. '
+                 'For full return ending_plan={"start_time":absolute source seconds, '
+                 '"resolved_by":absolute source seconds,"resolution":"how the supplied main arc concludes"}. '
+                 'Allocate that resolution across the actual affected segment rows, finish it by settle_by, '
+                 'then hold closing_shot through the source end. No new action in a tiny final tail. '
+                 'Write the visible completion action, its established result, and arrival at the final '
+                 'pose/framing/light into the affected segment events; a camera cut alone is not resolution.')
     attempt_parts=parts;seen=set()
     for attempt in range(rewrite_retry_count(req)+1):
         raw=rewrite(cfg,system,attempt_parts,uuid.uuid4().hex[:8])
         try:
-            plan=validate_unified_plan(raw,segments,len(originals))
+            plan=(validate_isolated_plan(raw,segments,len(originals),req) if isolated
+                  else validate_unified_plan(raw,segments,len(originals),req))
+
         except ValueError as error:
             signature=digest({'raw':raw,'error':str(error)})
             try:
@@ -597,3 +705,4 @@ def plan_context(segment, creative=False):
     if previous:
         text += '\nPrevious planned event (not visually verified): ' + previous + '\nAdvance from its intended outcome; do not replay it.'
     return text
+
