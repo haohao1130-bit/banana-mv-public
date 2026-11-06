@@ -84,6 +84,35 @@ class IsolatedUpstreamTests(unittest.TestCase):
             self.assertEqual(ensure_plan({},req,clips(),images,temp,Mock(
                 side_effect=AssertionError("must not replan"))),plan)
 
+    def test_clip_local_transition_uses_both_fixed_original_refs(self):
+        raw=shoot_orders()
+        raw['segments'][0]['cast'].append({
+            'id':'S2','picture':2,'appearance':'new outfit','location':'arena',
+            'visibility':'closing'})
+        raw['segments'][0]['cast'][0]['visibility']='opening'
+        raw['segments'][0]['transitions']=[{'from':'S1','to':'S2'}]
+        raw['segments'][0]['cast'][0]['end_appearance']='different shirt'
+        plan=validate_isolated_plan(raw,clips(),3,{'project_scope':'excerpt'})
+        first=plan['segments'][0]
+        self.assertEqual(first['subjects'],['S1','S2'])
+        self.assertEqual(first['transitions'],[{'from':'S1','to':'S2'}])
+        self.assertEqual(first['cast_visibility'],{'S1':'opening','S2':'closing'})
+        self.assertEqual(first['appearance_in']['characters']['S1']['original_reference'],1)
+        self.assertEqual(first['appearance_in']['characters']['S2']['original_reference'],2)
+        self.assertEqual(first['appearance_out']['characters']['S1']['appearance_changes'],['different shirt'])
+        self.assertEqual(plan['segments'][1]['appearance_in']['characters']['S2']['original_reference'],2)
+        self.assertNotIn('S1',plan['segments'][1]['appearance_in']['characters'])
+
+    def test_actor_reference_never_shifts_with_cast_position(self):
+        raw=shoot_orders()
+        raw['segments'][2]['cast'][0]['picture']=1
+        with self.assertRaisesRegex(SceneStateError,'不同原始圖片'):
+            validate_isolated_plan(raw,clips(),3,{'project_scope':'excerpt'})
+        raw=shoot_orders()
+        raw['segments'][0]['transitions']=[{'from':'S1','to':'S2'}]
+        with self.assertRaisesRegex(SceneStateError,'當段兩個不同'):
+            validate_isolated_plan(raw,clips(),3,{'project_scope':'excerpt'})
+
 
 if __name__=="__main__":
     unittest.main()
