@@ -23,20 +23,33 @@ NATIVE_ENHANCER_SYSTEM = (
     "with plain-text headers on separate lines and no Markdown fences.\n\n"
 )
 
-AUTO_FILMING = """Choose filming methods from the actual content of each passage; primary_mode
-is a tendency, not a recipe for every shot. Freely develop compatible performance,
-staging and visual detail within the assigned story. Give gestures, gaze and reactions
-an appropriate target or intention; stillness can be meaningful. Turn these choices
-into concrete shot composition, perspective, light and camera movement in the native
-description, not a list of cinematic adjectives or a separate planning table.
-Decide intercuts between storylines separately from coverage within each scene.
-Let information, action, attention, emotion, musical phrasing or visual rhythm motivate
-a viewpoint change; new plot information is not required for every cut.
-Carry the same ongoing action, positions, held objects and consequences across cuts,
-including time spent off-screen; do not replay an event on returning to it.
-Budget the necessary action and its readable result before choosing shot count.
-Fit the actual duration without cramming a new action chain into the final fraction;
-use remaining time for continuation or residue when appropriate. Respect ending holds.
+AUTO_FILMING = """Complete a concrete shooting decision for EVERY Shot before writing the final
+prompt. Treat the following as required decision slots; choose their values freely
+from the assigned events, references, genre and musical context:
+1. TIME AND CONTINUITY: allocate the shot's local start and end within the clip.
+Carry the preceding action state, positions, held objects and consequences forward,
+including time off-screen. Budget readable actions and results, then ending holds.
+2. SUBJECT AND ACTION: identify the visible subject and reference identity, the
+attention or gesture target, the visible action progression and its end state.
+3. CAMERA AND PERSPECTIVE: choose the camera's location relative to the subject,
+height, viewing angle, shot size and perspective. Express lens effects concretely
+when useful, such as spatial depth or compression; numerical focal lengths are optional.
+4. COMPOSITION AND SPACE: place the subject in the frame with a clear scale; specify
+foreground and background relationships, depth, gaze or movement direction and focus.
+Describe the visible environment where an empty scene itself is the subject.
+5. CAMERA MOVEMENT: choose a static camera or a specific movement. For movement,
+state its direction, target, extent and speed; coordinate it with the visible action.
+6. LIGHTING: choose scene-consistent light direction and quality, contrast and the
+illuminated visual focus. Natural, soft or flat lighting is valid when appropriate.
+Resolve every slot as an actual filming choice, including deliberate stillness.
+Write these decisions naturally inside each Shot of detailed_description, using the
+native guide's Shot labels and local cut times. The first shot begins at zero without
+a timestamp; each later shot starts at its cut time, and the last ends at clip duration.
+Keep the decision worksheet internal; deliver the existing native sections only.
+Give adjacent shots independently chosen viewpoints and compositions serving their
+attention shifts. Connect them through the same ongoing event and spatial relationships.
+Develop compatible staging and performance freely within the assigned story;
+primary_mode guides the passage without prescribing every shot's method.
 """
 
 DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial coverage, not just camera
