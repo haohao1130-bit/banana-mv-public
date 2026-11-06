@@ -72,7 +72,7 @@
     },
     {
       "path": "banana_mv/story_plan.py",
-      "sha256": "edd8b3d44a14392288ca84a3f06250d1519d1a5ec7237c75b55072614bf38510"
+      "sha256": "7674e6040267e0309ecd31044ad3c3e196a7b20ab7e9150a7cae99c93dec247c"
     },
     {
       "path": "banana_mv/web/index.html",
@@ -80,7 +80,7 @@
     },
     {
       "path": "docs/director_architecture.md",
-      "sha256": "32ab67ae08d53e0804230298d1ba7120abab376a726ce796b48a506269d78a8f"
+      "sha256": "dcf22bc3eca7276cbde58bcff23cb73befae57174c9853a2e963a2ba18e67620"
     },
     {
       "path": "docs/persistent_scene_state.md",
@@ -196,7 +196,7 @@
     },
     {
       "path": "tests/test_direct_prompts.py",
-      "sha256": "b44d630ce40b8e0b39165597f8c8d7960a5970da44bd4dce16322d5a2bb66d7c"
+      "sha256": "8f2511246346115f9f14cae7b1d0ae141b38edcfd41159822fafefe50be50e48"
     }
   ]
 }

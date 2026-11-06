@@ -640,33 +640,30 @@ def validate_unified_plan(raw,segments,picture_count,req=None):
     return plan
 
 
-DIRECT_PROMPT_SYSTEM = """You are the sole MUSIC VIDEO director. Develop the supplied story and deliver
-the FINAL H3 prompt for EVERY supplied interval in one response. No downstream
-writer will reinterpret your instructions. FREE permits compatible condensation
-and staging; FAITHFUL preserves the supplied event order. Preserve the main arc,
-causal turns, assigned vocal roles, separate sets, costumes, props and requested outcome.
-Each prompt is a self-contained native Ref2VA prompt using the supplied official
-guide: subject_definitions, summary, retention_analysis, detailed_description,
-overall_soundscape, non_diegetic_music. Write actual filming content, never a task
-for another director. Intercut story, permitted lip sync, details and atmosphere
-as a music video; do not turn every interval into a complete dramatic scene.
-Only actors assigned to that interval appear. References are available material,
-not mandatory cast. A transformation's two forms occur sequentially only in its
-assigned interval. Repeat CURRENT appearance/props/location without retelling how
-they were acquired. Keep original image slots; never compact them when actors leave.
-Original reference N maps to Picture N plus that interval's picture_offset.
-When picture_offset=1, Picture 1 is the supplied previous last frame, not an actor.
-All shot times are LOCAL to the interval, starting at zero, within visible seconds;
-source start/end are allocation context only. Use flexible motivated MV montage,
-not a shot quota. The original Audio 1 is fully_copy in every prompt; only the
-assigned vocalist lip-syncs, no new speech, lyrics, sound effects or subtitles.
-Honor ending_contract: excerpts remain open; full works resolve early enough to
-reach and sustain closing_shot. Only affected interval prompts stage that ending.
-Return ONLY JSON: {"constraints":[],"segments":[{"index":0,"event":"brief beat",
-"mode":"action","prompt":"complete final H3 prompt"}],
+DIRECT_PROMPT_SYSTEM = """You are the sole director of ONE chronological music video, not a translator
+of the entire brief into every clip. Deliver every final H3 prompt in JSON order.
+The brief is the WHOLE story. Each timeline row is ONE fixed source interval.
+Allocate the story across the rows FIRST, then write only that row's events into
+its prompt. Never expand an opening beat into later story chapters or repeat
+completed events. Repeat current clothing, props and identity, not their history.
+Use each row's local_srt for timing. Explicit story actions tied to supplied cues
+belong in the interval containing those cues; FREE staging does not override that.
+Do not guess song sections from acoustic energy. Preserve causal order and outcome.
+Each prompt stands alone and uses the official six-section native H3 form, with
+explicit <Subject N> to <Picture N> bindings in subject_definitions. Available
+pictures are NOT mandatory cast. Include only this interval's actors and keep each
+original reference slot; do not merge or translate distinct identities into one.
+Original reference N maps to Picture N + picture_offset. With offset 1, Picture 1
+is the previous last frame, not an actor. Shot times are LOCAL, within seconds.
+Use music-video montage, permitted singing, reactions and details; no shot quota.
+Only assigned vocalists lip-sync; <Audio 1>: fully_copy. No new dialogue or lyrics.
+No downstream writer will reinterpret these prompts. No prompt may tell another
+writer how to stage the story. Obey ending_contract for full versus excerpt.
+Return ONLY JSON: {"segments":[{"index":0,"mode":"action",
+"prompt":"subject_definitions: ... summary: ... retention_analysis: ... detailed_description: ... overall_soundscape: ... non_diegetic_music: ..."}],
 "closing_shot":"final image or empty for excerpt","ending_plan":null}.
-Produce all interval rows; escape prompt newlines in JSON strings. Use concise
-prose and avoid redundant management text."""
+Escape prompt newlines in JSON strings. Do not write a separate event synopsis;
+write the final filming prompt directly, confined to its source interval."""
 
 
 def validate_direct_prompts(raw,segments,picture_count,req):
@@ -688,6 +685,8 @@ def validate_direct_prompts(raw,segments,picture_count,req):
             raise SceneStateError(f'第 {seg["index"]+1} 段缺少最終提示詞。')
         offset=int(req.get('mode')=='chain' and seg['index']>0)
         prompt=normalize_mv_prompt(prompt,picture_count+offset)
+        if picture_count>1 and not re.search(r'<Picture \d+>',prompt):
+            raise SceneStateError(f'第 {seg["index"]+1} 段未綁定任何原始參考圖；多圖提示詞需明確使用 <Picture N>。')
         event=row.get('event','')
         result.append({'index':seg['index'],'event':event if isinstance(event,str) else '',
                        'mode':row['mode'],'prompt':prompt})
@@ -714,9 +713,17 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     if req.get('prompt_compiler_version')==1:
         task['prompt_compiler_version']=1
     if direct:
+        from banana_mv.core import map_image_mentions
+        task['brief']=map_image_mentions(task['brief'],len(originals))
         task['direct_prompts']=True
         for row in task['timeline']:
             row['picture_offset']=int(req.get('mode')=='chain' and row['index']>0)
+            start=row['start'];end=start+row['seconds']
+            row['source_end']=end
+            row['local_srt']=[{'start':max(0,c['start']-start),
+                              'end':min(row['seconds'],c['end']-start),'text':c['text']}
+                             for c in req.get('srt_cues',[]) if c['start']<end and c['end']>start]
+        task.pop('srt') # Cues are supplied once, in their actual source intervals.
     if 'project_scope' in req:
         from banana_mv.mv_scope import ending_contract
         task['ending_contract']=ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments)
@@ -739,8 +746,8 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     isolated=req.get('scene_state_version',1)==0
     task['required_segment_count']=len(segments)
     if direct:
-        task['segment_template']=[{'index':s['index'],'event':'','mode':'performance','prompt':''} for s in segments]
-        task['prompt_word_budget']=max(40,min(180,(int(cfg.get('rewriter',{}).get('max_length',8192))-1000)//(2*len(segments))))
+        task['segment_template']=[{'index':s['index'],'mode':'performance','prompt':''} for s in segments]
+        task['prompt_word_budget']=max(40,min(280,(int(cfg.get('rewriter',{}).get('max_length',8192))-1000)//(2*len(segments))))
     elif isolated:
         task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
                                    'cast':[]} for s in segments]
@@ -754,7 +761,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     for i,p in enumerate(originals,1):
         with Image.open(p) as im:
             im=ImageOps.exif_transpose(im).convert('RGB');im.thumbnail((768,768))
-            parts.extend([('text',f'Original reference {i}:'),('image',im.copy())])
+            parts.extend([('text',f'<Picture {i}> (original reference {i}):' if direct else f'Original reference {i}:'),('image',im.copy())])
     system=(DIRECT_PROMPT_SYSTEM if direct else ISOLATED_SYSTEM if isolated else UNIFIED_SYSTEM)+'\nSupported primary modes: '+', '.join(MODES)+f'\nEXACTLY {len(segments)} segments.'
     if direct:
         from banana_mv.director import ORIGINAL_CUT_GUIDANCE, INTENSITY
@@ -762,7 +769,8 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         system+='\n'+(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer takes.')
         system+='\n'+INTENSITY[req.get('intensity','high')]
         system+='\nWhen the assigned singer is visible, use waist-up or closer. '+('Preserve reference facial identity. ' if req.get('face_identity',True) else '')
-        system+='Keep each prompt within prompt_word_budget words.\nOFFICIAL H3 GUIDE:\n'+guide
+        system=guide+'\n\nWHOLE-SONG DELIVERY CONTRACT (overrides single-video examples above):\n'+system
+        system+='\nKeep each prompt within prompt_word_budget words.'
     if req.get('prompt_compiler_version')==1 and not isolated:
         system+=('\nEach segment also needs subjects: a list of visible character IDs from initial_state, '
                  'including non-singing story actors; [] for a character-free scene. Include both casts '

@@ -70,6 +70,33 @@ class DirectPromptTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(ValueError):
                 validate_direct_prompts(raw,timeline(),2,req)
 
+    def test_multiple_images_require_explicit_binding_not_unbound_story_translation(self):
+        raw=delivery()
+        raw['segments'][0]['prompt']='A named hero fights, obtains a prop and transforms. S1 acts.'
+        with self.assertRaisesRegex(SceneStateError,'未綁定任何原始參考圖'):
+            validate_direct_prompts(raw,timeline(),5,{'project_scope':'excerpt'})
+
+    def test_source_cues_are_clipped_to_their_interval_before_directing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            req['prompt']='@圖片1 is the first actor; @圖片2 is the successor.'
+            req['srt_cues']=[{'start':1,'end':3,'text':'opening cue'},
+                             {'start':5,'end':7,'text':'activation cue'},
+                             {'start':7.5,'end':8.5,'text':'cross-boundary cue'}]
+            model=Mock(return_value=json.dumps(delivery()))
+            ensure_plan(cfg,req,timeline(),images,root,model)
+            system=model.call_args.args[1];task=json.loads(model.call_args.args[2][0][1])
+            self.assertLess(system.index('OFFICIAL_NATIVE_GUIDE_MARKER'),system.index('WHOLE-SONG DELIVERY CONTRACT'))
+            self.assertNotIn('event',task['segment_template'][0])
+            self.assertNotIn('srt',task)
+            self.assertIn('<Picture 1>',task['brief'])
+            self.assertEqual(task['timeline'][0]['local_srt'],[{'start':1,'end':3,'text':'opening cue'}])
+            self.assertEqual(task['timeline'][1]['local_srt'][0],{'start':1,'end':3,'text':'activation cue'})
+            self.assertEqual(task['timeline'][1]['local_srt'][1]['end'],4)
+            self.assertEqual(task['timeline'][2]['local_srt'][0]['start'],0)
+            self.assertIn('preserve causal order',system.lower())
+            self.assertEqual(model.call_count,1)
+
     def test_chain_offsets_are_supplied_upstream_not_rewritten_downstream(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root,'chain')
