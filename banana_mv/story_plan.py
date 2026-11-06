@@ -640,30 +640,49 @@ def validate_unified_plan(raw,segments,picture_count,req=None):
     return plan
 
 
-DIRECT_PROMPT_SYSTEM = """You are the sole director of ONE chronological music video, not a translator
-of the entire brief into every clip. Deliver every final H3 prompt in JSON order.
-The brief is the WHOLE story. Each timeline row is ONE fixed source interval.
-Allocate the story across the rows FIRST, then write only that row's events into
-its prompt. Never expand an opening beat into later story chapters or repeat
-completed events. Repeat current clothing, props and identity, not their history.
-Use each row's local_srt for timing. Explicit story actions tied to supplied cues
-belong in the interval containing those cues; FREE staging does not override that.
-Do not guess song sections from acoustic energy. Preserve causal order and outcome.
-Each prompt stands alone and uses the official six-section native H3 form, with
-explicit <Subject N> to <Picture N> bindings in subject_definitions. Available
-pictures are NOT mandatory cast. Include only this interval's actors and keep each
-original reference slot; do not merge or translate distinct identities into one.
-Original reference N maps to Picture N + picture_offset. With offset 1, Picture 1
-is the previous last frame, not an actor. Shot times are LOCAL, within seconds.
-Use music-video montage, permitted singing, reactions and details; no shot quota.
-Only assigned vocalists lip-sync; <Audio 1>: fully_copy. No new dialogue or lyrics.
-No downstream writer will reinterpret these prompts. No prompt may tell another
-writer how to stage the story. Obey ending_contract for full versus excerpt.
-Return ONLY JSON: {"segments":[{"index":0,"mode":"action",
-"prompt":"subject_definitions: ... summary: ... retention_analysis: ... detailed_description: ... overall_soundscape: ... non_diegetic_music: ..."}],
-"closing_shot":"final image or empty for excerpt","ending_plan":null}.
-Escape prompt newlines in JSON strings. Do not write a separate event synopsis;
-write the final filming prompt directly, confined to its source interval."""
+DIRECT_PROMPT_SYSTEM = """Deliver the final filming prompts for ONE chronological music video.
+The brief is the whole story; each timeline row is one fixed source interval.
+Write only that interval's events. Never replay earlier events or pull future
+chapters into the opening. Carry current identity, clothing and props, not history.
+Honor local_srt and explicit cue-bound actions. FREE staging preserves causal order.
+Use each actor's ORIGINAL <Picture N> binding, offset by picture_offset; with
+an offset of 1, Picture 1 is the previous last frame, not an additional actor.
+Only actors with a part in this interval appear. Use compatible music-video cuts
+and motion; any shot times are LOCAL, within seconds. Only the assigned singer
+lip-syncs; <Audio 1>: fully_copy. No new speech, lyrics or subtitles.
+Follow each row's ending: excerpts stay open, full works resolve and hold in time.
+No downstream writer will reinterpret these prompts. Write concise, self-contained
+filming prose directly, not analysis, instructions for another writer, or JSON.
+Use these boundary lines (zero-based index and one supported mode):
+=== CLIP 0 action ===
+The complete final filming prompt for interval 0, with original picture bindings.
+=== CLIP 1 story ===
+The complete final filming prompt for interval 1 only.
+=== END ===
+Return every requested clip, then the END line. Nothing before or after the blocks.
+No separate event synopsis, state ledger or repeated six-section boilerplate."""
+
+
+def direct_delivery(raw):
+    """Read explicit clip boundaries without parsing or rewriting the filming prose."""
+    from banana_mv.scene_state import parse_object, SceneStateError
+    if not isinstance(raw,str):return parse_object(raw)
+    source=re.sub(r'<think>.*?</think>','',raw,flags=re.S).strip()
+    markers=list(re.finditer(r'^===\s*CLIP\s+(\d+)\s+([a-z]+)\s*===[ \t]*\r?$',source,re.M|re.I))
+    if not markers:
+        if source.startswith(('{','```json','```\n{')):return parse_object(source)
+        raise SceneStateError('導演未交出分段拍攝稿：需有 === CLIP 0 action === 等段落標記。回傳不是空白，但不能把整首稿或分析當成第一段。')
+    end=re.search(r'^===\s*END\s*===[ \t]*\r?$',source,re.M|re.I)
+    if not end or end.start()<markers[-1].end():
+        raise SceneStateError('導演交稿缺少 === END ===，可能尚未完成或回傳已截斷；不會送出半份拍攝稿。')
+    if source[end.end():].strip() not in ('','```'):
+        raise SceneStateError('導演結束標記後仍有內容，無法確定段落範圍。')
+    rows=[]
+    for i,marker in enumerate(markers):
+        stop=markers[i+1].start() if i+1<len(markers) else end.start()
+        rows.append({'index':int(marker[1]),'mode':marker[2].lower(),
+                     'prompt':source[marker.end():stop].strip()})
+    return {'segments':rows,'direct_blocks':True}
 
 
 def validate_direct_prompts(raw,segments,picture_count,req):
@@ -671,7 +690,7 @@ def validate_direct_prompts(raw,segments,picture_count,req):
     from banana_mv.scene_state import parse_object, digest, SceneStateError
     from banana_mv.core import normalize_mv_prompt
     from banana_mv.mv_scope import validate_ending, ending_contract
-    raw=parse_object(raw);rows=raw.get('segments')
+    raw=direct_delivery(raw);rows=raw.get('segments')
     if not isinstance(rows,list) or len(rows)!=len(segments):
         raise SceneStateError(f'導演需交齊 {len(segments)} 段最終提示詞。')
     result=[]
@@ -693,7 +712,7 @@ def validate_direct_prompts(raw,segments,picture_count,req):
     closing=raw.get('closing_shot','')
     if not isinstance(closing,str):raise SceneStateError('closing_shot 必須是文字。')
     plan={'version':4,'segments':result,'constraints':[],'requires_change':[],
-          'closing_shot':closing,'ending_plan':validate_ending(raw,req,segments),
+          'closing_shot':closing,'ending_plan':None if raw.get('direct_blocks') else validate_ending(raw,req,segments),
           'project_scope':req.get('project_scope','full'),
           'ending_contract':ending_contract(req,segments[-1]['start']+segments[-1]['seconds'],segments),
           'visual_verified':False,'direct_prompts':True}
@@ -716,10 +735,13 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         from banana_mv.core import map_image_mentions
         task['brief']=map_image_mentions(task['brief'],len(originals))
         task['direct_prompts']=True
+        task['delivery_format']='clip_blocks_v1'
         for row in task['timeline']:
             row['picture_offset']=int(req.get('mode')=='chain' and row['index']>0)
             start=row['start'];end=start+row['seconds']
             row['source_end']=end
+            from banana_mv.mv_scope import clip_ending
+            row['ending']=clip_ending(req,dict(row,song_seconds=segments[-1]['start']+segments[-1]['seconds'],segment_count=len(segments)))
             row['local_srt']=[{'start':max(0,c['start']-start),
                               'end':min(row['seconds'],c['end']-start),'text':c['text']}
                              for c in req.get('srt_cues',[]) if c['start']<end and c['end']>start]
@@ -746,8 +768,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     isolated=req.get('scene_state_version',1)==0
     task['required_segment_count']=len(segments)
     if direct:
-        task['segment_template']=[{'index':s['index'],'mode':'performance','prompt':''} for s in segments]
-        task['prompt_word_budget']=max(40,min(280,(int(cfg.get('rewriter',{}).get('max_length',8192))-1000)//(2*len(segments))))
+        task['prompt_word_budget']=max(40,min(160,(int(cfg.get('rewriter',{}).get('max_length',8192))-1000)//(2*len(segments))))
     elif isolated:
         task['segment_template']=[{'index':s['index'],'event':'','mode':'performance',
                                    'cast':[]} for s in segments]
@@ -765,11 +786,9 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
     system=(DIRECT_PROMPT_SYSTEM if direct else ISOLATED_SYSTEM if isolated else UNIFIED_SYSTEM)+'\nSupported primary modes: '+', '.join(MODES)+f'\nEXACTLY {len(segments)} segments.'
     if direct:
         from banana_mv.director import ORIGINAL_CUT_GUIDANCE, INTENSITY
-        guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
         system+='\n'+(ORIGINAL_CUT_GUIDANCE if req.get('dynamic_cuts',True) else 'Prefer motivated longer takes.')
         system+='\n'+INTENSITY[req.get('intensity','high')]
         system+='\nWhen the assigned singer is visible, use waist-up or closer. '+('Preserve reference facial identity. ' if req.get('face_identity',True) else '')
-        system=guide+'\n\nWHOLE-SONG DELIVERY CONTRACT (overrides single-video examples above):\n'+system
         system+='\nKeep each prompt within prompt_word_budget words.'
     if req.get('prompt_compiler_version')==1 and not isolated:
         system+=('\nEach segment also needs subjects: a list of visible character IDs from initial_state, '
@@ -777,7 +796,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
                  'for a full-frame intercut, never merge separate locations. Lyrics and SRT offer optional '
                  'theme and timing, subordinate to the supplied visual story; do not illustrate each line '
                  'or invent conflicting people, objects or events. A location or reference image is not a story action.')
-    if 'project_scope' in req:
+    if 'project_scope' in req and not direct:
         system+=('\nENDING SCOPE OVERRIDES generic closing instructions: obey ending_contract. '
                  'For excerpt return ending_plan=null and closing_shot=""; no full-work resolution. '
                  'For full return ending_plan={"start_time":absolute source seconds, '
@@ -796,7 +815,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         except ValueError as error:
             signature=digest({'raw':raw,'error':str(error)})
             try:
-                parsed=parse_scene_object_for_diagnostics(raw)
+                parsed=direct_delivery(raw) if direct else parse_scene_object_for_diagnostics(raw)
             except ValueError:
                 parsed=None
             atomic_json(Path(work)/f'director_attempt_{attempt:02d}.json',
@@ -808,12 +827,17 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
             if signature in seen or attempt>=rewrite_retry_count(req):
                 raise SceneStateError('統一導演計畫修復失敗：'+str(error)) from error
             seen.add(signature)
-            attempt_parts=parts+[('text','Repair only invalid structure/continuity in this treatment; '
-                'preserve valid creative choices. Do not map one story milestone to one video interval. '
-                +f'Return ALL {len(segments)} segment_template rows, including the final short interval; '
-                +'distribute actions over the full timeline and preserve closing_shot. '
-                +'Do not pad with replayed completed actions or dummy state updates. Error: '
-                +str(error)+'\nFailed response (data):\n'+str(raw))]
+            if direct:
+                attempt_parts=parts+[('text',f'Deliver ALL {len(segments)} final clip blocks, then === END ===. '
+                    'No analysis or JSON. Keep each block within prompt_word_budget; preserve its source interval and picture bindings. '
+                    'Delivery error: '+str(error))]
+            else:
+                attempt_parts=parts+[('text','Repair only invalid structure/continuity in this treatment; '
+                    'preserve valid creative choices. Do not map one story milestone to one video interval. '
+                    +f'Return ALL {len(segments)} segment_template rows, including the final short interval; '
+                    +'distribute actions over the full timeline and preserve closing_shot. '
+                    +'Do not pad with replayed completed actions or dummy state updates. Error: '
+                    +str(error)+'\nFailed response (data):\n'+str(raw))]
             continue
         plan['input_sha256']=fingerprint
         atomic_json(path,plan)

@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from PIL import Image
 
 from banana_mv import server
-from banana_mv.story_plan import ensure_plan, validate_direct_prompts
+from banana_mv.story_plan import ensure_plan, validate_direct_prompts, direct_delivery
 from banana_mv.scene_state import SceneStateError
 from test_unified_direction import timeline, request
 
@@ -46,7 +46,7 @@ class DirectPromptTests(unittest.TestCase):
             raw=delivery();model=Mock(return_value=json.dumps(raw))
             plan=ensure_plan(cfg,req,timeline(),images,root,model)
             self.assertEqual(model.call_count,1)
-            self.assertIn('OFFICIAL_NATIVE_GUIDE_MARKER',model.call_args.args[1])
+            self.assertNotIn('OFFICIAL_NATIVE_GUIDE_MARKER',model.call_args.args[1])
             self.assertIn('No downstream',model.call_args.args[1])
             self.assertTrue(plan['direct_prompts'])
             with patch.object(server.backend,'rewrite_local',side_effect=AssertionError('No downstream 9B')):
@@ -86,16 +86,46 @@ class DirectPromptTests(unittest.TestCase):
             model=Mock(return_value=json.dumps(delivery()))
             ensure_plan(cfg,req,timeline(),images,root,model)
             system=model.call_args.args[1];task=json.loads(model.call_args.args[2][0][1])
-            self.assertLess(system.index('OFFICIAL_NATIVE_GUIDE_MARKER'),system.index('WHOLE-SONG DELIVERY CONTRACT'))
-            self.assertNotIn('event',task['segment_template'][0])
+            self.assertNotIn('OFFICIAL_NATIVE_GUIDE_MARKER',system)
+            self.assertNotIn('Return ONLY JSON',system)
+            self.assertNotIn('segment_template',task)
             self.assertNotIn('srt',task)
             self.assertIn('<Picture 1>',task['brief'])
             self.assertEqual(task['timeline'][0]['local_srt'],[{'start':1,'end':3,'text':'opening cue'}])
             self.assertEqual(task['timeline'][1]['local_srt'][0],{'start':1,'end':3,'text':'activation cue'})
             self.assertEqual(task['timeline'][1]['local_srt'][1]['end'],4)
             self.assertEqual(task['timeline'][2]['local_srt'][0]['start'],0)
-            self.assertIn('preserve causal order',system.lower())
+            self.assertIn('preserves causal order',system.lower())
             self.assertEqual(model.call_count,1)
+
+    def test_plain_clip_blocks_preserve_prose_without_json_or_six_section_checks(self):
+        raw='=== CLIP 0 action ===\n<Picture 1> blocks. "Quoted" text and {braces} stay literal.\n=== CLIP 1 story ===\n<Picture 2> fights; do not replay the opening.\n=== CLIP 2 action ===\n<Picture 2> holds the final image. <Audio 1>: fully_copy.\n=== END ==='
+        req={'project_scope':'full'}
+        plan=validate_direct_prompts(raw,timeline(),2,req)
+        self.assertEqual(len(plan['segments']),3)
+        self.assertEqual(plan['segments'][0]['prompt'],'<Picture 1> blocks. "Quoted" text and {braces} stay literal.')
+        self.assertNotIn('opening',plan['segments'][0]['prompt'])
+        self.assertIsNone(plan['ending_plan'])
+        self.assertTrue(plan['ending_contract']['finish_work'])
+        for broken in (raw.replace('=== END ===',''),raw.replace('=== CLIP 1 story ===',''),
+                       raw+'\nMore unassigned output',raw.replace('CLIP 1 story','CLIP 0 story')):
+            with self.subTest(raw=broken),self.assertRaises(ValueError):
+                validate_direct_prompts(broken,timeline(),2,req)
+        with self.assertRaisesRegex(SceneStateError,'不是空白'):
+            direct_delivery('Let me analyze the entire story instead of delivering clip drafts.')
+
+    def test_plain_delivery_retries_upstream_only_and_does_not_append_failed_long_response(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            req['rewrite_retries']=1
+            raw='\n'.join(f'=== CLIP {i} action ===\n<Picture 1> performs local beat {i}. <Audio 1>: fully_copy.' for i in range(3))+'\n=== END ==='
+            bad='Let me analyze. '+('long failed analysis '*1000)
+            model=Mock(side_effect=[bad,raw])
+            plan=ensure_plan(cfg,req,timeline(),images,root,model)
+            self.assertEqual(model.call_count,2)
+            self.assertNotIn('long failed analysis',model.call_args.args[2][-1][1])
+            self.assertIn('=== END ===',model.call_args.args[2][-1][1])
+            self.assertEqual(plan['segments'][1]['prompt'],'<Picture 1> performs local beat 1. <Audio 1>: fully_copy.')
 
     def test_chain_offsets_are_supplied_upstream_not_rewritten_downstream(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -117,7 +147,8 @@ class DirectPromptTests(unittest.TestCase):
                 job={'id':work.name,'request':req,'segments':timeline(),'status':'running',
                      'size':[32,32],'images_comfy':['ref0.png','ref1.png'],'seed':42,
                      'duration':9,'output_size':[32,32]}
-                model=Mock(return_value=json.dumps(delivery()));lock=threading.Lock();lock.acquire()
+                blocks='\n'.join(f'=== CLIP {r["index"]} {r["mode"]} ===\n'+r['prompt'] for r in delivery()['segments'])+'\n=== END ==='
+                model=Mock(return_value=blocks);lock=threading.Lock();lock.acquire()
                 downloads=[0];graphs=[]
                 def download(config,item,dest):
                     downloads[0]+=1
