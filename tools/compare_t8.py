@@ -38,8 +38,11 @@ def run(project,images,output,clip=0,seed=42,tail=None,t8_source=DEFAULT_PATH,wo
     # Verify before either GPU call. Downloads only the fixed source, not nodes/models.
     t8=prepare(t8_source)
     base=copy.deepcopy(status['segments'][clip])
-    base.update(director_plan=copy.deepcopy(plan['segments'][clip]),shoot_setup=plan['shared_setup'],
+    base.update(director_plan=copy.deepcopy(plan['segments'][clip]),
                 direction_ending_contract=plan['ending_contract'])
+    base.pop('shoot_setup',None)
+    if base['director_plan'].get('handoff_version')!=1:
+        raise ValueError('Old plan has no self-contained local commission; create a new project before this scope-isolated comparison.')
     if req.get('mode')=='chain' and clip>0 and not tail:
         raise ValueError('Chain comparisons need the same actual previous last frame for both arms.')
     files=list(images)+([tail] if tail else [])
