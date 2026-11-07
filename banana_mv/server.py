@@ -349,7 +349,7 @@ def worker(job, cfg, original, song, drive):
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
                 if plan['version']==5:
-                    seg['shoot_setup']=plan['shared_setup']
+                    seg.pop('shoot_setup',None)
                     seg['direction_ending_contract']=plan['ending_contract']
                 if plan['version']==4:
                     seg['prompt']=row['prompt']
@@ -828,6 +828,7 @@ if __name__=='__main__':
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
+
 
 
 
