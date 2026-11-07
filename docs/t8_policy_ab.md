@@ -49,4 +49,4 @@ commit `25a8caafac8d4d77f5d0e11b6c01f1491903d5f5`，檔案 storyboard_director.p
 
 對照工具本身不改 config.json、不改正式任務或保存稿。一般伺服器預設仍為 A。若自行在 config.json 設 t8_storyboard=true，逐段新寫稿才使用 B；移除或改 false 即回 A，載入本分支程式後才有效。需 t8_source_path 指向已驗證來源（不設定時使用原碼目錄 cache/t8）。原伺服器若尚未重啟，不會因磁碟更新自動換政策。舊快取／回爐保留舊提示詞，不能當作新政策驗證。
 
-目前沒有新增前端勾選欄位，也沒有更動主分支或 Colab 安裝筆記本。
+另提供 [可直接點開的 T8 測試 Colab](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/experiment/native9b-t8-policy-ab/Banana_MV_T8_Test.ipynb)：依序①②③，T8 預設開啟，③可勾選關閉，使用原本 MV 前端。資料另存 BananaMV_T8_Test，啟用成功會明確顯示固定版本；取得／驗證來源失敗時不啟動。這個入口是單政策測試，不會自動跑兩組。原本正式筆記本及主分支未更動；尚未真實 GPU 驗收。
