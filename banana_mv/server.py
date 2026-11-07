@@ -323,8 +323,8 @@ def worker(job, cfg, original, song, drive):
         # Old projects keep their saved prompt behavior. New projects opt in by
         # a persisted request field; no GPU or additional model downloads needed.
         needs_analysis = job['request'].get('audio_analysis', False) and any(
-            not (seg.get('status') == 'done' and valid_part(work/f'{seg["index"]:02d}_part.mp4', seg, job['size']))
-            and not (job.get('resuming') and (work/f'{seg["index"]:02d}_prompt.txt').is_file()
+            not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
+            and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
         if needs_analysis:
             job['status'] = 'analyzing_audio'; write_state(job)
@@ -339,8 +339,8 @@ def worker(job, cfg, original, song, drive):
                       and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
                       and job['request'].get('rewrite', True)
                       and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5))
-                      and any(not (s.get('status') == 'done' and valid_part(work/f'{s["index"]:02d}_part.mp4', s, job['size']))
-                              and not (job.get('resuming') and (work/f'{s["index"]:02d}_prompt.txt').is_file()
+                      and any(not (s.get('status') == 'done' and valid_part(adopted_part(job,s), s, job['size']))
+                              and not (job.get('resuming') and ((work/f'{s["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{s["index"]:02d}_prompt.txt').is_file())
                                        and not s.get('refresh_prompt')) for s in job['segments']))
         if needs_plan:
             if job['id'] in CANCEL:
@@ -354,7 +354,7 @@ def worker(job, cfg, original, song, drive):
                     seg['direction_ending_contract']=plan['ending_contract']
                 if plan['version']==4:
                     seg['prompt']=row['prompt']
-                    (work/f'{seg["index"]:02d}_prompt.txt').write_text(row['prompt'],encoding='utf-8')
+                    (work/f'{seg["index"]:02d}_prompt_v1.txt').write_text(row['prompt'],encoding='utf-8')
                     seg['prompt_profile']={'source':'whole_song_director','writer_calls':0,'contract_check_calls':0}
                 if plan['version'] in (3,4):
                     seg['direction_constraints']=plan['constraints']
@@ -374,14 +374,19 @@ def worker(job, cfg, original, song, drive):
             job['status']='planning_state';write_state(job)
             ledger=ensure_scene_state(cfg,job['request'],job['segments'],original,work,backend.rewrite_local,
                                       progress=rewrite_progress)
-            reconcile_history(job,work,ledger,lambda s:valid_part(work/f'{s["index"]:02d}_part.mp4',s,job['size']))
+            reconcile_history(job,work,ledger,lambda s:valid_part(work/f'{s["index"]:02d}_part_v1.mp4' if (work/f'{s["index"]:02d}_part_v1.mp4').is_file() else adopted_part(job,s),s,job['size']))
             job['scene_state_summary']={'version':1,'committed_clips':len(ledger['commits']),'visual_verified':False}
             job['status']='running';write_state(job)
         for seg in job['segments']:
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             i = seg['index']
-            part = work/f'{i:02d}_part.mp4'
+            from banana_mv import takes
+            try:part=takes.take_source(job,i)
+            except ValueError:
+                if seg.get('takes') and seg.get('status')=='done':
+                    raise ValueError('已採用的丹藥版本檔案遺失，請恢復該版本或另選現存丹藥。')
+                part=work/f'{i:02d}_part_v1.mp4'
             if seg.get('status')=='done' and valid_part(part,seg,job['size']):
                 if ledger is not None:
                     record=cached_clip(work,ledger,seg)
@@ -402,7 +407,7 @@ def worker(job, cfg, original, song, drive):
                 first = f'banana_{job["id"]}_{i}.png'
                 (inp/first).write_bytes(tail.read_bytes())
             seg['status']='preparing' if job['request'].get('director_schema')==4 else 'rewriting'; write_state(job)
-            saved = work/f'{i:02d}_prompt.txt'
+            saved = takes.existing_file(job,i,seg.get('selected_take','original'),'prompt.txt')
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
             record=cached_clip(work,ledger,seg) if ledger is not None else None
@@ -426,7 +431,7 @@ def worker(job, cfg, original, song, drive):
             if not prompt:
                 raise RuntimeError('提示詞改寫回傳空白，請關閉改寫或檢查本地模型。')
             seg['prompt']=prompt
-            (work/f'{i:02d}_prompt.txt').write_text(prompt,encoding='utf-8')
+            (work/f'{i:02d}_prompt_v1.txt').write_text(prompt,encoding='utf-8')
             if state_replanned:
                 seg.pop('prompt_id',None)
                 seg.pop('scene_state_prompt_sha256',None)
@@ -434,8 +439,9 @@ def worker(job, cfg, original, song, drive):
             wf = build_workflow(job['images_comfy'],name,*job['size'],seg['model_frames'],prompt,
                                 seg.get('render_seed',(job['seed']+i) % (2**48)),first,
                                 **graph_options(job['request'],seg['seconds'],seg))
+            wf['16']['inputs']['filename_prefix']=f'BananaMV/{job["id"]}/{i:02d}_v1'
             preflight(cfg,wf)
-            (work/f'{i:02d}_workflow_api.json').write_text(json.dumps(wf,ensure_ascii=False,indent=2),encoding='utf-8')
+            (work/f'{i:02d}_workflow_v1.json').write_text(json.dumps(wf,ensure_ascii=False,indent=2),encoding='utf-8')
             seg['status']='generating'; write_state(job)
             entry = None
             if (job.get('resuming') and seg.get('prompt_id') and
@@ -449,9 +455,9 @@ def worker(job, cfg, original, song, drive):
                 if ledger is not None:seg['scene_state_prompt_sha256']=scene_digest(prompt)
                 write_state(job)
                 entry = wait_generation(cfg,pid,job)
-            raw = work/f'{i:02d}_raw.mp4'
+            raw = work/f'{i:02d}_raw_v1.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
-            part = work/f'{i:02d}_part.mp4'
+            part = work/f'{i:02d}_part_v1.mp4'
             trim_video(raw,part,seg['frames'])
             parts.append(part)
             if job['request']['mode']=='chain':
@@ -578,6 +584,11 @@ def start(req):
         GPU_LOCK.release(); raise
 
 
+def adopted_part(job,seg):
+    from banana_mv.takes import existing_file
+    return existing_file(job,seg['index'],seg.get('selected_take','original'),'part.mp4')
+
+
 def valid_part(path, seg, size):
     if not path.is_file():
         return False
@@ -657,7 +668,7 @@ def repair_unstarted_timeline(job, song):
     work = job_dir(job['id'])
     if any(seg.get('prompt_id') or seg.get('status')=='done' for seg in job['segments']):
         return
-    if any(list(work.glob(pattern)) for pattern in ('*_prompt.txt','*_workflow_api.json','*_part.mp4','*_raw.mp4')):
+    if any(list(work.glob(pattern)) for pattern in ('*_prompt*.txt','*_workflow*.json','*_part*.mp4','*_raw*.mp4')):
         return
     actual = source_audio_duration(song)
     if abs(actual-job['duration']) > .25:
@@ -678,7 +689,7 @@ def restore_render_settings(job):
     """Infer absent legacy render switches without changing saved choices."""
     if 'sampling_steps' not in job['request']:
         # Existing projects keep their saved schedule rather than silently mixing 6 and 8 steps.
-        saved=sorted(job_dir(job['id']).glob('*_workflow_api.json'))
+        saved=sorted(job_dir(job['id']).glob('*_workflow*.json'))
         saved_steps=6
         if saved:
             previous=json.loads(saved[0].read_text(encoding='utf-8'))
@@ -687,8 +698,8 @@ def restore_render_settings(job):
         job['request']['sampling_steps']=saved_steps
     # Older projects predate explicit feature switches. Infer only absent switches.
     if not job.get('settings_version'):
-        workflows=sorted(job_dir(job['id']).glob('*_workflow_api.json'))
-        prompts=sorted(job_dir(job['id']).glob('*_prompt.txt'))
+        workflows=sorted(job_dir(job['id']).glob('*_workflow*.json'))
+        prompts=sorted(job_dir(job['id']).glob('*_prompt*.txt'))
         if workflows:
             graph=json.loads(workflows[0].read_text(encoding='utf-8'))
             kinds={n['class_type'] for n in graph.values()}
@@ -718,8 +729,10 @@ def resume(job_id,rewrite_retries=None):
         restore_render_settings(job)
         missing=False
         for seg in job['segments']:
-            part=job_dir(job_id)/f"{seg['index']:02d}_part.mp4"
+            part=adopted_part(job,seg)
             usable=valid_part(part,seg,job['size'])
+            if not usable and seg.get('takes'):
+                raise ValueError('採用版毛片遺失或損壞，請恢復該版本或另選現存版本；不覆寫原丹。')
             if not usable or (missing and job['request']['mode']=='chain'):
                 seg['status']='waiting'
                 if missing and job['request']['mode']=='chain':
@@ -811,6 +824,10 @@ class Handler(WebHandler):
                 from banana_mv.takes import retake
                 body=self.body_json()
                 return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions')))
+            if path=='/api/mv/condense':
+                from banana_mv.takes import condense
+                body=self.body_json()
+                return self.send_json(condense(body['id'],body.get('revision')))
             if path=='/api/mv/select-take':
                 from banana_mv.takes import select_take
                 body=self.body_json()
@@ -835,7 +852,3 @@ if __name__=='__main__':
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
-
-
-
-

@@ -117,3 +117,5 @@ Banana MV is a self-hosted Colab music-video workflow with local prompt rewritin
 ## Colab 入口整理
 
 本倉庫根目錄只保留正式生成筆記本 `Banana_MV_Public.ipynb`。舊 T8 攝影政策 A/B 測試已停用，請使用 main 分支。這與正式生成所需的 H3 Audio T8 音訊鎖定節點不同，音訊節點仍保留。
+
+回爐／重拍使用同目錄分段版本檔（例如 `00_raw_v2.mp4`、`00_part_v2.mp4`），先預覽、選好各段版本，再確認凝丹／合成。重拍不自動替換成片。詳見 [版本與回爐說明](docs/clip_review.md)。

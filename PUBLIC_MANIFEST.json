@@ -4,7 +4,7 @@
   "files": [
     {
       "path": ".github/workflows/checks.yml",
-      "sha256": "217a523868f48f40d2fb923eda212e9b206c137d41da24038defe9638415af67"
+      "sha256": "137c23dbe839ce730732b4ad04762d6c96ba4c718e2148e190b2eaf6c2196e37"
     },
     {
       "path": ".gitignore",
@@ -20,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "acd9a096840e6b4c44f32dfa6d5755d233b0c6801f57d2799a6dc75c11171c9d"
+      "sha256": "f818b03ebcb87c0e2acb77033b670c4ae6744d1f26a27bdea8854e47141bdd28"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -76,7 +76,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "4a6b8ca43a31b71a2186aa6770703d366f2644c161a5fa3d604f114a8776d678"
+      "sha256": "ee2c3521dfbb848e7a1d4d1bb5417136763f6414ad3cbf2b76a059f3c95c4aeb"
     },
     {
       "path": "banana_mv/services.py",
@@ -96,19 +96,19 @@
     },
     {
       "path": "banana_mv/takes.py",
-      "sha256": "e0778cb5ed9d1ef42c2a84a0a5d4db915d3b965f67f854a9379abbb9a35cf567"
+      "sha256": "3aceb0c8fff6e0d7c10729d46fff8b527024795e9f10308438bbd08509332d79"
     },
     {
       "path": "banana_mv/web/clip_review.js",
-      "sha256": "5757b61d8a8aae5e6d738d8267d3dd8a802395e214eef230373e4f4facfc62b6"
+      "sha256": "8e61015c449eb8730f258f534995b5a09c077aa05c7a7112483232408e057065"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "1f27d969c9872d9b11f7559d46b74b4e49252e0217d26995f3362d52306ee582"
+      "sha256": "5e395b8cbd81a3b740b2dc9e9d4ff32155f513836f207ee9e2104d834abfb4c0"
     },
     {
       "path": "docs/clip_review.md",
-      "sha256": "5590d077e29db0dbc37a4842d444feb66ed75262ab7c4fa6996d75a6bf29b86a"
+      "sha256": "115238770dc436b78da9e878931f213923c81afe891a3752dcd2a5c4a1d03125"
     },
     {
       "path": "docs/director_architecture.md",
@@ -144,7 +144,7 @@
     },
     {
       "path": "tests/test_direct_prompts.py",
-      "sha256": "9dbca556f1a8f7ecc09ca0335dfb241cf5d7db1587488001cd0497286b4e7300"
+      "sha256": "7e42ca8f929bcecef8e9374dcb2aa05765dba778ee93cf52b664f1a9bbe67443"
     },
     {
       "path": "tests/test_direction_contract.py",
@@ -196,7 +196,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "60c4668c9a5d8457b929d11801032aec6fedcd3cdf557387b816645c4b1e959d"
+      "sha256": "128ec7b10afe13a485ec4fae4e54a7d93221ff9e193d738517a11bef9f826cc4"
     },
     {
       "path": "tests/test_services.py",
@@ -204,15 +204,15 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "26a037f3324276db9b4a9d275f47c86704a37a5a4bf84f4e06dfc14fd51baf9c"
+      "sha256": "84051e76ce8e566e37d90506ab83010ff18edceb69ef56f5ed5348062371d896"
     },
     {
       "path": "tests/test_takes.py",
-      "sha256": "1008573694f758424556b2eec2fb06460cf59f739756232958e512abaa5a98c1"
+      "sha256": "ac6cfc60dba3277c08134c436a51ccbe033e0136363a7f1c9ac731a7f3a568ce"
     },
     {
       "path": "tests/test_unified_direction.py",
-      "sha256": "fc116e548e682c6094e6da2b8f8ffedebb401df3fc81d1ae0e8ff41c56600a83"
+      "sha256": "779d209f4da73346731fd0a669dccdb287a4b21b3354ad5dabc8f4a55ab3d011"
     },
     {
       "path": "tools/build_notebook.py",
@@ -240,7 +240,7 @@
     },
     {
       "path": "docs/user_manual.md",
-      "sha256": "300f519affac5431026bde78174313eadcc090ae74b23fb857210a06307a5fe3"
+      "sha256": "f17a6d3c6bb8d5effd4b7e28e90b13c7b68f9d98073063d42b8b391b4b34cfcf"
     }
   ]
 }
