@@ -151,6 +151,45 @@ class ShootPlanTests(unittest.TestCase):
         from banana_mv.shoot_plan import _check_distinct_events
         _check_distinct_events([{'index':i,'event':'Hold the final pose.'} for i in range(3)])
 
+    def test_adaptation_reaches_both_stages_without_changing_native_delivery(self):
+        from banana_mv.shoot_plan import CREATIVE_DIRECTION, FAITHFUL_DIRECTION
+        for free in (False,True):
+            with self.subTest(free=free),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);images,cfg,req=self.fixture(root)
+                req.update(story_plan=free,intensity='extreme',dynamic_cuts=True)
+                allocator=Mock(return_value=allocation())
+                plan=ensure_plan(cfg,req,timeline(),images,root,allocator)
+                expected=CREATIVE_DIRECTION if free else FAITHFUL_DIRECTION
+                other=FAITHFUL_DIRECTION if free else CREATIVE_DIRECTION
+                system=allocator.call_args.args[1]
+                self.assertIn(expected,system);self.assertNotIn(other,system)
+                task=json.loads(allocator.call_args.args[2][0][1])
+                self.assertEqual(task['intensity'],'extreme')
+                self.assertTrue(task['dynamic_cuts'])
+                self.assertEqual(task['adaptation'],'FREE' if free else 'FAITHFUL')
+                seg=dict(timeline()[1],director_plan=plan['segments'][1],
+                         shoot_setup=plan['shared_setup'])
+                writer=Mock(return_value=native_prompt(1))
+                with patch.object(server.backend,'rewrite_local',writer):
+                    result=server.local_prompt(cfg,req,seg,images,None)
+                text=writer.call_args.args[2][0][1]
+                self.assertIn(expected,text);self.assertNotIn(other,text)
+                self.assertNotIn('HUMAN_OPENING',text);self.assertNotIn('FINAL_BEAT',text)
+                self.assertEqual(result,native_prompt(1));self.assertEqual(writer.call_count,1)
+
+    def test_pre_policy_cache_resumes_without_reallocating(self):
+        from banana_mv.scene_state import digest
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            allocator=Mock(return_value=allocation())
+            plan=ensure_plan(cfg,req,timeline(),images,root,allocator)
+            task=json.loads(allocator.call_args.args[2][0][1])
+            plan['input_sha256']=digest({k:v for k,v in task.items()
+                                        if k not in ('intensity','dynamic_cuts')})
+            (root/'director_plan.json').write_text(json.dumps(plan))
+            self.assertEqual(ensure_plan(cfg,req,timeline(),images,root,allocator),plan)
+            self.assertEqual(allocator.call_count,1)
+
     def test_bad_delivery_retries_compactly_without_story_replanning_per_slot(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root);req['rewrite_retries']=1
@@ -250,4 +289,5 @@ class ShootPlanTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
 
