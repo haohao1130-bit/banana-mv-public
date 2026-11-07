@@ -191,7 +191,7 @@ class ShootPlanTests(unittest.TestCase):
             self.assertEqual(allocator.call_count,1)
 
     def test_photographic_intensity_reaches_both_stages_in_each_adaptation_mode(self):
-        from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING
+        from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING, REFERENCE_PERFORMANCE
         for free in (False,True):
             for level in ('normal','high','extreme'):
                 for dynamic in (False,True):
@@ -202,6 +202,7 @@ class ShootPlanTests(unittest.TestCase):
                         plan=ensure_plan(cfg,req,timeline(),images,root,allocator)
                         system=allocator.call_args.args[1]
                         self.assertIn(CLIP_INTENSITY[level],system)
+                        self.assertIn(REFERENCE_PERFORMANCE,system)
                         for other in set(CLIP_INTENSITY)-{level}:
                             self.assertNotIn(CLIP_INTENSITY[other],system)
                         seg=dict(timeline()[1],director_plan=plan['segments'][1],shoot_setup=plan['shared_setup'])
@@ -211,6 +212,7 @@ class ShootPlanTests(unittest.TestCase):
                         text=writer.call_args.args[2][0][1]
                         self.assertIn(CLIP_INTENSITY[level],text)
                         self.assertIn(AUTO_FILMING,text)
+                        self.assertIn(REFERENCE_PERFORMANCE,text)
                         self.assertEqual(DYNAMIC_EDITING in text,dynamic)
                         if not dynamic:self.assertIn('Prefer motivated longer takes.',text)
                         if level!='normal':
