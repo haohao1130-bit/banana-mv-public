@@ -23,6 +23,31 @@ NATIVE_ENHANCER_SYSTEM = (
     "with plain-text headers on separate lines and no Markdown fences.\n\n"
 )
 
+CREATIVE_DIRECTION = """ADAPTATION: FREE. Act as an inventive MV director, not a literal script formatter.
+Proactively develop striking visual events, performance business, interactions,
+reaction details and environmental changes that serve the supplied story spine.
+Make these choices even when the user supplies no camera or montage instructions.
+Treat descriptive staging and camera suggestions as material to reinterpret, unless
+explicitly mandatory. Preserve reference identities, vocal roles, fixed geography,
+required causal milestones, specified outcome and explicit hard constraints.
+Choose bold, genre-appropriate camera positions, perspective, movement and editorial
+juxtapositions. Use performance, inserts, reactions and environment as meaningful
+coverage; create rhythmic, parallel, contrast or action-matched montage where useful.
+Set intensity from the selected level and actual music/story passage. Precision means
+committing to executable choices, including bold ones, while keeping cause and effect
+readable. Develop the current beat without borrowing later milestones or replaying it.
+"""
+
+FAITHFUL_DIRECTION = """ADAPTATION: FAITHFUL. Preserve the supplied events, action meanings, causal
+links, participants, props, order and specified camera requests. Translate them into
+concrete expressive photography and editing without adding new story events.
+"""
+
+
+def adaptation_direction(req):
+    return CREATIVE_DIRECTION if req.get('story_plan',True) else FAITHFUL_DIRECTION
+
+
 AUTO_FILMING = """Complete a concrete shooting decision for EVERY Shot before writing the final
 prompt. Treat the following as required decision slots; choose their values freely
 from the assigned events, references, genre and musical context:
@@ -86,10 +111,10 @@ requests and the ending rather than forcing a climax into every clip.
 
 
 ALLOCATION_SYSTEM = """Prepare a filmable music-video story across the given source intervals.
-If the user supplies only a backbone, develop concrete actions along it. If the user
-already supplies a detailed script, retain its actions, causal links and specified
-ending and allocate it, rather than rewriting it. The native clip director later
-decides HOW to film each assigned part.
+Apply the supplied adaptation policy while developing and allocating the story.
+Build filmable events at the selected intensity; the native clip director later
+turns each assigned beat into precise shots. Keep both parallel strands in each
+normal-length interval when requested; each strand advances in its own fixed space.
 Extract shared SETUP from the user's fixed world, reference and vocal-role settings.
 Keep their original wording and distinct locations; do not summarize or redesign them.
 Use the supplied pictures for appearance, not a generic textual replacement of the asset.
@@ -101,9 +126,8 @@ and ONLY this interval's events and necessary changes. Carry state, never a hist
 Identity changes happen once in their assigned interval; subsequent briefs start in the
 resulting identity. Shared SETUP contains no plot chronology, future events or finale.
 Preserve the supplied backbone, causal order, explicit cue-bound events and outcome.
-Preserve essential supplied actions, recipients, props, outcomes and explicit special shots.
-FREE may develop compatible action, interactions and parallel intercuts along the backbone;
-FAITHFUL also preserves the supplied event order. Neither redesigns the fixed settings.
+Distinguish explicit required milestones and hard restrictions from optional
+staging suggestions. Carry the selected adaptation policy through all intervals.
 Parallel performance and story strands may intercut; no singer quota, mandatory cast
 attendance, shot list or complete dramatic arc per interval. Allocate a feasible amount
 of action to each duration. Respect local_srt cue timing and each interval's ending.
@@ -170,17 +194,22 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
           'brief':map_image_mentions(req.get('prompt',''),len(originals)),
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'style':req.get('director','auto'),'lyrics':req.get('lyrics',''),
+          'intensity':req.get('intensity','high'),'dynamic_cuts':req.get('dynamic_cuts',True),
           'timeline':timeline,
           'ending_contract':contract}
-    fingerprint=digest(task);path=Path(work)/'director_plan.json'
+    fingerprint=digest(task)
+    # Old schema-5 jobs did not fingerprint the two directing controls.
+    legacy_fingerprint=digest({k:v for k,v in task.items()
+                               if k not in ('intensity','dynamic_cuts')})
+    path=Path(work)/'director_plan.json'
     if path.is_file():
         plan=json.loads(path.read_text(encoding='utf-8'))
-        if (plan.get('version')!=5 or plan.get('input_sha256')!=fingerprint or
+        if (plan.get('version')!=5 or plan.get('input_sha256') not in (fingerprint,legacy_fingerprint) or
             digest({k:v for k,v in plan.items() if k not in ('content_sha256','input_sha256')})!=plan.get('content_sha256')):
             raise SceneStateError('分段拍攝大綱與專案不符或校驗失敗。')
         return plan
     parts=[('text',json.dumps(task,ensure_ascii=False))]+_pictures(originals)
-    system=ALLOCATION_SYSTEM+'\nSupported modes: '+', '.join(MODES)+f'. Deliver {len(segments)} CLIP blocks.'
+    system=ALLOCATION_SYSTEM+'\n'+adaptation_direction(req)+'\nSupported modes: '+', '.join(MODES)+f'. Deliver {len(segments)} CLIP blocks.'
     attempts=parts
     for attempt in range(rewrite_retry_count(req)+1):
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
@@ -223,6 +252,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
     context={'seconds':segment['seconds'],'primary_mode':row['mode'],
+          'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
@@ -237,10 +267,12 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           "\n\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
-The current clip script is complete for this interval, not a synopsis to expand
-into other story chapters. Shared settings retain the user's locations and asset roles;
+Use the current clip's assigned beat and end state as the scope for visual development.
+Apply the adaptation policy below within that scope; keep later story milestones
+in their assigned intervals. Shared settings retain the user's locations and asset roles;
 keep separate locations distinct, intercutting them rather than merging their sets or
-placing their casts in one shared frame. Only actors needed by this script appear.
+placing their casts in one shared frame. Select cast and supporting coverage to serve
+the current beat and adaptation policy, preserving the supplied identity bindings.
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
 reference clothing.
@@ -253,6 +285,7 @@ lyrics, subtitles, sound layers or replacement song. Supplied SRT is timing evid
 Follow this clip's ending; an ongoing clip needs no whole-work finale.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """
+    text+='\n'+adaptation_direction(req)
     text+='\n'+AUTO_FILMING
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
@@ -278,4 +311,5 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
+
 
