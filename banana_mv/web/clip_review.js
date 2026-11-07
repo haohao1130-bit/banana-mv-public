@@ -7,6 +7,7 @@ function updateClipActions(){
     row.check.disabled=clipView.locked;
     if(row.check.checked)count++;
     row.use.disabled=!clipIdle()||row.select.value===row.segment.selected_take;
+    row.correction.disabled=clipView.locked||['retaking','assembling'].includes(clipView.jobData?.status);
   }
   $('clips-all').disabled=clipView.locked||!clipView.rows.size;
   $('clips-clear').disabled=clipView.locked||!count;
@@ -16,7 +17,7 @@ function updateClipActions(){
 function showClipVersion(row){
   const take=row.segment.takes.find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
-  row.note.textContent=take?`${take.id==='original'?'初煉版':'回爐版'} · Seed：${take.seed}`:'';
+  row.note.textContent=take?`${take.id==='original'?'初煉版':'回爐版'} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):'';
   updateClipActions();
 }
 function renderClipPreviews(job){
@@ -35,7 +36,15 @@ function renderClipPreviews(job){
       const select=document.createElement('select');select.setAttribute('aria-label',`第 ${i+1} 顆丹藥的版本`);
       const use=document.createElement('button');use.type='button';use.className='secondary';use.textContent='採用此丹';
       const note=document.createElement('p');note.className='muted';version.append(select,use);card.append(label,video,version,note);$('clip-list').append(card);
-      row={card,check,title,video,select,use,note,segment,index:i};clipView.rows.set(i,row);
+      const fixLabel=document.createElement('label');fixLabel.textContent='局部修改建議（選填）';
+      const correction=document.createElement('textarea');correction.rows=3;correction.maxLength=3000;
+      correction.setAttribute('aria-label',`第 ${i+1} 顆丹藥的局部修改建議`);
+      correction.placeholder='例如：表情更憤怒；增加手部操作特寫；保留事件，只改這段拍法。';
+      const help=document.createElement('p');help.className='muted';help.textContent='以目前採用版修改；留空只換 Seed。填寫後勾選此段，9B 只修這段原稿。';
+      try{correction.value=JSON.parse(localStorage.getItem('banana_mv_clip_fixes:'+job.id)||'{}')[i]||'';}catch{}
+      correction.oninput=()=>{try{const key='banana_mv_clip_fixes:'+job.id;const saved=JSON.parse(localStorage.getItem(key)||'{}');saved[i]=correction.value;localStorage.setItem(key,JSON.stringify(saved));}catch{}};
+      fixLabel.append(correction);card.append(fixLabel,help);
+      row={card,check,title,video,select,use,note,correction,segment,index:i};clipView.rows.set(i,row);
       check.onchange=updateClipActions;select.onchange=()=>showClipVersion(row);
       use.onclick=()=>adoptClip(row.index,row.select.value);
     }
@@ -79,6 +88,8 @@ $('clips-clear').onclick=()=>{if(clipView.locked)return;for(const row of clipVie
 $('clips-retake').onclick=()=>{
   if(!clipIdle())return;
   const indices=[...clipView.rows].filter(([,row])=>row.check.checked).map(([i])=>i);
-  if(indices.length)return runClipAction('api/mv/retake',{indices});
+  const instructions=Object.fromEntries(indices.map(i=>[String(i),clipView.rows.get(i).correction.value.trim()]).filter(([,text])=>text));
+  if(indices.length)return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{})});
 };
 if(active){busy(true);poll();}
+

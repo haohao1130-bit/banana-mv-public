@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from banana_mv import server as app
 from banana_mv import takes
+from banana_mv import masters
 
 
 class TakeTests(unittest.TestCase):
@@ -168,6 +169,74 @@ class TakeTests(unittest.TestCase):
         app.audio_window.assert_not_called()
         self.assemble.assert_not_called()
 
+    def configure_repair(self):
+        guide=self.root/'guide.md';guide.write_text('NATIVE_GUIDE')
+        self.cfg.update(guides={'ref':str(guide)},rewriter={'model':'9b'})
+
+    def test_local_correction_only_changes_selected_prompt_and_revert_restores_it(self):
+        self.configure_repair()
+        with patch.object(takes,'repair_prompt',return_value='fixed story 1 with closer hands') as repair:
+            takes.retake(self.job['id'],[1,2],{'1':'Only add a hand insert.','2':'  '})
+            job=self.run_background()
+        repair.assert_called_once()
+        self.assertEqual(repair.call_args.args[3],'fixed story 1')
+        self.assertEqual(job['segments'][1]['prompt'],'fixed story 1 with closer hands')
+        self.assertEqual(job['segments'][2]['prompt'],'fixed story 2')
+        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1 with closer hands')
+        takes.retake(self.job['id'],[1]);job=self.run_background()
+        self.assertEqual(app.backend.queue_prompt.call_args.args[1]['7']['inputs']['prompt'],'fixed story 1 with closer hands')
+        takes.select_take(self.job['id'],1,'original');job=self.run_background()
+        self.assertEqual(job['segments'][1]['prompt'],'fixed story 1')
+        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1')
+
+    def test_failed_local_rewrite_keeps_current_master_and_prompt(self):
+        self.configure_repair()
+        with patch.object(takes,'repair_prompt',side_effect=RuntimeError('9B failed')):
+            takes.retake(self.job['id'],[1],{'1':'Stronger expression.'});job=self.run_background()
+        app.backend.queue_prompt.assert_not_called()
+        self.assertEqual(job['retake']['status'],'error')
+        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+
+    def test_master_versions_keep_first_second_and_reverted_complete_movies(self):
+        takes.retake(self.job['id'],[1]);job=self.run_background()
+        self.assertEqual(job['current_master'],2)
+        self.assertEqual((self.work/'final_v001.mp4').read_bytes(),b'old master')
+        second=(self.work/'final_v002.mp4').read_bytes()
+        self.assertEqual(second,(self.work/'final.mp4').read_bytes())
+        takes.select_take(self.job['id'],1,'original');job=self.run_background()
+        self.assertEqual(job['current_master'],3)
+        self.assertEqual((self.work/'final_v002.mp4').read_bytes(),second)
+        self.assertEqual((self.work/'final_v003.mp4').read_bytes(),(self.work/'final.mp4').read_bytes())
+        self.assertEqual(masters.source(job,self.work,'1'),self.work/'final_v001.mp4')
+        described=takes.describe(job)
+        self.assertEqual(described['final_video'],str(self.work/'final.mp4'))
+        self.assertIn('version=1',described['final_versions'][0]['download'])
+        for value in ('../final.mp4','0','999'):
+            with self.assertRaises(ValueError):masters.source(job,self.work,value)
+
+    def test_invalid_correction_payload_does_not_change_project(self):
+        for notes in ([],{'2':'unselected'},{'1':123},{'1':'x'*3001}):
+            with self.subTest(notes=str(notes)[:40]),self.assertRaises(ValueError):
+                takes.retake(self.job['id'],[1],notes)
+            self.assertFalse(app.GPU_LOCK.locked())
+            self.assertEqual(app.read_state(self.job['id']),self.job)
+
+    def test_repair_model_sees_only_current_prompt_notes_and_local_references(self):
+        from PIL import Image
+        self.configure_repair()
+        image=self.root/'actual.png';Image.new('RGB',(8,8)).save(image)
+        self.job['request']['prompt']='WHOLE_STORY_SECRET_FINAL_END'
+        self.job['segments'][0]['shoot_setup']='FUTURE_SETUP_SECRET'
+        dest=self.root/'repair';dest.mkdir()
+        with patch.object(app.backend,'rewrite_local',return_value='<Picture 1> UPDATED_NATIVE <Audio 1>: fully_copy.') as model:
+            result=takes.repair_prompt(self.cfg,self.job,self.job['segments'][0],'LOCAL_ORIGINAL','LOCAL_CORRECTION',[image],None,dest)
+        text=model.call_args.args[1]+model.call_args.args[2][0][1]
+        self.assertIn('LOCAL_ORIGINAL',text);self.assertIn('LOCAL_CORRECTION',text)
+        self.assertNotIn('WHOLE_STORY_SECRET_FINAL_END',text);self.assertNotIn('FUTURE_SETUP_SECRET',text)
+        self.assertIn('UPDATED_NATIVE',result)
+        self.assertTrue((dest/'repair_raw.txt').is_file())
+
 
 class PreviewHTTPTests(unittest.TestCase):
     def test_script_launcher_and_take_routes_share_the_same_server_locks(self):
@@ -204,6 +273,9 @@ with patch('http.server.ThreadingHTTPServer') as http:
             job={'id':work.name,'status':'done','seed':42,'request':{},'segments':[
                 {'index':0,'start':0,'seconds':1,'status':'done'}]}
             app.write_state(job)
+            shutil.copyfile(work/'00_part.mp4',work/'final.mp4')
+            shutil.copyfile(work/'00_part.mp4',work/'final_v001.mp4')
+            job['final_versions']=[{'version':1,'file':'final_v001.mp4'}];app.write_state(job)
             http=app.ThreadingHTTPServer(('127.0.0.1',0),app.Handler)
             thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
             base=f'http://127.0.0.1:{http.server_port}'
@@ -222,7 +294,11 @@ with patch('http.server.ThreadingHTTPServer') as http:
                 with urllib.request.urlopen(base+f'/api/mv/status?id={job["id"]}') as r:
                     status=json.load(r);self.assertIn('preview',status['segments'][0])
                 with urllib.request.urlopen(base+'/clip_review.js') as r:self.assertIn(b'renderClipPreviews',r.read())
+                master=base+f'/api/mv/file?id={job["id"]}&version=1'
+                with urllib.request.urlopen(master) as r:self.assertEqual(r.read(),(work/'final_v001.mp4').read_bytes())
+                with self.assertRaises(urllib.error.HTTPError):urllib.request.urlopen(master.replace('version=1','version=../raw.mp4'))
             finally:http.shutdown();http.server_close();thread.join()
 
 
 if __name__=='__main__':unittest.main()
+

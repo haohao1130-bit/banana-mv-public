@@ -300,7 +300,8 @@ def export_finished_video(job,source):
     folder=backend.DATA/'videos'
     folder.mkdir(parents=True,exist_ok=True)
     title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
-    target=folder/f'{title}_{job["id"]}.mp4'
+    suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
+    target=folder/f'{title}_{job["id"]}{suffix}.mp4'
     temp=target.with_name('.'+target.name+'.tmp')
     try:
         shutil.copyfile(source,temp)
@@ -468,7 +469,11 @@ def worker(job, cfg, original, song, drive):
         if job['id'] in CANCEL:
             job['status']='cancelled'; write_state(job); return
         job['status']='assembling'; write_state(job)
+        from banana_mv import masters
+        masters.preserve_current(job,work)
         assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'])
+        master=masters.archive(job,work,work/'final.mp4','resume' if job.get('current_master') else 'original')
+        job['current_master']=master['version']
         try:
             export_finished_video(job,work/'final.mp4')
         except OSError as error:
@@ -778,7 +783,9 @@ class Handler(WebHandler):
                 return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/file':
             try:
-                path=job_dir(dict(urllib.parse.parse_qsl(url.query))['id'])/'final.mp4'
+                from banana_mv import masters
+                args=dict(urllib.parse.parse_qsl(url.query))
+                path=masters.source(read_state(args['id']),job_dir(args['id']),args.get('version'))
                 return self.send_file(path)
             except Exception as e:
                 return self.send_json({'error':str(e)},400)
@@ -803,7 +810,7 @@ class Handler(WebHandler):
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices')))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions')))
             if path=='/api/mv/select-take':
                 from banana_mv.takes import select_take
                 body=self.body_json()
