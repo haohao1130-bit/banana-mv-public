@@ -224,7 +224,7 @@
     },
     {
       "path": "tools/colab_runtime.py",
-      "sha256": "866b54fb7f9506ca71e973d3d0d46ba2cff618f708d3382dc76cc43d1671c039"
+      "sha256": "3122a1b38018963fbdff66ff4deb3314ad5e6f42a52bd77381514249c4f9b430"
     },
     {
       "path": "tools/public_clone.py",
@@ -252,7 +252,19 @@
     },
     {
       "path": "docs/t8_policy_ab.md",
-      "sha256": "26b6d72ce3074a90cc0f7f25eae23b81514aa31765483b119454025de61e391f"
+      "sha256": "588f4edffe4a246e5516da2eee665bb7b2f50b3f409a9aff487095b0f97ce7e5"
+    },
+    {
+      "path": "tools/build_t8_notebook.py",
+      "sha256": "a1090abfd95600af115d83b164da4fe1d0bd3f70f470031da7d210ea74194719"
+    },
+    {
+      "path": "Banana_MV_T8_Test.ipynb",
+      "sha256": "02c74e2a6886dff48fddbf7d6f374506e44df34dab43f6171b6c8a726d4816c2"
+    },
+    {
+      "path": "tests/test_t8_colab.py",
+      "sha256": "f4d5a47a87d2e01bb5aa9f0652225c0598248701414d055ef0985ba76695e720"
     }
   ]
 }
