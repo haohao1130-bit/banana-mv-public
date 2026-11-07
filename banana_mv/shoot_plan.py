@@ -49,7 +49,14 @@ def adaptation_direction(req):
 
 
 REFERENCE_PERFORMANCE = """IDENTITY AND PERFORMANCE: Bind each actor to the assigned reference identity
-and current appearance. A reference expression sheet demonstrates the same identity
+and current appearance. In both FREE and FAITHFUL adaptation, interpret broad wording
+such as 'keep/maintain the reference image unchanged', 'match the reference completely'
+or 'preserve appearance' as identity and appearance continuity, not a performance lock.
+A pictured blink, closed eyes, neutral face, gaze or resting pose is a momentary state;
+direct eyes opening, expressions changing and the body performing as the event requires.
+Only an explicit instruction to sustain a particular expression, eye state, gaze or
+pose makes that state a performance constraint for its stated scope.
+A reference expression sheet demonstrates the same identity
 in different states; it is not an acting menu or a limit on emotional range.
 Direct facial expression, gaze, jaw tension, head/neck movement and body response as
 changing performances driven by the current event, vocal-role timing and musical
