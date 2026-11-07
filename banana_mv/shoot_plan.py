@@ -159,6 +159,15 @@ turns each assigned beat into precise shots. Keep both parallel strands in each
 normal-length interval when requested; each strand advances in its own fixed space.
 Extract shared SETUP from the user's fixed world, reference and vocal-role settings.
 Keep their original wording and distinct locations; do not summarize or redesign them.
+SETUP is an upstream planning record only; the clip director will NOT receive it.
+Write each CLIP as a self-contained local shooting commission. Include only the
+reference identities, relevant location facts, vocal duties and hard rules needed
+for this interval, its opening state, visible events and required local end state.
+Carry completed consequences as current facts, not their backstory. Include both
+separate strands when assigned. Omit unused cast/locations and all later milestones,
+plot summaries, ending previews and reasons that depend on future events.
+The downstream director creatively stages and films this commission; it does not
+redistribute the whole story or choose this interval's singers from quoted lyrics.
 Use the supplied pictures for appearance, not a generic textual replacement of the asset.
 Deliver self-contained interval scripts with concrete actions and interactions, not
 plot summaries. Allocate by story and source timing, not mechanically by paragraph.
@@ -232,7 +241,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
         timeline.append({k:seg[k] for k in ('index','start','seconds')} | {
             'local_srt':excerpt(req,seg),'audio_evidence':seg.get('audio_evidence',{}),
             'ending':clip_ending(req,dict(seg,direction_ending_contract=contract))})
-    task={'format':'isolated_shoot_briefs_v1',
+    task={'format':'isolated_shoot_briefs_v2',
           'brief':map_image_mentions(req.get('prompt',''),len(originals)),
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'style':req.get('director','auto'),'lyrics':req.get('lyrics',''),
@@ -241,12 +250,13 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
           'ending_contract':contract}
     fingerprint=digest(task)
     # Old schema-5 jobs did not fingerprint the two directing controls.
-    legacy_fingerprint=digest({k:v for k,v in task.items()
-                               if k not in ('intensity','dynamic_cuts')})
+    old_task=dict(task,format='isolated_shoot_briefs_v1')
+    legacy_fingerprints={digest(old_task),digest({k:v for k,v in old_task.items()
+                               if k not in ('intensity','dynamic_cuts')})}
     path=Path(work)/'director_plan.json'
     if path.is_file():
         plan=json.loads(path.read_text(encoding='utf-8'))
-        if (plan.get('version')!=5 or plan.get('input_sha256') not in (fingerprint,legacy_fingerprint) or
+        if (plan.get('version')!=5 or plan.get('input_sha256') not in {fingerprint,*legacy_fingerprints} or
             digest({k:v for k,v in plan.items() if k not in ('content_sha256','input_sha256')})!=plan.get('content_sha256')):
             raise SceneStateError('分段拍攝大綱與專案不符或校驗失敗。')
         return plan
@@ -271,7 +281,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             for seg,row in zip(segments,rows):
                 if row.get('index')!=seg['index'] or row.get('mode') not in MODES:
                     raise SceneStateError('分段大綱順序或模式錯誤。')
-                result.append({'index':seg['index'],'mode':row['mode'],
+                result.append({'index':seg['index'],'mode':row['mode'],'handoff_version':1,
                                'event':_bound(row['prompt'],len(originals))})
             _check_distinct_events(result)
             plan={'version':5,'shared_setup':shared,'segments':result,'visual_verified':False,
@@ -292,6 +302,8 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
+    if row.get('handoff_version')!=1:
+        raise SceneStateError('舊大綱缺少獨立的當段拍攝委託；已保存影片與提示詞可沿用，但新寫稿需建立新任務重新分配。不能傳回完整設定補足。')
     def connected(text):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
@@ -307,16 +319,17 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           "Choose shots that best express the original intent. "
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
           "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
-          "Original prompt:\nShared world and reference roles:\n"+connected(segment['shoot_setup'])+
-          "\n\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
+          "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
 Use the current clip's assigned beat and end state as the scope for visual development.
-Apply the adaptation policy below within that scope; keep later story milestones
-in their assigned intervals. Shared settings retain the user's locations and asset roles;
+Apply the adaptation policy below within that local scope. The commission supplies
+the needed current facts, opening state, events and local end state. Design compelling
+performance, coverage and montage to realize it. Use its assigned locations and asset roles;
 keep separate locations distinct, intercutting them rather than merging their sets or
 placing their casts in one shared frame. Select cast and supporting coverage to serve
 the current beat and adaptation policy, preserving the supplied identity bindings.
+Available reference images do not require unused characters or locations to appear.
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
 reference clothing.
