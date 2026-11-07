@@ -8,7 +8,7 @@
     },
     {
       "path": ".gitignore",
-      "sha256": "179c6428bfbe64286582c69ce052be375dfd29af43e6b2afd6b733d4fbcc4878"
+      "sha256": "5c99ff5759b32e37239c5b047bc96d67b77722a3c6cf44d6bc9b301bce94c67b"
     },
     {
       "path": "Banana_MV_Colab.ipynb",
@@ -84,11 +84,11 @@
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "ba34ae9de91acc10e7a8fe969ed165cf1493ba8808015a34ad7c08323b36e8e3"
+      "sha256": "2c8a0ed8246603f13f88b0d58bf44554477d304f82571f157919ebe271313eb2"
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "e90abf6938b14cb0b2d6ff471f0338ef6de2eaf036de25f02841fb54a7bc46e5"
+      "sha256": "c5896363f56ba13e0844fc44442540602903f4070972d0229e0956f2b6b19e76"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -237,6 +237,22 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "4005c780dacdab8e76211d5adcc60a81146f9448da1868f5098702fa6266e95a"
+    },
+    {
+      "path": "banana_mv/t8_storyboard.py",
+      "sha256": "fc3e6abffd2b4e1e91cb59177a776973f684463961afe3ee50adc9d8cebcd320"
+    },
+    {
+      "path": "tools/compare_t8.py",
+      "sha256": "2d1e08a84836d6674d9b49bfaea05f01655a5cd7ef672b7919d49cbe2e263bdb"
+    },
+    {
+      "path": "tests/test_t8_storyboard.py",
+      "sha256": "182f64c85c412eff849e4aa4bd094c7c36ad55095b6978cb1c3c2b7f11373e2d"
+    },
+    {
+      "path": "docs/t8_policy_ab.md",
+      "sha256": "26b6d72ce3074a90cc0f7f25eae23b81514aa31765483b119454025de61e391f"
     }
   ]
 }
