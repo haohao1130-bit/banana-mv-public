@@ -19,7 +19,8 @@ def allocation():
     return ('=== SETUP ===\nThe port stays industrial. <Picture 1> is the human singer; '
             '<Picture 2> is the non-singing hero.\n'
             '=== CLIP 0 story ===\nHUMAN_OPENING: <Picture 1> changes into <Picture 2> once.\n'
-            '=== CLIP 1 action ===\nCURRENT_COUNTER: <Picture 2>, already transformed, blocks an attack.\n'
+            '=== CLIP 1 action ===\nCURRENT_COUNTER: <Picture 2>, already transformed, is the non-singing hero at the industrial port. '
+            'The hero holds a damaged shield, blocks one attack and ends behind a container with the shield still in hand.\n'
             '=== CLIP 2 story ===\nFINAL_BEAT: <Picture 2> holds a victory pose.\n=== END ===')
 
 
@@ -82,8 +83,8 @@ class ShootPlanTests(unittest.TestCase):
                 server.local_prompt(cfg,req,seg,images,images[0])
             text=writer.call_args.args[2][0][1]
             task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
-            self.assertIn('<Picture 2> is the human',text)
-            self.assertIn('<Picture 3> is the non-singing hero',text)
+            self.assertNotIn('is the human singer',text)
+            self.assertIn('is the non-singing hero at the industrial port',text)
             self.assertIn('<Picture 3>, already transformed',text)
             labels=[value for kind,value in writer.call_args.args[2] if kind=='text'][1:]
             self.assertEqual(labels,['<Picture 1>:','<Picture 2>:','<Picture 3>:'])
@@ -94,7 +95,7 @@ class ShootPlanTests(unittest.TestCase):
         from banana_mv.shoot_plan import NATIVE_ENHANCER_SYSTEM, DYNAMIC_EDITING
         setup=('<Picture 1> sings only on the concert stage. <Picture 2> is the '
                'silent courier in a separate station. These spaces never merge.')
-        script=('Intercut the singer leaning into the microphone and the courier '
+        script=(setup+'\nIntercut the singer leaning into the microphone and the courier '
                 'catching a falling parcel. The courier checks the label; return '
                 'to the singer reaching toward the audience. Preserve this order.')
         camera=('subject_definitions:\n<Subject 1> comes from <Picture 1>. '
@@ -111,7 +112,7 @@ class ShootPlanTests(unittest.TestCase):
             root=Path(tmp);images,cfg,req=self.fixture(root)
             for dynamic in (True,False):
                 seg=dict(timeline()[0],seconds=10,shoot_setup=setup,
-                         director_plan={'index':0,'mode':'story','event':script})
+                         director_plan={'index':0,'mode':'story','event':script,'handoff_version':1})
                 before=copy.deepcopy(seg)
                 writer=Mock(return_value=camera)
                 with patch.object(server.backend,'rewrite_local',writer):
@@ -123,7 +124,7 @@ class ShootPlanTests(unittest.TestCase):
                 system=writer.call_args.args[1];text=writer.call_args.args[2][0][1]
                 self.assertEqual(system,NATIVE_ENHANCER_SYSTEM+'OFFICIAL_NATIVE_GUIDE_MARKER')
                 self.assertTrue(text.startswith('Target video duration: 10.000000 seconds.'))
-                self.assertIn('Original prompt:\nShared world and reference roles:\n'+setup,text)
+                self.assertIn('Original prompt:\nCurrent clip script:\n'+script,text)
                 self.assertIn('Current clip script:\n'+script,text)
                 self.assertIn('Allocate shot durations and cut timing',text)
                 self.assertEqual(DYNAMIC_EDITING in text,dynamic)
@@ -184,11 +185,42 @@ class ShootPlanTests(unittest.TestCase):
             allocator=Mock(return_value=allocation())
             plan=ensure_plan(cfg,req,timeline(),images,root,allocator)
             task=json.loads(allocator.call_args.args[2][0][1])
+            task['format']='isolated_shoot_briefs_v1'
             plan['input_sha256']=digest({k:v for k,v in task.items()
                                         if k not in ('intensity','dynamic_cuts')})
             (root/'director_plan.json').write_text(json.dumps(plan))
             self.assertEqual(ensure_plan(cfg,req,timeline(),images,root,allocator),plan)
             self.assertEqual(allocator.call_count,1)
+
+    def test_global_setup_with_future_story_is_not_transmitted(self):
+        leaked='Story spine: GLOBAL_SECRET_START then FUTURE_CONCERT and FINAL_CHAIR_END.'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            delivered=allocation().replace('=== SETUP ===\n','=== SETUP ===\n'+leaked+'\n')
+            plan=ensure_plan(cfg,req,timeline(),images,root,Mock(return_value=delivered))
+            self.assertIn(leaked,plan['shared_setup']) # Kept only as upstream audit evidence.
+            seg=dict(timeline()[1],director_plan=plan['segments'][1],shoot_setup=plan['shared_setup'],
+                     direction_ending_contract=plan['ending_contract'])
+            writer=Mock(return_value=native_prompt(1))
+            with patch.object(server.backend,'rewrite_local',writer):
+                result=server.local_prompt(cfg,req,seg,images,None)
+            outgoing=writer.call_args.args[1]+''.join(v for k,v in writer.call_args.args[2] if k=='text')
+            for marker in ('GLOBAL_SECRET_START','FUTURE_CONCERT','FINAL_CHAIR_END','HUMAN_OPENING','FINAL_BEAT'):
+                self.assertNotIn(marker,outgoing)
+            for required in ('damaged shield','industrial port','non-singing hero','ends behind a container'):
+                self.assertIn(required,outgoing)
+            self.assertEqual(result,native_prompt(1))
+
+    def test_legacy_commission_is_not_repaired_with_global_setup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            seg=dict(timeline()[0],director_plan={'index':0,'mode':'story','event':'A short old brief.'},
+                     shoot_setup='GLOBAL_FUTURE_ENDING')
+            writer=Mock(return_value=native_prompt(0))
+            with patch.object(server.backend,'rewrite_local',writer):
+                with self.assertRaisesRegex(ValueError,'新任務'):
+                    server.local_prompt(cfg,req,seg,images,None)
+            writer.assert_not_called()
 
     def test_photographic_intensity_reaches_both_stages_in_each_adaptation_mode(self):
         from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING, REFERENCE_PERFORMANCE
@@ -248,7 +280,7 @@ class ShootPlanTests(unittest.TestCase):
                 for intensity in ('normal','high','extreme'):
                     for dynamic in (False,True):
                         with self.subTest(mode=mode,intensity=intensity,dynamic=dynamic):
-                            row={'index':0,'mode':mode,'event':script}
+                            row={'index':0,'mode':mode,'event':script,'handoff_version':1}
                             seg=dict(timeline()[0],seconds=15,director_plan=copy.deepcopy(row),
                                      shoot_setup='Keep supplied identities and separate locations.')
                             writer=Mock(return_value=native_prompt(0))
