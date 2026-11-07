@@ -88,7 +88,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "243e6dd127354599f2a34556dbb6c8b54b84685eaa38424487c83fc3441ec4bf"
+      "sha256": "580abb89397a3cd8d670f39ebcd3440c0f724fc358a4a7d961a2710e96759068"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -116,7 +116,7 @@
     },
     {
       "path": "docs/director_architecture.md",
-      "sha256": "7df7d51e0f59728f2431488334e043a36b161ccbca806c160ca8497fe5444dd5"
+      "sha256": "8d6176a519269c5d7e8634f0247ecc8931cd35ceac0a0f892e28d37eab04c9e0"
     },
     {
       "path": "docs/persistent_scene_state.md",
@@ -208,7 +208,7 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "d664020ffe9c1966c90d27016c7229bc553645abcc7d8f7965e35d391bf84dee"
+      "sha256": "3c7679b4d7cd9ab92b525f6f2f655552bd85c0fc53e24f3a74ef506078409db3"
     },
     {
       "path": "tests/test_takes.py",
