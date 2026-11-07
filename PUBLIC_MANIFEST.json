@@ -8,7 +8,7 @@
     },
     {
       "path": ".gitignore",
-      "sha256": "179c6428bfbe64286582c69ce052be375dfd29af43e6b2afd6b733d4fbcc4878"
+      "sha256": "5c99ff5759b32e37239c5b047bc96d67b77722a3c6cf44d6bc9b301bce94c67b"
     },
     {
       "path": "Banana_MV_Colab.ipynb",
@@ -84,11 +84,11 @@
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "ba34ae9de91acc10e7a8fe969ed165cf1493ba8808015a34ad7c08323b36e8e3"
+      "sha256": "2c8a0ed8246603f13f88b0d58bf44554477d304f82571f157919ebe271313eb2"
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "e90abf6938b14cb0b2d6ff471f0338ef6de2eaf036de25f02841fb54a7bc46e5"
+      "sha256": "c5896363f56ba13e0844fc44442540602903f4070972d0229e0956f2b6b19e76"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -224,7 +224,7 @@
     },
     {
       "path": "tools/colab_runtime.py",
-      "sha256": "866b54fb7f9506ca71e973d3d0d46ba2cff618f708d3382dc76cc43d1671c039"
+      "sha256": "3122a1b38018963fbdff66ff4deb3314ad5e6f42a52bd77381514249c4f9b430"
     },
     {
       "path": "tools/public_clone.py",
@@ -237,6 +237,34 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "4005c780dacdab8e76211d5adcc60a81146f9448da1868f5098702fa6266e95a"
+    },
+    {
+      "path": "banana_mv/t8_storyboard.py",
+      "sha256": "fc3e6abffd2b4e1e91cb59177a776973f684463961afe3ee50adc9d8cebcd320"
+    },
+    {
+      "path": "tools/compare_t8.py",
+      "sha256": "2d1e08a84836d6674d9b49bfaea05f01655a5cd7ef672b7919d49cbe2e263bdb"
+    },
+    {
+      "path": "tests/test_t8_storyboard.py",
+      "sha256": "182f64c85c412eff849e4aa4bd094c7c36ad55095b6978cb1c3c2b7f11373e2d"
+    },
+    {
+      "path": "docs/t8_policy_ab.md",
+      "sha256": "588f4edffe4a246e5516da2eee665bb7b2f50b3f409a9aff487095b0f97ce7e5"
+    },
+    {
+      "path": "tools/build_t8_notebook.py",
+      "sha256": "a1090abfd95600af115d83b164da4fe1d0bd3f70f470031da7d210ea74194719"
+    },
+    {
+      "path": "Banana_MV_T8_Test.ipynb",
+      "sha256": "02c74e2a6886dff48fddbf7d6f374506e44df34dab43f6171b6c8a726d4816c2"
+    },
+    {
+      "path": "tests/test_t8_colab.py",
+      "sha256": "f4d5a47a87d2e01bb5aa9f0652225c0598248701414d055ef0985ba76695e720"
     }
   ]
 }

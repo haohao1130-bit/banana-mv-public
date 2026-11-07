@@ -182,16 +182,34 @@ def show_shutdown_control(ns):
     display(button, output)
 
 
+def configure_t8(cfg, data, enabled, trace=True):
+    """Only the dedicated test notebook invokes this opt-in configuration."""
+    if not isinstance(enabled,bool) or not isinstance(trace,bool):
+        raise ValueError('T8 and trace options must be boolean.')
+    if enabled:
+        from banana_mv.t8_storyboard import prepare
+        source=Path(data)/'cache/t8/storyboard_director.py'
+        metadata=prepare(source)
+        cfg['t8_source_path']=str(source)
+        print('✅ T8 H3/AUTO 已開啟｜固定版本',metadata['revision'])
+    else:print('T8 已關閉，使用原本攝影政策。')
+    cfg['t8_storyboard']=enabled
+    if trace:cfg['rewrite_trace_dir']=str(Path(data)/'rewrite_traces')
+    else:cfg.pop('rewrite_trace_dir',None)
+
+
 def launch(ns, save_to_drive=True):
-    data = Path('/content/banana_mv_data')
+    t8_test='T8_STORYBOARD' in ns
+    data = Path('/content/banana_mv_t8_test' if t8_test else '/content/banana_mv_data')
     if save_to_drive:
         from google.colab import drive
         drive.mount('/content/drive')
-        data = Path('/content/drive/MyDrive/BananaMV')
+        data = Path('/content/drive/MyDrive')/('BananaMV_T8_Test' if t8_test else 'BananaMV')
     data.mkdir(parents=True, exist_ok=True)
     cfg_path = data/'config.json'
     cfg = json.loads(cfg_path.read_text(encoding='utf-8')) if cfg_path.is_file() else {}
     cfg.update(comfy_url='http://127.0.0.1:8188', comfy_input_dir=str(COMFY/'input'), free_after_rewrite=True)
+    if t8_test:configure_t8(cfg,data,ns['T8_STORYBOARD'],ns.get('TRACE_REWRITER',True))
     # Leave existing unrelated config/secret files alone; Banana reads an explicit allowlist.
     cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
     (COMFY/'input').mkdir(parents=True, exist_ok=True)
@@ -227,3 +245,4 @@ def launch(ns, save_to_drive=True):
     print('🍌 Banana MV｜素材、分段與作品：', data)
     from google.colab import output
     output.serve_kernel_port_as_window(8190, anchor_text='🍌 打開大乘蕉宗 MV 製作所')
+

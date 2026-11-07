@@ -1,5 +1,6 @@
 """Banana-owned settings, compatible asset storage and local prompt rewriting."""
 import copy
+import hashlib
 import json
 import os
 import random
@@ -13,6 +14,7 @@ from banana_mv.comfy import comfy, queue_prompt, history_entry, execution_error,
 from banana_mv.core import probe
 
 ROOT = Path(__file__).resolve().parents[1]
+LOADED_SERVICE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # Legacy environment is accepted only to keep existing local launchers/data usable.
 DATA = Path(os.environ.get('BANANA_DATA') or os.environ.get('H3TOYBOX_DATA') or '/content/banana_mv_data')
 LIBRARY = DATA/'library'
@@ -34,7 +36,8 @@ def load_config():
     path = DATA/'config.json'
     saved = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
     # Import only settings used by Banana. Remote provider credentials are never loaded.
-    for key in ('comfy_url', 'comfy_input_dir', 'free_after_rewrite'):
+    for key in ('comfy_url', 'comfy_input_dir', 'free_after_rewrite',
+                't8_storyboard', 't8_source_path', 'rewrite_trace_dir'):
         if key in saved:
             cfg[key] = saved[key]
     for key in cfg['rewriter']:
@@ -141,7 +144,7 @@ def build_rewrite_graph(cfg, system, parts, job_id):
                   'sampling_mode': 'on', 'sampling_mode.temperature': float(rw['temperature']),
                   'sampling_mode.top_k': int(rw['top_k']), 'sampling_mode.top_p': float(rw['top_p']),
                   'sampling_mode.min_p': 0.0, 'sampling_mode.repetition_penalty': 1.0,
-                  'sampling_mode.seed': random.randint(0, 2**31-1), 'sampling_mode.presence_penalty': 0.0,
+                  'sampling_mode.seed': int(rw['seed']) if 'seed' in rw else random.randint(0, 2**31-1), 'sampling_mode.presence_penalty': 0.0,
                   'thinking': bool(rw['thinking']), 'use_default_template': True, 'mtp': rw['mtp']}
         if batch is not None:
             inputs['image'] = batch
@@ -157,15 +160,39 @@ def build_rewrite_graph(cfg, system, parts, job_id):
 def rewrite_local(cfg, system, parts, job_id):
     graph, names = build_rewrite_graph(cfg, system, parts, job_id)
     entry = None
+    trace=None;record={}
     try:
-        entry = wait_prompt(cfg, queue_prompt(cfg, graph))
+        if cfg.get('rewrite_trace_dir'):
+            trace=Path(cfg['rewrite_trace_dir'])/job_id
+            trace.mkdir(parents=True,exist_ok=False)
+            images=[]
+            for name in names:
+                data=(Path(cfg['comfy_input_dir'])/name).read_bytes()
+                (trace/name).write_bytes(data)
+                images.append({'name':name,'sha256':hashlib.sha256(data).hexdigest()})
+            record={'system':system,'graph':graph,'images':images,
+                    'loaded_services_sha256':LOADED_SERVICE_SHA256,
+                    'scope':'Actual native 9B request; not a quality assessment.'}
+            (trace/'request.json').write_text(json.dumps(record,ensure_ascii=False,indent=2),encoding='utf-8')
+        pid=queue_prompt(cfg, graph)
+        if trace:
+            record['prompt_id']=pid
+            (trace/'request.json').write_text(json.dumps(record,ensure_ascii=False,indent=2),encoding='utf-8')
+        entry = wait_prompt(cfg, pid)
         values = entry.get('outputs', {}).get('result', {}).get('text', [])
         text = values if isinstance(values, str) else ''.join(values)
+        if trace:
+            (trace/'response.json').write_text(json.dumps({'raw_text':text,'history':entry},ensure_ascii=False,indent=2),encoding='utf-8')
         if not text.strip():
             raise ValueError('本地 9B 改寫回傳空白。')
         return text.strip()
+    except Exception as error:
+        if trace:
+            (trace/'error.json').write_text(json.dumps({'type':type(error).__name__,'message':str(error),'prompt_id':record.get('prompt_id')},ensure_ascii=False,indent=2),encoding='utf-8')
+        raise
     finally:
         for name in names:
             (Path(cfg['comfy_input_dir'])/name).unlink(missing_ok=True)
         if entry is not None and cfg.get('free_after_rewrite', True):
             comfy(cfg, '/free', {'unload_models': True, 'free_memory': True})
+
