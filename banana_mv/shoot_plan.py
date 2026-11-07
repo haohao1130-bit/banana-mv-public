@@ -48,6 +48,22 @@ def adaptation_direction(req):
     return CREATIVE_DIRECTION if req.get('story_plan',True) else FAITHFUL_DIRECTION
 
 
+REFERENCE_PERFORMANCE = """IDENTITY AND PERFORMANCE: Bind each actor to the assigned reference identity
+and current appearance. A reference expression sheet demonstrates the same identity
+in different states; it is not an acting menu or a limit on emotional range.
+Direct facial expression, gaze, jaw tension, head/neck movement and body response as
+changing performances driven by the current event, vocal-role timing and musical
+context, at the selected intensity. Show a concrete emotional progression rather
+than holding a reference expression throughout. In an angry vocal peak, give anger
+visible physical expression; in other passages, choose the performance they require.
+Keep subject_definitions focused on stable identity and describe evolving performance
+inside the shots. In retention_analysis, preserve identity without claiming the pictured
+expression or pose must stay unchanged. Explicit user performance requirements prevail.
+An actual first/last-frame anchor constrains that boundary frame, not the entire clip.
+Keep lip movement compatible with the supplied audio; add no new vocal material.
+"""
+
+
 AUTO_FILMING = """Direct the visual sequence first: decide what the viewer sees, how attention moves
 between performance, action details, reactions and environment, and how those images
 connect. Invent the coverage yourself from the current beat and adaptation policy;
@@ -228,7 +244,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             raise SceneStateError('分段拍攝大綱與專案不符或校驗失敗。')
         return plan
     parts=[('text',json.dumps(task,ensure_ascii=False))]+_pictures(originals)
-    system=(ALLOCATION_SYSTEM+'\n'+adaptation_direction(req)+'\n'+CLIP_INTENSITY[req.get('intensity','high')]+
+    system=(ALLOCATION_SYSTEM+'\n'+adaptation_direction(req)+'\n'+REFERENCE_PERFORMANCE+'\n'+CLIP_INTENSITY[req.get('intensity','high')]+
             '\nApply this intensity to filmable event development; leave shot selection to the clip director.\nSupported modes: '+
             ', '.join(MODES)+f'. Deliver {len(segments)} CLIP blocks.')
     attempts=parts
@@ -297,8 +313,7 @@ the current beat and adaptation policy, preserving the supplied identity binding
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
 reference clothing.
-Identity references do not freeze pose, expression, gaze or camera view unless assigned
-as frame anchors. All shot times are LOCAL and within the target duration; alignment
+All shot times are LOCAL and within the target duration; alignment
 padding adds no story time. Continue actions across cuts, without replaying the event.
 Use only connected pictures and <Audio 1>: fully_copy. The source audio is supplied to
 H3, not heard by you. Only the assigned vocalist may lip-sync. Add no new speech,
@@ -307,6 +322,7 @@ Follow this clip's ending; an ongoing clip needs no whole-work finale.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """
     text+='\n'+adaptation_direction(req)
+    text+='\n'+REFERENCE_PERFORMANCE
     text+='\n'+AUTO_FILMING
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
