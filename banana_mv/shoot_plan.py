@@ -30,7 +30,7 @@ Make these choices even when the user supplies no camera or montage instructions
 Treat descriptive staging and camera suggestions as material to reinterpret, unless
 explicitly mandatory. Preserve reference identities, vocal roles, fixed geography,
 required causal milestones, specified outcome and explicit hard constraints.
-Choose bold, genre-appropriate camera positions, perspective, movement and editorial
+Choose genre-appropriate camera positions, perspective, movement and editorial
 juxtapositions. Use performance, inserts, reactions and environment as meaningful
 coverage; create rhythmic, parallel, contrast or action-matched montage where useful.
 Set intensity from the selected level and actual music/story passage. Precision means
@@ -48,7 +48,12 @@ def adaptation_direction(req):
     return CREATIVE_DIRECTION if req.get('story_plan',True) else FAITHFUL_DIRECTION
 
 
-AUTO_FILMING = """Complete a concrete shooting decision for EVERY Shot before writing the final
+AUTO_FILMING = """Direct the visual sequence first: decide what the viewer sees, how attention moves
+between performance, action details, reactions and environment, and how those images
+connect. Invent the coverage yourself from the current beat and adaptation policy;
+the user need not supply a shot list. Select coverage before framing a visible singer
+for readable lip sync. A whole event need not remain on the singer's face.
+Then complete a concrete shooting decision for EVERY Shot before writing the final
 prompt. Treat the following as required decision slots; choose their values freely
 from the assigned events, references, genre and musical context:
 1. TIME AND CONTINUITY: allocate the shot's local start and end within the clip.
@@ -65,8 +70,9 @@ Describe the visible environment where an empty scene itself is the subject.
 5. CAMERA MOVEMENT: choose a static camera or a specific movement. For movement,
 state its direction, target, extent and speed; coordinate it with the visible action.
 6. LIGHTING: choose scene-consistent light direction and quality, contrast and the
-illuminated visual focus. Natural, soft or flat lighting is valid when appropriate.
-Resolve every slot as an actual filming choice, including deliberate stillness.
+illuminated visual focus, at the selected photographic intensity.
+Resolve every slot as an executable choice. A shot description states what is visible
+and how it changes, rather than merely naming a cinematic technique.
 Write these decisions naturally inside each Shot of detailed_description, using the
 native guide's Shot labels and local cut times. The first shot begins at zero without
 a timestamp; each later shot starts at its cut time, and the last ends at clip duration.
@@ -87,25 +93,38 @@ Select viewpoints that reveal a meaningful subject, spatial relationship, action
 turn, reaction, performance detail or visual accent; do not merely rename the same
 framing. A push-in, pan or subject moving closer remains one shot, not an editorial cut.
 Choose flexible lengths with no minimum duration or fixed shot quota. Keep contact,
-response and vocal phrases readable across cuts. Sustain a shot where a specific
-performance, suspense, comic pause or explicit continuous-take request needs it;
-do not default an entire busy scene to a wide shot followed by a slow push-in.
+response and vocal phrases readable across cuts. Specify the outgoing action state
+and the next view's new visual focus so a cut advances the same ongoing event.
+Honor explicit continuous-take requests and the assigned ending. Design each other
+shot length from its visual function, rather than defaulting to sustained coverage.
 """
 
 CLIP_INTENSITY = {
-    'normal':'Use restrained, grounded performance and camera movement appropriate to the passage.',
-    'high':'''Use energetic, readable performance and purposeful camera movement. When dynamic
-editing is enabled, express musical and action accents through varied shot scale,
-viewpoint and motivated cuts as well as motion; increased movement alone is not
-increased editorial variety.''',
-    'extreme':"""Build cinematic peaks through contrast in shot scale, perspective, movement,
-performance energy and cutting rhythm. Where editing is allowed, use purposeful short
-shot clusters within a scene as well as intercuts, balanced with sustained images.
-An accent can land through an action, reaction, reveal or lighting change without a cut.
-Let intensity serve performance, emotion, comedy, action or environment as appropriate;
-do not turn every passage into combat, constant speed, camera shake or explosions.
-Preserve complete actions and their consequences; honor quiet passages, continuous-take
-requests and the ending rather than forcing a climax into every clip.
+    'normal':'''PHOTOGRAPHIC INTENSITY: NATURAL. Use restrained, grounded performance,
+observational framing, subtle movement and scene-motivated light. Still make complete,
+precise filming decisions and use editorial coverage when dynamic editing is enabled.''',
+    'high':'''PHOTOGRAPHIC INTENSITY: HIGH. Direct an assertive, visually inventive commercial MV.
+Create strong camera placement, perspective, foreground/background depth, purposeful
+movement and shaped lighting. Make the performance and its surrounding visual details
+active and specific. When dynamic editing is enabled, construct varied viewpoints,
+inserts, reactions and intercuts into a rhythmic sequence, including short shots
+within the same event. Choose the combination creatively, not a rotating camera list.
+Design moving views through an explicit starting composition, path, speed, extent and
+ending composition; show the changing spatial relationships. Carry action and results
+across cuts. Precise execution supports ambitious photography, not cautious staging.''',
+    'extreme':"""PHOTOGRAPHIC INTENSITY: CINEMATIC BURST. Direct a bold, spectacular commercial MV.
+Use the same precise execution required at HIGH intensity, with greater contrasts in
+scale, perspective, proximity, camera travel, lighting and performance. Design visual
+builds and decisive peaks from this passage's music, emotion, comedy, action or spectacle.
+When dynamic editing is enabled, actively compose punchy within-scene shot clusters and
+cross-scene montage, using visual connections and contrasts to intensify the sequence.
+An ordinary task can become striking through its photography and editing. Create
+specific visual ideas even when the user provides only the story spine. Design camera
+paths from clear starting and ending compositions, including foreground passes and
+background displacement where relevant. Commit to direction, extent and speed.
+Keep important contact, reactions, vocal performance and causal results legible;
+respect explicit continuous-take requests and the allocated ending. Photographic
+intensity changes the filmmaking, not the assigned characters, vocal roles or outcome.
 """
 }
 
@@ -209,7 +228,9 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             raise SceneStateError('分段拍攝大綱與專案不符或校驗失敗。')
         return plan
     parts=[('text',json.dumps(task,ensure_ascii=False))]+_pictures(originals)
-    system=ALLOCATION_SYSTEM+'\n'+adaptation_direction(req)+'\nSupported modes: '+', '.join(MODES)+f'. Deliver {len(segments)} CLIP blocks.'
+    system=(ALLOCATION_SYSTEM+'\n'+adaptation_direction(req)+'\n'+CLIP_INTENSITY[req.get('intensity','high')]+
+            '\nApply this intensity to filmable event development; leave shot selection to the clip director.\nSupported modes: '+
+            ', '.join(MODES)+f'. Deliver {len(segments)} CLIP blocks.')
     attempts=parts
     for attempt in range(rewrite_retry_count(req)+1):
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
@@ -241,7 +262,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('分段大綱交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Deliver the original fixed settings in SETUP and ALL CLIP scripts, then END. '
-                            'Preserve the original story and redistribute events across the supplied intervals. '
+                            'Keep the selected adaptation policy and photographic intensity while allocating the story backbone across the supplied intervals. '
                             'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
