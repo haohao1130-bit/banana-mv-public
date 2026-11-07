@@ -190,6 +190,35 @@ class ShootPlanTests(unittest.TestCase):
             self.assertEqual(ensure_plan(cfg,req,timeline(),images,root,allocator),plan)
             self.assertEqual(allocator.call_count,1)
 
+    def test_photographic_intensity_reaches_both_stages_in_each_adaptation_mode(self):
+        from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING
+        for free in (False,True):
+            for level in ('normal','high','extreme'):
+                for dynamic in (False,True):
+                    with self.subTest(free=free,level=level,dynamic=dynamic),tempfile.TemporaryDirectory() as tmp:
+                        root=Path(tmp);images,cfg,req=self.fixture(root)
+                        req.update(story_plan=free,intensity=level,dynamic_cuts=dynamic)
+                        allocator=Mock(return_value=allocation())
+                        plan=ensure_plan(cfg,req,timeline(),images,root,allocator)
+                        system=allocator.call_args.args[1]
+                        self.assertIn(CLIP_INTENSITY[level],system)
+                        for other in set(CLIP_INTENSITY)-{level}:
+                            self.assertNotIn(CLIP_INTENSITY[other],system)
+                        seg=dict(timeline()[1],director_plan=plan['segments'][1],shoot_setup=plan['shared_setup'])
+                        writer=Mock(return_value=native_prompt(1))
+                        with patch.object(server.backend,'rewrite_local',writer):
+                            result=server.local_prompt(cfg,req,seg,images,None)
+                        text=writer.call_args.args[2][0][1]
+                        self.assertIn(CLIP_INTENSITY[level],text)
+                        self.assertIn(AUTO_FILMING,text)
+                        self.assertEqual(DYNAMIC_EDITING in text,dynamic)
+                        if not dynamic:self.assertIn('Prefer motivated longer takes.',text)
+                        if level!='normal':
+                            self.assertNotIn('Use restrained',system+text)
+                            self.assertNotIn('balanced with sustained images',text)
+                        self.assertEqual(result,native_prompt(1))
+                        self.assertNotIn('FINAL_BEAT',text)
+
     def test_bad_delivery_retries_compactly_without_story_replanning_per_slot(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root);req['rewrite_retries']=1
