@@ -11,10 +11,6 @@
       "sha256": "179c6428bfbe64286582c69ce052be375dfd29af43e6b2afd6b733d4fbcc4878"
     },
     {
-      "path": "Banana_MV_Colab.ipynb",
-      "sha256": "736805feb9d824187d14d450826a35c94f58cb07cc5e56f6588584e0be637cf4"
-    },
-    {
       "path": "Banana_MV_Public.ipynb",
       "sha256": "ec360bff4df80cd0cb7d9c36f793d39088dee356fd6191d22e63a1492282bb89"
     },
@@ -24,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "acc9a119bf21d2b7690c9dabfc2d3a99ba970ac8b78ccfe16e8aa598683328a4"
+      "sha256": "acd9a096840e6b4c44f32dfa6d5755d233b0c6801f57d2799a6dc75c11171c9d"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -220,7 +216,7 @@
     },
     {
       "path": "tools/build_notebook.py",
-      "sha256": "38ee57ee291d7f05a0dbb5df2d0e8722686f881d6fc871b22c33f4d0c10c8afe"
+      "sha256": "84753ff43029aaabbef4cf6b758d7217221867a992e16ebb901704794d8bf350"
     },
     {
       "path": "tools/colab_runtime.py",
@@ -244,7 +240,7 @@
     },
     {
       "path": "docs/user_manual.md",
-      "sha256": "512d23c2e3c081458e8b496a2cf93735555723eb7d4294e72eca0b7b2d7f638d"
+      "sha256": "300f519affac5431026bde78174313eadcc090ae74b23fb857210a06307a5fe3"
     }
   ]
 }

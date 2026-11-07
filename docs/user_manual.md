@@ -65,7 +65,7 @@ MyDrive/BananaMV/banana_mv/工作編號/final_v002.mp4
 
 `final.mp4` 是目前版本，`final_vNNN.mp4` 是保留的完整歷史成片。各段回爐素材在同一工作資料夾的 `takes/段落/版本/`。請以介面顯示的實際「目前完整作品」路徑為準，**不用到 videos 才能找到成品**。
 
-`videos` 是另外嘗試另存的副本，成功時檔名也帶版本號；副本失敗不影響工作資料夾的成片或下載。未勾 Drive 時，資料根目錄為 `/content/banana_mv_data`，Colab 回收後可能消失。T8 測試入口使用分開的 `BananaMV_T8_Test` 根目錄。
+`videos` 是另外嘗試另存的副本，成功時檔名也帶版本號；副本失敗不影響工作資料夾的成片或下載。未勾 Drive 時，資料根目錄為 `/content/banana_mv_data`，Colab 回收後可能消失。舊 T8 攝影政策測試入口已停用；請使用本倉庫 main 的正式筆記本。
 
 ## 續跑與結束
 

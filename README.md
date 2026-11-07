@@ -112,3 +112,8 @@ Banana MV is a self-hosted Colab music-video workflow with local prompt rewritin
 模型以 32 像素對齊尺寸生成，成片裁去對齊補邊，不放大。既有專案續跑使用保存的尺寸；切換解析度請建立新任務。L4 實際速度與顯存需求仍需 GPU 實跑確認。
 
 
+
+
+## Colab 入口整理
+
+本倉庫根目錄只保留正式生成筆記本 `Banana_MV_Public.ipynb`。舊 T8 攝影政策 A/B 測試已停用，請使用 main 分支。這與正式生成所需的 H3 Audio T8 音訊鎖定節點不同，音訊節點仍保留。
