@@ -59,3 +59,7 @@ full 按真實分段提前預留收束窗口與末尾停留，由規劃器分配
 自然使用克制表演、觀察視角與細微運鏡；高動態主動設計強烈鏡位、透視縱深、具體運動、塑形光線與節奏剪輯；電影級爆發進一步放大尺度、距離、移動、光影及表演反差。三者均需逐鏡精準交稿。完整強度文字同時交給全片規劃與當段導演，避免上游只有名稱；重試亦保持原強度和改編政策。移除共用的平光／靜止鼓勵，以及爆發模式預設平衡長鏡的引導；明確長鏡要求、動態切鏡開關、因果與收尾仍有效。
 
 參考 [T8 Creative DNA 的輸入—結果—反應案例](https://github.com/T8mars/minimax-h3-prompt-skill-T8/blob/main/skills/input-screen-result-reaction-causal-loop/references/template.md) 的可見證據與視覺關係觀念，不複製特定劇情、固定數量、聲音或範例的克制表演要求；[其組裝程式](https://github.com/T8mars/minimax-h3-prompt-skill-T8/blob/main/apps/prompt-library-desktop/lib/creative-plan.cjs) 的單鏡後備與密度提示亦不搬入。該庫為第三方案例，不能當作 H3 官方強制格式。這次不新增外掛、Schema 或模型呼叫。
+
+## 身分參考與表情表演
+
+兩階段共用身分／表演規則：參考圖及表情表只定義角色身分與外觀，表情示範不是情緒範圍上限。9B 依當段事件、聲部分配、已提供的音樂資訊與強度，設計眼神、眉眼、下顎張力、頭頸及身體反應的變化；暴怒段需具體演出情緒，不能只保持一張生氣參考臉。明確指定的表演要求仍優先。subject_definitions 記穩定身分，Shot 寫動態表演，retention_analysis 不把來源表情／姿勢宣稱為全程固定。實際首尾幀只約束邊界影格。音訊驅動與參考圖片管線不變；此修正不代表已驗證 RH 內部實作或 H3 最終表情品質。
