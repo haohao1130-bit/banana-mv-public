@@ -1,5 +1,6 @@
 """Allocate once; let the native H3 rewriter shoot each isolated interval."""
 import json
+import hashlib
 import re
 import uuid
 from pathlib import Path
@@ -9,6 +10,8 @@ from banana_mv.director import MODES
 from banana_mv.lyrics_reference import excerpt
 from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
+
+LOADED_SHOOT_PLAN_SHA256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 # Match Toybox's native Ref2VA enhancement role, rather than treating the
@@ -302,6 +305,13 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     system=NATIVE_ENHANCER_SYSTEM+guide
+    t8=cfg.get('t8_storyboard',False)
+    if not isinstance(t8,bool):raise ValueError('t8_storyboard must be boolean.')
+    if t8:
+        from banana_mv.t8_storyboard import load_method, DEFAULT_PATH
+        method,metadata=load_method(cfg.get('t8_source_path',DEFAULT_PATH))
+        system+='\n\n'+method
+        segment['t8_source']=metadata
     text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
           "Inspect the reference images labeled <Picture N> and use them according to the user's instructions.\n"
           "Choose shots that best express the original intent. "
@@ -330,12 +340,23 @@ Return only the native filming prompt, no analysis, JSON or management instructi
 """
     text+='\n'+adaptation_direction(req)
     text+='\n'+REFERENCE_PERFORMANCE
-    text+='\n'+AUTO_FILMING
-    text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
-                'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
-    text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
+    if t8:
+        # Replace camera-policy blocks, rather than stacking a second director.
+        text+='\n'+{'normal':'Visual energy: natural, grounded and restrained.',
+                     'high':'Visual energy: assertive, energetic commercial music video.',
+                     'extreme':'Visual energy: bold, spectacular commercial music video with strong contrasts and peaks.'}[req.get('intensity','high')]
+        text+='\nShot choice is AUTO within the supplied beat unless the user explicitly locked a shot or continuous take.'
+        text+='\nFor each actual cut, use its own native Shot label and local cut time; preserve action progression.'
+    else:
+        text+='\n'+AUTO_FILMING
+        text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
+                    'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
+        text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
+    if t8 and not req.get('dynamic_cuts',True):
+        text+='\nPrefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.'
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
-    text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
+    text+=('\nFor a shot whose purpose is visible vocal performance, keep the mouth readable. Select event, detail, reaction and environment coverage by its information, not automatic singer close-ups.'
+           if t8 else '\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.')
     text+='\n\nClip timing and audio context:\n'+json.dumps(context,ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
