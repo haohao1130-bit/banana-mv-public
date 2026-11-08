@@ -170,7 +170,9 @@ def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     (dest/(prefix+'repair_request.json')).write_text(json.dumps(request,ensure_ascii=False,indent=2),encoding='utf-8')
     raw=app.backend.rewrite_local(cfg,system,[('text',text)]+_pictures(refs),uuid.uuid4().hex[:8])
     (dest/(prefix+'repair_raw.txt')).write_text(raw,encoding='utf-8')
-    return normalize_mv_prompt(_text(raw),len(refs))
+    from banana_mv.shoot_plan import validate_native_mv_format
+    return validate_native_mv_format(normalize_mv_prompt(_text(raw),len(refs)),seg['seconds'],
+        require_native=job['request'].get('h3_validation_version')==1)
 
 
 def retake(job_id,indices,instructions=None):

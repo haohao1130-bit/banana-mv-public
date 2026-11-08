@@ -1,0 +1,30 @@
+{
+  "repo": "banana-mv-public",
+  "python": {
+    "status": "PASS",
+    "tests": 283,
+    "seconds": 30.224,
+    "command": "python -m unittest discover -s tests"
+  },
+  "frontend": {
+    "status": "PASS",
+    "scripts": [
+      "tests/check_ui.cjs",
+      "tests/check_asset_reuse.cjs"
+    ]
+  },
+  "compileall": "PASS",
+  "git_diff_check": "PASS",
+  "notebook_build": {
+    "status": "PASS_WITH_WHITESPACE_DRIFT",
+    "detail": "Generated public MV notebook differs by one blank line only; restored existing file."
+  },
+  "chromium": {
+    "status": "BLOCKED",
+    "error": "Chromium process singleton Unix socket: Operation not permitted. Playwright launch attempted."
+  },
+  "gpu_generation": "NOT TESTED",
+  "real_9b": "NOT TESTED",
+  "real_comfyui_node_execution": "NOT TESTED",
+  "semantic_cast_action_lipsync_and_visual_quality": "NOT TESTED"
+}

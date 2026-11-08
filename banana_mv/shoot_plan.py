@@ -322,16 +322,21 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                             'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
-def validate_native_mv_format(prompt, seconds):
+def validate_native_mv_format(prompt, seconds, *, require_native=False):
     """Check official Ref2VA shot timing and explicit speaker bindings, not story semantics.
 
     Legacy prose-only outputs are accepted for saved/older workflows; native
     six-section outputs receive deterministic structure and timeline checks.
     """
     from banana_mv.direction_contract import validate_h3_sections
-    if not re.search(r'^\s*(?:subject_definitions|detailed_description)\s*:',prompt,re.M):
+    if not require_native and not re.search(
+            r'^\s*(?:subject_definitions|summary|retention_analysis|detailed_description|overall_soundscape|non_diegetic_music)\s*:',prompt,re.M):
         return prompt
     validate_h3_sections(prompt)
+    if require_native:
+        retention=re.search(r'^\s*retention_analysis\s*:(.*?)^\s*detailed_description\s*:',prompt,re.M|re.S)[1]
+        if not re.search(r'<Audio 1>\s*:\s*fully_copy\b',retention):
+            raise ValueError('MV 原始音訊必須在 retention_analysis 保留 <Audio 1>: fully_copy。')
     match=re.search(r'^\s*detailed_description\s*:(.*?)^\s*overall_soundscape\s*:',prompt,re.M|re.S)
     if not match:
         raise ValueError('Ref2VA 缺少詳細分鏡區塊。')
@@ -477,7 +482,8 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                                    'contract_check_calls':0}
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
-            prompt=validate_native_mv_format(normalize_mv_prompt(_text(raw),len(refs)),segment['seconds'])
+            prompt=validate_native_mv_format(normalize_mv_prompt(_text(raw),len(refs)),segment['seconds'],
+                require_native=req.get('h3_validation_version')==1)
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
             return prompt
