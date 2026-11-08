@@ -17,13 +17,16 @@ class Element{
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
-const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;
+const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;const approvals=[];let recipeOpened=false;
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
   setTimeout:()=>0,clearTimeout:()=>{},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
     if(url==='api/upload'){uploads.push(options.body.name);return {id:options.body.name};}
-    if(url==='api/mv/start'){posts.push(JSON.parse(options.body));return {id:'abcd'};}
+    if(url==='api/mv/start'){const body=JSON.parse(options.body);posts.push(body);return {id:body.plan_review?'recipe123':'abcd'};}
+    if(url==='api/mv/open-furnace'){approvals.push(JSON.parse(options.body));recipeOpened=true;return {id:'recipe123',status:'running'};}
+    if(url==='api/mv/status?id=recipe123')return {id:'recipe123',title:'丹方',seed:0,duration:30,status:recipeOpened?'running':'plan_ready',plan_revision:'recipe-v1',plan_preview_setup:'<Picture 1> is the singer.',request:{plan_review:true,director_schema:5,rewrite:true},segments:[{index:0,start:0,seconds:15,director_plan:{mode:'story',event:'<Picture 1> performs <b>plain text</b>'}},{index:1,start:15,seconds:15,director_plan:{mode:'action',event:'The hero wins only here.'}}]};
+    
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
     if(url==='api/mv/retake'){retakes.push(JSON.parse(options.body));return {...reviewJob,status:'retaking'};}
@@ -179,7 +182,20 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
+  // The same form submits either direct rendering or upstream-only planning.
+  vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;
+  await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);
+  assert.equal(posts.at(-1).plan_review,true);assert.equal(approvals.length,0);
+  assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
+  assert(els['recipe-text'].textContent.includes('@圖片1'));assert(els['recipe-text'].textContent.includes('<b>plain text</b>'));
+  assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);
+  assert.equal(els.stop.hidden,true);assert.equal(els['resume-project'].hidden,true);assert.equal(els['current-activity'].hidden,true);
+  await vm.runInContext("openProject('recipe123')",context);assert.equal(els['recipe-review'].hidden,false);assert.equal(approvals.length,0);
+  await els['approve-recipe'].onclick();assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
+  assert.equal(els['recipe-review'].hidden,true);await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
+  vm.runInContext('busy(false)',context);
   console.log('UI checks passed: image mentions with thumbnails, caret insertion, keyboard/IME, fixed slots, saved references, chain limits, prompt review and retakes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
 
 

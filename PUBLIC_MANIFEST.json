@@ -63,6 +63,10 @@
       "sha256": "94d468df7a26a4d1fc59e075ccdf69d613c9d0609efc7222924bbedf14000156"
     },
     {
+      "path": "banana_mv/masters.py",
+      "sha256": "68238018fd02e77102272928022f49707994f0ccbac483a50145186ff0fb2fab"
+    },
+    {
       "path": "banana_mv/mv_scope.py",
       "sha256": "0d05faf4e933cb32434df225a5c95a29025a2559c6986ab442ca43153758e907"
     },
@@ -76,7 +80,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "ee2c3521dfbb848e7a1d4d1bb5417136763f6414ad3cbf2b76a059f3c95c4aeb"
+      "sha256": "9327bad037128cdec25d0aa8a62b6374a24bb92150c920fc02e57e99c4bc58eb"
     },
     {
       "path": "banana_mv/services.py",
@@ -104,7 +108,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "5e395b8cbd81a3b740b2dc9e9d4ff32155f513836f207ee9e2104d834abfb4c0"
+      "sha256": "e8681469ab8ad71b295365700ac6ab5a2693e304f20cedea5557a627b862aa82"
     },
     {
       "path": "docs/clip_review.md",
@@ -119,8 +123,12 @@
       "sha256": "8f4d5443e57119510fbd9eaafae48c612804780366f544dbdce5c7b014184b4d"
     },
     {
+      "path": "docs/user_manual.md",
+      "sha256": "b660a2500647befbc7b0e53096abe707a75e2111fc9a0f2b352178b7b5fb61b8"
+    },
+    {
       "path": "tests/check_ui.cjs",
-      "sha256": "5909628885f0bf8c47f264cfe0fe94f9007eb718d37c1c5d96af34d4711d7582"
+      "sha256": "bccd667628baa5cf8f44cf17a80b5fc642a3c1564cbc2b85bec53f799e6b6710"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -173,6 +181,10 @@
     {
       "path": "tests/test_mv_scope.py",
       "sha256": "a94f733a8023a665ac22c891451e491ae8fab7a2a9f433e91e9b4b0f92735153"
+    },
+    {
+      "path": "tests/test_plan_review.py",
+      "sha256": "85b770f284a6a0ce10830c7e944b1ce02cc3e16c7d348b170e150fb42610111e"
     },
     {
       "path": "tests/test_prompt_quality.py",
@@ -233,14 +245,6 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "4005c780dacdab8e76211d5adcc60a81146f9448da1868f5098702fa6266e95a"
-    },
-    {
-      "path": "banana_mv/masters.py",
-      "sha256": "68238018fd02e77102272928022f49707994f0ccbac483a50145186ff0fb2fab"
-    },
-    {
-      "path": "docs/user_manual.md",
-      "sha256": "f17a6d3c6bb8d5effd4b7e28e90b13c7b68f9d98073063d42b8b391b4b34cfcf"
     }
   ]
 }

@@ -320,9 +320,12 @@ def worker(job, cfg, original, song, drive):
     def rewrite_progress(info):
         job['rewrite_attempt']=info;write_state(job)
     try:
+        approved_review=bool(job['request'].get('plan_review') and job.get('plan_approved'))
+        if approved_review and job['plan_approved']!=plan_revision(job):
+            raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
         # Old projects keep their saved prompt behavior. New projects opt in by
         # a persisted request field; no GPU or additional model downloads needed.
-        needs_analysis = job['request'].get('audio_analysis', False) and any(
+        needs_analysis = not approved_review and job['request'].get('audio_analysis', False) and any(
             not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
             and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
@@ -335,7 +338,7 @@ def worker(job, cfg, original, song, drive):
             job['audio_analysis'] = {'version': AUDIO_VERSION, 'status': 'ready',
                                      'pulse': music_analysis['pulse']}
             job['status'] = 'running'; write_state(job)
-        needs_plan = (job['request'].get('director_version', 1) >= 2
+        needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
                       and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
                       and job['request'].get('rewrite', True)
                       and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5))
@@ -366,7 +369,16 @@ def worker(job, cfg, original, song, drive):
                 if index and plan['version']!=5:
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
+            if job['request'].get('plan_review'):
+                job['plan_preview_setup']=plan.get('shared_setup','')
             job['status']='running'; write_state(job)
+        if job['request'].get('plan_review') and not approved_review:
+            if job['id'] in CANCEL:
+                job['status']='cancelled';write_state(job);return
+            if not all(s.get('director_plan') for s in job['segments']):
+                raise ValueError('丹方尚未完整，不能進入審閱或開爐。')
+            job.update(status='plan_ready',plan_revision=plan_revision(job))
+            write_state(job);return
         ledger=None
         if job['request'].get('scene_state_version')==1:
             if job['id'] in CANCEL:
@@ -513,6 +525,11 @@ def start(req):
     from banana_mv.mv_scope import validate_scope
     validate_scope(req['project_scope'])
     req['rewrite_retries']=rewrite_retry_count(req)
+    req.setdefault('plan_review',False)
+    if not isinstance(req['plan_review'],bool):
+        raise ValueError('先搓丹方必須為布林值。')
+    if req['plan_review'] and not req.get('rewrite',True):
+        raise ValueError('先搓丹方需要開啟本地提示詞改寫。')
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
     # New projects allocate once, then write each isolated native prompt. Old projects keep their
@@ -558,8 +575,10 @@ def start(req):
     # Fail invalid image mentions before queueing any rewrite or GPU work.
     fallback_prompt(req['prompt'], False, '', len(images))
     images_comfy = [img['comfy_name'] for img in images]
-    graph = build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
-                           **graph_options(req,plan[0]['seconds']))
+    graph = ({'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
+              'generate':{'class_type':'TextGenerate','inputs':{}}} if req['plan_review'] else
+             build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
+                            **graph_options(req,plan[0]['seconds'])))
     preflight(cfg,graph)
     if not GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 工作執行中，請等它完成。')
@@ -582,6 +601,53 @@ def start(req):
         return job
     except Exception:
         GPU_LOCK.release(); raise
+
+
+def plan_revision(job):
+    """Bind approval to saved allocation, timing, source bindings and render settings."""
+    path=job_dir(job['id'])/'director_plan.json'
+    if not path.is_file():raise ValueError('保存的丹方遺失，不能開爐。')
+    return scene_digest({'request':{k:v for k,v in job['request'].items() if k!='rewrite_retries'},'seed':job['seed'],
+                         'size':job['size'],'output_size':job.get('output_size'),
+                         'sources':job.get('sources'),'images_comfy':job['images_comfy'],
+                         'duration':job['duration'],
+                         'allocation':json.loads(path.read_text(encoding='utf-8')),
+                         'segments':[{k:s.get(k) for k in ('index','start','seconds','frames',
+                                      'model_frames','director_plan','direction_ending_contract')}
+                                     for s in job['segments']]})
+
+
+def open_furnace(job_id,revision):
+    """Approve an existing plan once; reuse its exact allocation without replanning."""
+    if not GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請稍後開爐。')
+    handed_off=False
+    try:
+        job=read_state(job_id)
+        if (job['status']!='plan_ready' or not job['request'].get('plan_review') or
+                job['request'].get('production')=='film'):
+            raise ValueError('只有待確認的 MV 丹方可以開爐。')
+        if not isinstance(revision,str) or revision!=job.get('plan_revision') or revision!=plan_revision(job):
+            raise ValueError('丹方已有更新或內容不符，請重新開啟專案檢查。')
+        if any(s.get('prompt_id') or s.get('prompt') or s.get('status')=='done' for s in job['segments']):
+            raise ValueError('此專案已有開拍內容，不能重複確認丹方。')
+        cfg=copy.deepcopy(backend.load_config())
+        q=backend.comfy(cfg,'/queue')
+        if q.get('queue_running') or q.get('queue_pending'):
+            raise ValueError('ComfyUI 還有工作，請稍後開爐。')
+        original,song,drive=project_inputs(job,cfg)
+        seg=job['segments'][0]
+        preflight(cfg,build_workflow(job['images_comfy'],'preflight.wav',*job['size'],
+                  seg['model_frames'],'',job['seed'],**graph_options(job['request'],seg['seconds'])))
+        job.update(status='running',plan_approved=revision,resumed=time.time())
+        CANCEL.discard(job_id);write_state(job)
+        try:
+            threading.Thread(target=worker,args=(job,cfg,original,song,drive),daemon=True).start()
+            handed_off=True
+        except Exception:
+            job.pop('plan_approved',None);job['status']='plan_ready';write_state(job);raise
+        return job
+    finally:
+        if not handed_off:GPU_LOCK.release()
 
 
 def adopted_part(job,seg):
@@ -817,6 +883,9 @@ class Handler(WebHandler):
                     GPU_LOCK.release()
             if path=='/api/mv/start':
                 return self.send_json(start(self.body_json()))
+            if path=='/api/mv/open-furnace':
+                body=self.body_json()
+                return self.send_json(open_furnace(body['id'],body.get('revision')))
             if path=='/api/mv/resume':
                 body=self.body_json()
                 return self.send_json(resume(body['id'],body.get('rewrite_retries')))
@@ -847,8 +916,9 @@ if __name__=='__main__':
     # Don't leave stale runs looking active after a Colab restart.
     for p in RUNS.glob('*/status.json'):
         job=json.loads(p.read_text(encoding='utf-8'))
-        if job['status'] not in ('done','error','cancelled','interrupted'):
+        if job['status'] not in ('done','error','cancelled','interrupted','plan_ready'):
             job.update(status='interrupted',error='執行階段已重啟；已完成片段仍保存在工作資料夾。')
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
+
