@@ -4,11 +4,9 @@ from pathlib import Path
 from unittest.mock import Mock,patch
 from banana_mv import server
 from banana_mv.story_plan import ensure_plan
-from banana_mv.story_completion import source_fragments,parse_requirements
 from banana_mv.core import normalize_mv_prompt,MediaReferenceError
 import test_shoot_plan as fixtures
 from test_unified_direction import timeline
-import test_story_completion as completion
 
 
 class OriginalCastTests(unittest.TestCase):
@@ -39,14 +37,3 @@ class OriginalCastTests(unittest.TestCase):
             self.assertNotIn('<Picture 7>',out)
             with self.assertRaises(MediaReferenceError):normalize_mv_prompt('<Picture 7> is Lumen.',2)
 
-    def test_chinese_source_layout_and_ordered_excerpts_are_not_story_errors(self):
-        original='影片從拳擊場開始，歌曲同步播放。\n\n高大的拳王站在擂台一側。\n\n猴哥確認準備完成。'
-        joined='影片從拳擊場開始，歌曲同步播放。高大的拳王站在擂台一側。猴哥確認準備完成。'
-        self.assertTrue(source_fragments(joined,original))
-        self.assertTrue(source_fragments('影片從拳擊場開始，歌曲同步播放。猴哥確認準備完成。',original))
-        self.assertTrue(source_fragments('影片從拳擊場開始，歌曲同步播放。...猴哥確認準備完成。',original))
-        self.assertIsNone(source_fragments('猴哥確認準備完成。影片從拳擊場開始，歌曲同步播放。',original))
-        self.assertIsNone(source_fragments('影片從拳擊場開始，歌曲同步播放。小語擊倒拳王。',original))
-        # Full requirement delivery preserves mandatory phase checks after layout tolerance.
-        source=completion.BRIEF.replace('。','。\n\n')
-        self.assertEqual(len(parse_requirements(completion.REQUIRED,source)),4)

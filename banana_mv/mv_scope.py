@@ -28,7 +28,7 @@ def ending_contract(req, total, segments=None):
         window=tail+(nominal if tail<nominal*.5 and total>nominal else 0)
     window=min(total,window)
     hold = min(1.5, total * .2)
-    scope_instruction = ('This uploaded audio is the complete available duration for the entire requested story, even when cropped from a longer song or ending during a verse/chorus. Allocate the complete beginning, development, resolution and specified final image within it. Read the entire story before budgeting time; compress optional middle staging rather than stopping before the ending. Preserve causal progression and all mandatory milestones and the specified outcome.' if req.get('story_completion_version')==1 else 'This is the complete MV. Preserve the outline, causal progression and specified outcome.')
+    scope_instruction = ('This uploaded audio is the complete available duration for the entire requested story, even when cropped from a longer song or ending during a verse/chorus. Allocate the complete beginning, development, resolution and specified final image within it. Read the entire story before budgeting time; compress optional middle staging rather than stopping before the ending. Preserve causal progression and all mandatory milestones and the specified outcome.' if req.get('story_scope_version',req.get('story_completion_version'))==1 else 'This is the complete MV. Preserve the outline, causal progression and specified outcome.')
     return {'project_scope':scope, 'finish_work':True,
             'resolve_start_by':round(total-window,6),
             'settle_by':round(total-hold,6), 'end_time':total,

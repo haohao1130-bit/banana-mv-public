@@ -282,14 +282,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
           'intensity':req.get('intensity','high'),'dynamic_cuts':req.get('dynamic_cuts',True),
           'timeline':timeline,
           'ending_contract':contract}
-    completion_enabled=req.get('story_completion_version')==1 and req.get('project_scope','full')=='full'
-    required=None
-    if completion_enabled:
-        from banana_mv.story_completion import requirements
-        required=requirements(cfg,task['brief'],req,work,rewrite)
-        task['format']='complete_story_shoot_briefs_v3'
-        task['required_story_events']=required
-        task['story_scope']='Complete this entire story within the uploaded audio duration, even if it is cropped or ends during a chorus.'
+    complete_story=req.get('project_scope','full')=='full'
     fingerprint=digest(task)
     # Old schema-5 jobs did not fingerprint the two directing controls.
     old_task=dict(task,format='isolated_shoot_briefs_v1')
@@ -298,18 +291,22 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
     path=Path(work)/'director_plan.json'
     if path.is_file():
         plan=json.loads(path.read_text(encoding='utf-8'))
+        # Reuse intact plans saved by the removed v3 reviewer without rerunning it.
+        saved_requirements=plan.get('story_completion',{}).get('requirements')
+        if saved_requirements:
+            legacy_fingerprints.add(digest(dict(task,format='complete_story_shoot_briefs_v3',
+                required_story_events=saved_requirements,
+                story_scope='Complete this entire story within the uploaded audio duration, even if it is cropped or ends during a chorus.')))
         if (plan.get('version')!=5 or plan.get('input_sha256') not in {fingerprint,*legacy_fingerprints} or
             digest({k:v for k,v in plan.items() if k not in ('content_sha256','input_sha256')})!=plan.get('content_sha256')):
             raise SceneStateError('分段拍攝大綱與專案不符或校驗失敗。')
-        if completion_enabled and (plan.get('story_completion',{}).get('status')!='passed' or plan['story_completion'].get('requirements')!=required):
-            raise SceneStateError('完整故事計畫缺少必要事件覆蓋檢查，不能沿用為已完成故事。')
         return plan
     parts=[('text',json.dumps(task,ensure_ascii=False))]+_pictures(originals)
     system=(ALLOCATION_SYSTEM+'\n'+adaptation_direction(req)+'\n'+REFERENCE_PERFORMANCE+'\n'+CLIP_INTENSITY[req.get('intensity','high')]+
             '\nApply this intensity to filmable event development; leave shot selection to the clip director.\nSupported modes: '+
             ', '.join(MODES)+f'. Deliver {len(segments)} CLIP blocks.')
-    if completion_enabled:
-        system+='\nCOMPLETE STORY SCOPE: Read ALL required_story_events before allocation. Budget opening, development, decisive resolution and final image over the ENTIRE available duration. Work backward from the mandatory ending, reserve enough room for it, then fit the middle. Compress optional staging rather than dropping required events or stopping at paragraph N. Musical section labels guide accents only; no outro is required to finish a story. For a very short tail, complete decisive events in the preceding full interval and sustain their result in the tail. If the complete request cannot fit, explicitly report that rather than delivering an incomplete story.'
+    if complete_story:
+        system+='\nCOMPLETE STORY SCOPE: Read the ENTIRE user brief before allocation. Budget opening, development, decisive resolution and final image over the ENTIRE available duration. Work backward from the mandatory ending, reserve enough room for it, then fit the middle. Compress optional staging rather than dropping required events or stopping at paragraph N. Musical section labels guide accents only; no outro is required to finish a story. For a very short tail, complete decisive events in the preceding full interval and sustain their result in the tail. If the complete request cannot fit, explicitly report that rather than delivering an incomplete story.'
     attempts=parts
     for attempt in range(rewrite_retry_count(req)+1):
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
@@ -332,9 +329,6 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             _check_distinct_events(result)
             plan={'version':5,'shared_setup':shared,'segments':result,'visual_verified':False,
                   'ending_contract':task['ending_contract'],'project_scope':req.get('project_scope','full')}
-            if completion_enabled:
-                from banana_mv.story_completion import audit
-                plan['story_completion']=audit(cfg,required,result,segments,contract,work,rewrite,attempt)
             plan['content_sha256']=digest(plan);plan['input_sha256']=fingerprint
             atomic_json(path,plan)
             return plan
@@ -345,7 +339,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                 raise SceneStateError('分段大綱交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Deliver the original fixed settings in SETUP and ALL CLIP scripts, then END. '
                             'Keep the selected adaptation policy and photographic intensity while allocating the story backbone across the supplied intervals. '
-                            'Do not copy a complete event sequence into later slots. If coverage failed, reallocate ALL mandatory milestones including the specified resolution and final image within the uploaded audio duration; compress the middle instead of dropping the end. Do not fix a missing event by mentioning it in SETUP. No analysis. Delivery error: '+str(error))]
+                            'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
