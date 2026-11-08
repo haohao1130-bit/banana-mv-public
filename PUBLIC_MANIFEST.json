@@ -88,7 +88,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "095db95de5e187c7a1f0fc5c18c5e9017ef276f9740bc8cd594ebd1b02115479"
+      "sha256": "d496163b14bea3d9ac478ca9db213e648649a506f354a387103b669b35e69938"
     },
     {
       "path": "banana_mv/services.py",
@@ -96,7 +96,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "ddfe953d4e45ee6f061b35e8350e185b08fd06e40816e92d1416bc12b985de95"
+      "sha256": "40ee513d68ad319b7accdb0192385dd3ae55d17c14f3c490e1e5053abad2443d"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -289,6 +289,10 @@
     {
       "path": "tests/check_asset_reuse.cjs",
       "sha256": "63d2c0d5fff30cca03f697df577b2f7de558f5ff6d7a1f69173ad2ef49e2a87e"
+    },
+    {
+      "path": "tests/test_mv_motion_intensity.py",
+      "sha256": "8b35ed7111e0f970a2fbe3d664434f5a71c69e2951ecb9fdc302716323765084"
     }
   ]
 }
