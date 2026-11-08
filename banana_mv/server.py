@@ -89,11 +89,16 @@ def graph_options(req, seconds, segment=None):
     steps=req.get('sampling_steps',8)
     if isinstance(steps,bool) or steps not in (6,8):
         raise ValueError('採樣步數僅支援 6 或 8。')
+    intensity=req.get('intensity','high')
+    if intensity not in ('normal','high','extreme'):
+        raise ValueError('未知攝影強度。')
+    if req.get('mv_motion_version')==2 and intensity=='extreme':
+        intensity='high'  # Photographic burst is not an extra motion-LoRA boost.
     return {'steps':int(steps),'acceleration': req.get('acceleration', True),
             'kitchen_attention': req.get('kitchen_attention',req.get('acceleration',True)),
             'sparse_attention': req.get('sparse_attention',req.get('acceleration',True)),
             'motion_lora': req.get('motion_lora', True),
-            'director_mode': mode, 'intensity': req.get('intensity', 'high')}
+            'director_mode': mode, 'intensity': intensity}
 
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
@@ -551,6 +556,7 @@ def start(req):
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
              director_schema=5,story_scope_version=1,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
+             mv_motion_version=2,
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
     from banana_mv.mv_scope import validate_scope
