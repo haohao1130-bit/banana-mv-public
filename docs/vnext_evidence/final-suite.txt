@@ -1,0 +1,58 @@
+...............................................................................................9B JSON: closed 1 missing EOF containers
+..9B JSON: closed 1 missing EOF containers
+..9B JSON: closed 3 missing EOF containers
+.9B JSON: closed 1 missing EOF containers
+.............................................................✅ 已載入 Banana MV 公開版。
+沿用此執行階段已有的公開版程式。更新請使用新的執行階段。
+✅ Minimax-h3_Singularity_x_10Eros-Max_PRISM_int8.safetensors (0.00 GiB)
+✅ qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors (0.00 GiB)
+✅ minimax_h3_video_vae_int8_convrot.safetensors (0.00 GiB)
+✅ minimax_h3_audio_vae_fp32.safetensors (0.00 GiB)
+✅ H3_Combat_V2.safetensors (0.00 GiB)
+✅ Motion_Repair.safetensors (0.00 GiB)
+✅ minimax_h3_rewriter_ref2va_qwen3.5_9b_w4a8.safetensors (0.00 GiB)
+✅ 只下載 Banana MV 使用的模型；不下載生圖、SelfLift、Turbo 或語意橋。
+✅ Minimax-h3_Singularity_x_10Eros-Max_PRISM_int8.safetensors (0.00 GiB)
+✅ qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors (0.00 GiB)
+✅ minimax_h3_video_vae_int8_convrot.safetensors (0.00 GiB)
+✅ minimax_h3_audio_vae_fp32.safetensors (0.00 GiB)
+✅ H3_Combat_V2.safetensors (0.00 GiB)
+✅ Motion_Repair.safetensors (0.00 GiB)
+✅ minimax_h3_rewriter_ref2va_qwen3.5_9b_w4a8.safetensors (0.00 GiB)
+✅ 只下載 Banana MV 使用的模型；不下載生圖、SelfLift、Turbo 或語意橋。
+沿用仍在啟動的程序，等待服務就緒。
+.安裝音樂分析器；完整日誌： /tmp/tmpr_o79wvh/install.log
+.安裝音樂分析器；完整日誌： /tmp/tmp7mpd0nvp/.music-venv/bootstrap.log
+安裝音樂分析器；完整日誌： /tmp/tmp7mpd0nvp/.music-venv/install.log
+安裝音樂分析器；完整日誌： /tmp/tmpkdv4i_lt/.music-venv/bootstrap.log
+安裝音樂分析器；完整日誌： /tmp/tmpkdv4i_lt/.music-venv/install.log
+....................9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+.................9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+.9B state initialization attempt 1 failed: $.events：需有 1–128 個結構化事件；實際有 0 個。; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: $.events：需有 1–128 個結構化事件；實際有 0 個。; diagnostics: scene_state_init_debug.json
+..9B state initialization attempt 1 failed: $.events：events 放在 $.initial_state.events；必須移到根物件。; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: $.events[0].description：格式修復改動了原回應中已合法的事件內容。; diagnostics: scene_state_init_debug.json
+..9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 13 欄：Expecting value; diagnostics: scene_state_init_debug.json
+..9B state initialization attempt 1 failed: $.events：缺少根物件的 events 欄位。; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 1 failed: $.events：events 放在 $.initial_state.events；必須移到根物件。; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 1 failed: $.events：需為陣列，實際為 dict。; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 1 failed: $.events[0]：每個事件需為 JSON 物件。; diagnostics: scene_state_init_debug.json
+...9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 1 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: 狀態回傳不是有效 JSON：第 1 行、第 1 欄：Expecting value; diagnostics: scene_state_init_debug.json
+..9B state initialization attempt 1 failed: ComfyUI unavailable; diagnostics: scene_state_init_debug.json
+.9B state initialization attempt 1 failed: $.events：需有 1–128 個結構化事件；實際有 0 個。; diagnostics: scene_state_init_debug.json
+9B state initialization attempt 2 failed: $.events：需有 1–128 個結構化事件；實際有 0 個。; diagnostics: scene_state_init_debug.json
+......................................................................
+----------------------------------------------------------------------
+Ran 283 tests in 30.224s
+
+OK
+此格只顯示按鈕，全部執行不會關閉服務。手動點擊才立即停止 ComfyUI。
+執行中的 MV 可能中斷；完成的段落保留。關閉 ComfyUI 不會解除 Colab GPU 配置。
+ComfyUI 已關閉；已保存的段落與前端保留。需要時重新執行③。
