@@ -20,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "950360ac6608cbfcc2c8b8699c984be022d7a1d9c32abae5635a49b6be9c69bc"
+      "sha256": "085138925bc32ea2d8db2392fe494d1b34963e0158b81802bd258004463d7efd"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -72,7 +72,7 @@
     },
     {
       "path": "banana_mv/mv_scope.py",
-      "sha256": "0d05faf4e933cb32434df225a5c95a29025a2559c6986ab442ca43153758e907"
+      "sha256": "9d9bdb7eac6f70d7b3e8f7bdba0d948abf6e7f350164766340d77569df5402fc"
     },
     {
       "path": "banana_mv/plan_translation.py",
@@ -88,7 +88,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "f9a89b5687a237997c514d090e621a4aa0bbe081e62044516942993c99a2f87e"
+      "sha256": "bacf4496eaf273b0b47d423dcec95ab908e4294f3f3490c106f8d94bd0d9d722"
     },
     {
       "path": "banana_mv/services.py",
@@ -96,7 +96,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "4b9cbc9d7a0e9927c839b306afee748be1f1682bf21cd4a9b1772b51a36adc7c"
+      "sha256": "e539d7efcf96bed52cdce55becba49f088908d009374d68a7d9cbcda558944b1"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -105,6 +105,10 @@
     {
       "path": "banana_mv/sound_effects.py",
       "sha256": "0ed1890f9ecbfbfd1df21207e4ef1c69cb28ebb10c7da34e71b5213dd6eec2f1"
+    },
+    {
+      "path": "banana_mv/story_completion.py",
+      "sha256": "b13d9d6ca621a2d9fc1eee71d9b68b32baca889694d206d41342140b5d3eda73"
     },
     {
       "path": "banana_mv/story_plan.py",
@@ -120,7 +124,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "5b55a5747921eddf71f50caef81269c9b0b1659b7b4592ae6117cf2317d94f51"
+      "sha256": "f59baa0a8b078cd3e6701f96f0c190e9ce44301cf33d4a0a08132ecab8804f55"
     },
     {
       "path": "docs/clip_review.md",
@@ -128,7 +132,7 @@
     },
     {
       "path": "docs/director_architecture.md",
-      "sha256": "0f8aff6a6f4634bbf8f43704d1406acec8b9493b3ca8ba4ded0999ca3cc8d081"
+      "sha256": "d5be200d31c5332dffac83c753df9fa1633a3052554dcb9e0aed3e953b2b9483"
     },
     {
       "path": "docs/persistent_scene_state.md",
@@ -140,7 +144,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "e99928857757077d6720074cbf0465a42880540146b85e89f7d7549fc08eeae0"
+      "sha256": "37b36ae8adf108a9dfb55b3f930b9602cd239172dea13bd5fad910eb0a9364d7"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -245,6 +249,10 @@
     {
       "path": "tests/test_sound_effects.py",
       "sha256": "60c34c01bd08280ce50ed460536a4cea0b8d0e4ab9dcb3aaf7abda13f7c0ac70"
+    },
+    {
+      "path": "tests/test_story_completion.py",
+      "sha256": "c8886a072309a42ca944b84f8c054e42c0f84b82f479cf6d48ddfe9a24557a2c"
     },
     {
       "path": "tests/test_takes.py",

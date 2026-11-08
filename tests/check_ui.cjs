@@ -194,6 +194,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);
   const translatedRecipe={id:'recipe123',status:'plan_ready',plan_revision:'r1',plan_preview_setup:'English source setup',segments:[{index:0,start:0,seconds:10,director_plan:{event:'English source event'}}],plan_translation:{status:'ready',source_plan_revision:'r1',blocks:{setup:'中文共通設定','0':'中文事件 <Picture 2>'}}};
   els['recipe-language'].value='zh';context.translatedRecipe=translatedRecipe;vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('中文事件 @圖片2'));assert(els['recipe-language-status'].textContent.includes('僅供審閱'));
+  translatedRecipe.story_completion={status:'passed',requirements:[{id:'M2',source:'宣布獲勝',event:'Declare victory.'}],coverage:{M2:{clip_index:0}}};vm.runInContext('renderRecipe(translatedRecipe)',context);assert.equal(els['story-requirements'].hidden,false);assert(els['story-requirements-text'].textContent.includes('宣布獲勝'));
   els['recipe-language'].value='en';els['recipe-language'].onchange();assert(els['recipe-text'].textContent.includes('English source event'));assert(!els['recipe-text'].textContent.includes('中文事件'));
   els['recipe-language'].value='zh';translatedRecipe.plan_translation.source_plan_revision='stale';vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('English source event'));
 

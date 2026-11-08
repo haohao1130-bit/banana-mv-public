@@ -379,6 +379,11 @@ def worker(job, cfg, original, song, drive):
                 if index and plan['version']!=5:
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
+            if plan.get('story_completion'):
+                job['story_completion']={'status':'passed','kind':'model_text_coverage',
+                    'requirements':plan['story_completion']['requirements'],
+                    'coverage':plan['story_completion']['coverage']}
+
             if job['request'].get('plan_review'):
                 job['plan_preview_setup']=plan.get('shared_setup','')
             job['status']='running'; write_state(job)
@@ -549,7 +554,7 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=5,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=5,story_completion_version=1,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
