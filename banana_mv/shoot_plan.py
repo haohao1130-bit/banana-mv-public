@@ -17,7 +17,7 @@ from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_
 # in the user message. No additional writer or fixed camera recipe is involved.
 NATIVE_ENHANCER_SYSTEM = (
     "You enhance prompts for reference-conditioned video and audio generation (Ref2VA). "
-    "Use the explicit fixed reference bindings; never reassign an actor by appearance or picture order. "
+    "Use explicit bindings for referenced actors and the fixed designs for original supporting actors; never reassign a role by appearance or picture order. "
     "Preserve intent and explicit constraints while developing visual details. Source-audio and optional effects rules below override sound examples in the guide. "
     "Follow the guide below and return only its six sections in order, "
     "with plain-text headers on separate lines and no Markdown fences.\n\n"
@@ -48,8 +48,17 @@ def adaptation_direction(req):
     return CREATIVE_DIRECTION if req.get('story_plan',True) else FAITHFUL_DIRECTION
 
 
-REFERENCE_PERFORMANCE = """IDENTITY AND PERFORMANCE: Bind each actor to the assigned reference identity
-and current appearance. In both FREE and FAITHFUL adaptation, interpret broad wording
+REFERENCE_PERFORMANCE = """IDENTITY AND PERFORMANCE: For a referenced actor, preserve the assigned
+reference identity and current appearance. References are identity anchors, not a
+closed cast list. When the user requests supporting roles without reference images,
+create original distinct characters as authorized; missing reference images do NOT
+mean those characters cannot exist. Never turn the singer, boxer or another referenced
+actor into a requested guitarist, bassist, drummer or other original supporting role.
+Only an explicit user restriction forbids additional cast. Preserve original supporting
+characters using their fixed name/role, appearance, costume, instrument and stage position;
+do not demand an uploaded image, borrow an existing actor's face, or invent <Picture N>.
+Use independent <Subject N> definitions with descriptions, without a false picture binding.
+In both FREE and FAITHFUL adaptation, interpret broad wording
 such as 'keep/maintain the reference image unchanged', 'match the reference completely'
 or 'preserve appearance' as identity and appearance continuity, not a performance lock.
 A pictured blink, closed eyes, neutral face, gaze or resting pose is a momentary state;
@@ -168,7 +177,15 @@ Extract shared SETUP from the user's fixed world, reference and vocal-role setti
 Keep their original wording and distinct locations; do not summarize or redesign them.
 SETUP will be sent to every clip director as FIXED REFERENCE SETTINGS.
 Include explicit name/role-to-<Picture N> bindings for every supplied actor and location,
-fixed geography, vocal duties and hard restrictions. Do not put plot chronology,
+fixed geography, vocal duties and hard restrictions.
+When the brief requests unreferenced supporting roles, CREATE their fixed designs in
+SETUP before allocating clips: a stable name/role, distinctive appearance, costume,
+instrument/prop and home position/location for each. Follow requested adult status
+and other design constraints. Treat them as original cast, not missing assets.
+A requested band must have distinct lead guitar, rhythm guitar, bass and drums when
+those roles are requested; do not collapse them into vague background musicians.
+Carry these fixed designs to their active local commissions. No fictional Picture IDs.
+Do not put plot chronology,
 future events, the specified story outcome or the final shot into SETUP.
 Each local script must also identify its active actors by their bound <Picture N>.
 The clip's current state takes precedence over reference clothing after a change.
@@ -373,6 +390,10 @@ into the challenger or substitute <Picture 1> for another named actor.
 Do not infer an actor's role from its apparent species, outfit or upload position.
 Local current-state changes override initial clothing/props while identity stays fixed.
 Available reference images do not require unused characters or locations to appear.
+Original supporting cast in fixed_reference_settings is equally available without a
+reference image. Use the same fixed design and instrument whenever that role returns.
+Do not reject it as "no such character", replace it with referenced cast, or omit a
+requested featured solo/hero shot merely because the performer has no uploaded photo.
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
 reference clothing.

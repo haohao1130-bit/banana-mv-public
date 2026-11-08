@@ -20,7 +20,10 @@ with continuing action, a promise of a future finale, or a generic victory pose.
 The selected COMPLETE STORY scope means this uploaded audio, even if cropped from
 a longer song or ending during a chorus, is the whole available film duration.
 Return faithful English event requirements, preserving original names and references.
-Each SOURCE is an exact contiguous quote from user_brief proving the requirement.
+Each SOURCE copies original sentences from user_brief proving the requirement.
+You may select several original sentences in their original order and omit intervening
+sentences; do not paraphrase, translate, reorder or invent quoted wording.
+Prefer short source excerpts rather than copying a whole scene.
 Use SOURCE: [INFERRED] only for a necessary unstated resolution/final image; if the
 brief is empty, infer a simple opening/development/resolution from the requested style.
 Include BEGINNING, DEVELOPMENT, RESOLUTION and FINAL_IMAGE; a continuous performance
@@ -62,7 +65,26 @@ what is absent or contradicted
 Return only these blocks. Do not repair the story in this check.'''
 
 
-def normalized(text):return re.sub(r'\s+',' ',text).strip()
+def normalized(text):
+    # Paragraph/newline layout is not story content, especially between CJK sentences.
+    return re.sub(r'\s+','',text)
+
+
+def source_fragments(quote,brief):
+    source=normalized(brief)
+    if normalized(quote) in source:return [quote.strip()]
+    # Allow ordered extractive sentences and explicit ellipsis, but never fuzzy
+    # words or semantic substitutions. Every retained fragment must occur verbatim.
+    parts=[p.strip() for p in re.split(r'(?<=[。！？])|…+|\.{3,}',quote) if p.strip()]
+    cursor=0
+    for part in parts:
+        token=normalized(part)
+        if not token or not re.search(r'[\w\u3400-\u9fff]',token):return None
+        offset=source.find(token,cursor)
+        if offset<0:return None
+        cursor=offset+len(token)
+    return parts or None
+
 
 
 def body(raw):
@@ -83,8 +105,8 @@ def parse_requirements(raw,brief):
         if quote=='[INFERRED]':
             if brief.strip() and phase not in ('RESOLUTION','FINAL_IMAGE'):
                 raise SceneStateError('開場與發展需依使用者故事擷取，不得憑空增加必要事件。')
-        elif normalized(quote) not in normalized(brief):
-            raise SceneStateError(f'{key} 的來源引文不在使用者故事中。')
+        elif not source_fragments(quote,brief):
+            raise SceneStateError(f'{key} 的來源引文有無法對回原文的句子；僅接受原文擷取，不接受改寫或捏造。')
         seen.add(key);rows.append({'id':key,'phase':phase,'source':quote,'event':event})
     if not rows or len(rows)>64 or {r['phase'] for r in rows}!=PHASES:
         raise SceneStateError('完整故事需交齊開場、發展、解決與最後畫面的必要事件。')
