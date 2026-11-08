@@ -88,11 +88,11 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "d6096e9397915734b3d0bd1ae8778e3ca9ca4fe3dbafecf4faccb3f927ab08a0"
+      "sha256": "095db95de5e187c7a1f0fc5c18c5e9017ef276f9740bc8cd594ebd1b02115479"
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "ba34ae9de91acc10e7a8fe969ed165cf1493ba8808015a34ad7c08323b36e8e3"
+      "sha256": "a6c088ee4503f5a9d8dc200440f216ed50c6d2a2e94f86c418e9a6fcaaa8cbe9"
     },
     {
       "path": "banana_mv/shoot_plan.py",
@@ -120,7 +120,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "eede2e5af98d990f540551007ae108b309b9188414076aba38bd8bfab4bbdd6e"
+      "sha256": "c3c20f78334428709c35473f0d00f7b32a5a78e10869a4306059d60e43ee1473"
     },
     {
       "path": "docs/clip_review.md",
@@ -236,7 +236,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "128ec7b10afe13a485ec4fae4e54a7d93221ff9e193d738517a11bef9f826cc4"
+      "sha256": "18aeb1e03d27d30dadde2cca258cec2cef205427a20eb3e8cc3e48a9b0bda112"
     },
     {
       "path": "tests/test_services.py",
@@ -281,6 +281,14 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "4005c780dacdab8e76211d5adcc60a81146f9448da1868f5098702fa6266e95a"
+    },
+    {
+      "path": "tests/test_asset_reuse.py",
+      "sha256": "96eedd8151b4ee84b541765295e0f9d106971f080eb9ba15c95dda18de4857e7"
+    },
+    {
+      "path": "tests/check_asset_reuse.cjs",
+      "sha256": "63d2c0d5fff30cca03f697df577b2f7de558f5ff6d7a1f69173ad2ef49e2a87e"
     }
   ]
 }

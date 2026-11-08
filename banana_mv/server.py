@@ -937,6 +937,15 @@ class Handler(WebHandler):
     def do_POST(self):
         path=urllib.parse.urlparse(self.path).path
         try:
+            if path=='/api/assets/lookup':
+                if not GPU_LOCK.acquire(blocking=False):
+                    raise ValueError('MV 執行中，請完成後再準備素材。')
+                try:
+                    body=self.body_json()
+                    return self.send_json({'asset':backend.find_asset(
+                        backend.load_config(),body.get('sha256'),body.get('size'))})
+                finally:
+                    GPU_LOCK.release()
             if path=='/api/upload':
                 if not GPU_LOCK.acquire(blocking=False):
                     raise ValueError('MV 執行中，請完成後再上傳素材。')
