@@ -12,7 +12,7 @@
     },
     {
       "path": "Banana_MV_Public.ipynb",
-      "sha256": "ec360bff4df80cd0cb7d9c36f793d39088dee356fd6191d22e63a1492282bb89"
+      "sha256": "719f317d043ad05d516b2185847797497645321366276aa6a250b469725e82d5"
     },
     {
       "path": "LICENSE",
@@ -140,11 +140,15 @@
     },
     {
       "path": "docs/vnext-audit.md",
-      "sha256": "81277cccf4a2f9f685b5fabda6488df5330591c4932d444fc8750e2434ea99f9"
+      "sha256": "945ba906bc5b84d77c4fd004c0bd6b318a3104a72c315405ce4ec6e5a410f987"
     },
     {
       "path": "docs/vnext_evidence/baseline.txt",
       "sha256": "38646bfccf04155846e185c16654b5923abf20ac9c45c37cc6e230531b943d55"
+    },
+    {
+      "path": "docs/vnext_evidence/ci-followup.json",
+      "sha256": "91f4b832b4b672d1c47c7819f7655c47539985229fd44af0ad16725adb1d1b44"
     },
     {
       "path": "docs/vnext_evidence/final-suite.txt",

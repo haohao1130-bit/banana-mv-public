@@ -120,3 +120,7 @@ prompt_quality 的 validate_subject_bindings 用於舊 schema3，不是 schema5 
 新增測試不引入攝影限制；只是驗證既定新作格式、音軌保留、缺省與錯誤阻斷。
 
 本庫最終：Python **283 項 PASS**；前端契約、compileall、diff whitespace 檢查 PASS。
+
+## PR 建立後 CI 複驗追加
+
+C2 低：既有 CI 要求 notebook 重建後 git diff 為零。Banana_MV_Public.ipynb 與 tools/build_notebook.py 有一個空白行差異，會令該既有步驟失敗。已重新產生筆記本，沒有改變程式內容或測試條件。
