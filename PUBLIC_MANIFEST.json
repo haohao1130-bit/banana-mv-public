@@ -20,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "66486baa87d193b4292c11b7d220d82b68ec26a27bd939bc60fc42383be141b6"
+      "sha256": "950360ac6608cbfcc2c8b8699c984be022d7a1d9c32abae5635a49b6be9c69bc"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -75,6 +75,10 @@
       "sha256": "0d05faf4e933cb32434df225a5c95a29025a2559c6986ab442ca43153758e907"
     },
     {
+      "path": "banana_mv/plan_translation.py",
+      "sha256": "c9680bd41a1fcb0d3a9498656f120c689ba6c570909c561c8ccea9a4e5fb51bf"
+    },
+    {
       "path": "banana_mv/prompt_quality.py",
       "sha256": "3d411ab784a1a0f0c83579fa43360613eca2fb231685c5a1297db7c9eb5e59ae"
     },
@@ -84,7 +88,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "fa5060e0ebf7cb07ec0beed3ffc6acba4d154ca863ffa16720d16c73c9f753c1"
+      "sha256": "f9a89b5687a237997c514d090e621a4aa0bbe081e62044516942993c99a2f87e"
     },
     {
       "path": "banana_mv/services.py",
@@ -92,7 +96,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "58ffd46b4fa1addeb6e64a1ad0dde6b2c6869b305bdadaaf28173ebe5b783b15"
+      "sha256": "4b9cbc9d7a0e9927c839b306afee748be1f1682bf21cd4a9b1772b51a36adc7c"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -116,7 +120,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "9c3186087c97a834d4b747cf5c20f4005182668e196345a69e952c39e5e0aef8"
+      "sha256": "5b55a5747921eddf71f50caef81269c9b0b1659b7b4592ae6117cf2317d94f51"
     },
     {
       "path": "docs/clip_review.md",
@@ -124,7 +128,7 @@
     },
     {
       "path": "docs/director_architecture.md",
-      "sha256": "1608cac2506bdbc2e4d747bd8db50980d8fdfbfa5dce8f842719e97054459dac"
+      "sha256": "0f8aff6a6f4634bbf8f43704d1406acec8b9493b3ca8ba4ded0999ca3cc8d081"
     },
     {
       "path": "docs/persistent_scene_state.md",
@@ -136,7 +140,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "413f8d533fc43163ce102524c1fad2a965fbe9953597ca35c89bce2f5a8a6cbc"
+      "sha256": "e99928857757077d6720074cbf0465a42880540146b85e89f7d7549fc08eeae0"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -197,6 +201,10 @@
     {
       "path": "tests/test_plan_review.py",
       "sha256": "2030b321cd9411c80e94b9211b78934c6412a1e7556cd9f93e8f99b095f88ddd"
+    },
+    {
+      "path": "tests/test_plan_translation.py",
+      "sha256": "79260d21f66389ec914357b87f19b4eabc68db86078bf845982c5a4ddfe07674"
     },
     {
       "path": "tests/test_prompt_quality.py",

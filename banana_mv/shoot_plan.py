@@ -159,6 +159,7 @@ build anticipation, contrast and a few motivated story/performance payoffs. Allo
 the main climax once where the music and requested story support it; do not replay
 the finale in each chorus. Carry clip-local musical timing into each commission.
 A solo label does not establish its instrument; labels never override vocal roles.
+Write SETUP and CLIP story prose in English; retain original character names and reference tokens.
 Apply the supplied adaptation policy while developing and allocating the story.
 Build filmable events at the selected intensity; the native clip director later
 turns each assigned beat into precise shots. Keep both parallel strands in each

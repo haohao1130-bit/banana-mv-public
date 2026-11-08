@@ -387,6 +387,27 @@ def worker(job, cfg, original, song, drive):
                 job['status']='cancelled';write_state(job);return
             if not all(s.get('director_plan') for s in job['segments']):
                 raise ValueError('丹方尚未完整，不能進入審閱或開爐。')
+            if job['request'].get('preview_zh',False):
+                from banana_mv.plan_translation import translate_plan
+                revision=plan_revision(job)
+                job['status']='translating_review';write_state(job)
+                def translation_progress(done,total):
+                    job['translation_progress']={'done':done,'total':total};write_state(job)
+                translation_cfg=copy.deepcopy(cfg)
+                translation_cfg['free_after_rewrite']=False
+                try:
+                    job['plan_translation']=translate_plan(job,work,translation_cfg,backend.rewrite_local,
+                        revision,translation_progress,lambda:job['id'] in CANCEL)
+                except InterruptedError:
+                    job['status']='cancelled';write_state(job);return
+                except Exception as error:
+                    # Review translation must never replace or invalidate the English plan.
+                    job['plan_translation']={'status':'error','source_plan_revision':revision,'error':str(error)}
+                finally:
+                    try:backend.comfy(cfg,'/free',{'unload_models':True,'free_memory':True})
+                    except Exception:pass
+                if job['id'] in CANCEL:
+                    job['status']='cancelled';write_state(job);return
             job.update(status='plan_ready',plan_revision=plan_revision(job))
             write_state(job);return
         ledger=None
@@ -538,6 +559,11 @@ def start(req):
     req.setdefault('plan_review',False)
     if not isinstance(req['plan_review'],bool):
         raise ValueError('先搓丹方必須為布林值。')
+    req.setdefault('preview_zh',False)
+    if not isinstance(req['preview_zh'],bool):
+        raise ValueError('preview_zh 必須為布林值。')
+    if req['preview_zh'] and not req['plan_review']:
+        raise ValueError('繁中審閱翻譯僅供先搓丹方使用。')
     if req['plan_review'] and not req.get('rewrite',True):
         raise ValueError('先搓丹方需要開啟本地提示詞改寫。')
     if not isinstance(req.get('persistent_scene_state',True),bool):
