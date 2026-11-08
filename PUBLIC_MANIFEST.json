@@ -20,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "f818b03ebcb87c0e2acb77033b670c4ae6744d1f26a27bdea8854e47141bdd28"
+      "sha256": "5eab700977aecb0244243809e2469ed408f76a3559df842c1e414a4afa99b015"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -32,7 +32,7 @@
     },
     {
       "path": "banana_mv/audio_analysis.py",
-      "sha256": "a5dcb0215e0c146fbf43fd02fc4d04d4e7741ce5190712ce5f165d500506c7a2"
+      "sha256": "094013c9dfbc5f8c0b5e86710f77753d4c3ee591ee48d722e0ac9076beecccc1"
     },
     {
       "path": "banana_mv/comfy.py",
@@ -67,6 +67,10 @@
       "sha256": "68238018fd02e77102272928022f49707994f0ccbac483a50145186ff0fb2fab"
     },
     {
+      "path": "banana_mv/music_structure.py",
+      "sha256": "99ffeab99f5d15429655319ddafacde189261f34a10482a5f941f8b27e38af47"
+    },
+    {
       "path": "banana_mv/mv_scope.py",
       "sha256": "0d05faf4e933cb32434df225a5c95a29025a2559c6986ab442ca43153758e907"
     },
@@ -80,7 +84,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "9327bad037128cdec25d0aa8a62b6374a24bb92150c920fc02e57e99c4bc58eb"
+      "sha256": "c9de14f4ccc505335d54cb26a7252b082c7b8db43d8fd187b87005342cd93448"
     },
     {
       "path": "banana_mv/services.py",
@@ -88,7 +92,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "4779b5efa1450aac30d9c0b3562d04955d69192294ae88f060db21846ff2629a"
+      "sha256": "c51aa0311c0567a0ddc2fa1a86fd0339e54a0b4a0c311ac7e9d0043bb33a2ae1"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -108,7 +112,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "e8681469ab8ad71b295365700ac6ab5a2693e304f20cedea5557a627b862aa82"
+      "sha256": "428486c13a236da160c5c39b52f1c4737c0fe41bae48203db3bd3773de55d38a"
     },
     {
       "path": "docs/clip_review.md",
@@ -128,7 +132,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "bccd667628baa5cf8f44cf17a80b5fc642a3c1564cbc2b85bec53f799e6b6710"
+      "sha256": "c2c9a7a828d7c88ed8f9efc07e45acf0a93283f2dbb3df8a43b4138a91dd979f"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -177,6 +181,10 @@
     {
       "path": "tests/test_lyrics_reference.py",
       "sha256": "afec723c480830371510b653fa117a520e34b9c53c5c9451d8023d6dd4404092"
+    },
+    {
+      "path": "tests/test_music_structure.py",
+      "sha256": "5ad314695e13007f02a4b03715310168714c56bb1242b822f12c3a727440781f"
     },
     {
       "path": "tests/test_mv_scope.py",
@@ -232,7 +240,7 @@
     },
     {
       "path": "tools/colab_runtime.py",
-      "sha256": "866b54fb7f9506ca71e973d3d0d46ba2cff618f708d3382dc76cc43d1671c039"
+      "sha256": "8b6949b9de8ee7eb4fc1b54666f57cac11272cf9aaeac5dd05771bc919a6e5e9"
     },
     {
       "path": "tools/public_clone.py",

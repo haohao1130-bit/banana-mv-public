@@ -153,6 +153,12 @@ intensity changes the filmmaking, not the assigned characters, vocal roles or ou
 
 
 ALLOCATION_SYSTEM = """Prepare a filmable music-video story across the given source intervals.
+When audio_evidence.music_structure is present, its labels and beat/downbeat times
+are fallible model predictions, not loudness guesses. Use section transitions to
+build anticipation, contrast and a few motivated story/performance payoffs. Allocate
+the main climax once where the music and requested story support it; do not replay
+the finale in each chorus. Carry clip-local musical timing into each commission.
+A solo label does not establish its instrument; labels never override vocal roles.
 Apply the supplied adaptation policy while developing and allocating the story.
 Build filmable events at the selected intensity; the native clip director later
 turns each assigned beat into precise shots. Keep both parallel strands in each
@@ -322,6 +328,11 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
+When audio_evidence.music_structure is supplied, use its predicted local section
+changes and selected downbeats to motivate action payoffs, camera reveals and
+performance highlights. Write their timing into the shots, not an analysis appendix.
+Keep anticipation and contrast; do not cut on every beat. Labels can be wrong and
+do not identify instruments or override vocal roles. Use loudness only as acoustic evidence.
 Use the current clip's assigned beat and end state as the scope for visual development.
 Apply the adaptation policy below within that local scope. The commission supplies
 the needed current facts, opening state, events and local end state. Design compelling

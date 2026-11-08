@@ -29,6 +29,7 @@ from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_inp
                                    final_context, CLIP_SYSTEM, parse_object as parse_scene_object,
                                    atomic_json as write_scene_json, update_scene_memory, rewrite_retry_count, digest as scene_digest)
 from banana_mv.song_context import segment_context
+from banana_mv.music_structure import load_structure, local_structure
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
 from banana_mv.prompt_quality import (reference_policy, enforce_reference_policy,
@@ -324,7 +325,7 @@ def worker(job, cfg, original, song, drive):
         if approved_review and job['plan_approved']!=plan_revision(job):
             raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
         # Old projects keep their saved prompt behavior. New projects opt in by
-        # a persisted request field; no GPU or additional model downloads needed.
+        # a persisted request field. Structure inference is CPU-only in an isolated process.
         needs_analysis = not approved_review and job['request'].get('audio_analysis', False) and any(
             not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
             and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
@@ -332,11 +333,19 @@ def worker(job, cfg, original, song, drive):
         if needs_analysis:
             job['status'] = 'analyzing_audio'; write_state(job)
             music_analysis = load_analysis(song, work/'audio_analysis.json')
+            structure = None
+            if job['request'].get('music_structure',False):
+                job['audio_analysis']={'status':'analyzing_structure'}; write_state(job)
+                structure = load_structure(song, work/'music_structure.json', music_analysis['seconds'])
             vocal_analysis = load_analysis(drive, work/'vocal_analysis.json') if drive != song else None
             for seg in job['segments']:
                 seg['audio_evidence'] = segment_evidence(music_analysis, seg, vocal_analysis)
+                if structure:
+                    seg['audio_evidence']['music_structure'] = local_structure(structure, seg)
             job['audio_analysis'] = {'version': AUDIO_VERSION, 'status': 'ready',
-                                     'pulse': music_analysis['pulse']}
+                                     'pulse': music_analysis['pulse'],
+                                     'structure': {'status':'ready','bpm':structure['bpm'],
+                                                   'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
         needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
                       and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
@@ -537,6 +546,11 @@ def start(req):
     req.update(scene_state_version=0,persistent_scene_state=False)
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):
         raise ValueError('face_identity 必須為布林值。')
+    req.setdefault('music_structure',False)
+    if not isinstance(req['music_structure'],bool):
+        raise ValueError('music_structure 必須為布林值。')
+    if req['music_structure'] and not req['audio_analysis']:
+        raise ValueError('音樂結構分析需要同時開啟音樂分析引導。')
     if not isinstance(req['audio_analysis'], bool):
         raise ValueError('audio_analysis 必須為布林值。')
     if not isinstance(req['story_plan'], bool):
@@ -613,7 +627,8 @@ def plan_revision(job):
                          'duration':job['duration'],
                          'allocation':json.loads(path.read_text(encoding='utf-8')),
                          'segments':[{k:s.get(k) for k in ('index','start','seconds','frames',
-                                      'model_frames','director_plan','direction_ending_contract')}
+                                      'model_frames','director_plan','direction_ending_contract') +
+                                     (('audio_evidence',) if job['request'].get('music_structure') else ())}
                                      for s in job['segments']]})
 
 

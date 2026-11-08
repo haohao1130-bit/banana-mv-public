@@ -119,3 +119,22 @@ Banana MV is a self-hosted Colab music-video workflow with local prompt rewritin
 本倉庫根目錄只保留正式生成筆記本 `Banana_MV_Public.ipynb`。舊 T8 攝影政策 A/B 測試已停用，請使用 main 分支。這與正式生成所需的 H3 Audio T8 音訊鎖定節點不同，音訊節點仍保留。
 
 回爐／重拍使用同目錄分段版本檔（例如 `00_raw_v2.mp4`、`00_part_v2.mp4`），先預覽、選好各段版本，再確認凝丹／合成。重拍不自動替換成片。詳見 [版本與回爐說明](docs/clip_review.md)。
+
+### 音樂結構分析
+
+
+前端「音樂結構分析」會先以 All-In-One 的 harmonix-all 模型分析整首原曲，
+輸出 BPM、節拍、小節重拍及主歌／副歌／橋段／Solo 等段落預測。
+資料與既有強弱／起音／停頓一起交給全曲 9B，再換算為各段本地秒數交給攝影提示詞。
+段落標籤可能錯誤，不代表確定的樂器、歌詞或高潮；不以音量直接冒充副歌。
+
+重新執行 Colab 安裝格會建立 `.music-venv`，安裝固定 revision 的
+`openmirlab/all-in-one-infer`，不修改 ComfyUI 的 Python 環境。
+分析使用 CPU 與獨立子程序，首次分析會下載原作者模型；最多 20 分鐘，失敗明確停止，
+詳情保存在專案 `music_structure.log`。原曲不被修改。
+可關閉結構分析保留既有聲學分析做對照；歷史專案不會自動啟用。
+「先搓丹方」可展開段落預測，核准後沿用同一份分析與丹方，不重新分析。
+
+這與 H3 的全參考模式（Omni-reference／Ref2VA）不同：後者讓生成器參考音訊，
+本功能讓上游故事導演取得可檢查的音樂時間資訊，沒有替 9B 加入直接音訊輸入能力。
+來源：https://github.com/mir-aidj/all-in-one 、https://github.com/openmirlab/all-in-one-infer
