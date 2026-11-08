@@ -80,56 +80,19 @@ Keep lip movement compatible with the supplied audio; add no new vocal material.
 """
 
 
-AUTO_FILMING = """Direct the visual sequence first: decide what the viewer sees, how attention moves
-between performance, action details, reactions and environment, and how those images
-connect. Invent the coverage yourself from the current beat and adaptation policy;
-the user need not supply a shot list. Select coverage before framing a visible singer
-for readable lip sync. A whole event need not remain on the singer's face.
-Then complete a concrete shooting decision for EVERY Shot before writing the final
-prompt. Treat the following as required decision slots; choose their values freely
-from the assigned events, references, genre and musical context:
-1. TIME AND CONTINUITY: allocate the shot's local start and end within the clip.
-Carry the preceding action state, positions, held objects and consequences forward,
-including time off-screen. Budget readable actions and reactions across the full
-interval; a technical clip boundary never calls for a pose hold or action stop.
-2. SUBJECT AND ACTION: identify the visible subject and reference identity, the
-attention or gesture target, the visible action progression and its end state.
-3. CAMERA AND PERSPECTIVE: choose the camera's location relative to the subject,
-height, viewing angle, shot size and perspective. Express lens effects concretely
-when useful, such as spatial depth or compression; numerical focal lengths are optional.
-4. COMPOSITION AND SPACE: place the subject in the frame with a clear scale; specify
-foreground and background relationships, depth, gaze or movement direction and focus.
-Describe the visible environment where an empty scene itself is the subject.
-5. CAMERA MOVEMENT: choose a static camera or a specific movement. For movement,
-state its direction, target, extent and speed; coordinate it with the visible action.
-6. LIGHTING: choose scene-consistent light direction and quality, contrast and the
-illuminated visual focus, at the selected photographic intensity.
-Resolve every slot as an executable choice. A shot description states what is visible
-and how it changes, rather than merely naming a cinematic technique.
-Write these decisions naturally inside each Shot of detailed_description, using the
-native guide's Shot labels and local cut times. The first shot begins at zero without
-a timestamp; each later shot starts at its cut time, and the last ends at clip duration.
-Keep the decision worksheet internal; deliver the existing native sections only.
-Give adjacent shots independently chosen viewpoints and compositions serving their
-attention shifts. Connect them through the same ongoing event and spatial relationships.
-Develop compatible staging and performance freely within the assigned story;
-primary_mode guides the passage without prescribing every shot's method.
+AUTO_FILMING = """Direct concrete, expressive shots using the supplied H3 camera and
+shot-writing guide. Choose focal subject, position, viewpoint, composition, motion,
+lighting and attention shifts from the commissioned event; never impose a fixed
+shot count or camera recipe. Carry each event and its physical state through cuts.
+A clip boundary is not a story ending. Preserve source-song performance, the
+assigned vocalist's lip sync, and changes in visual energy motivated by the music.
 """
 
-DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial coverage, not just camera
-movement. Separate changes of storyline from changes of viewpoint within a scene.
-For an energetic passage with several distinct action or performance accents, use
-purposeful short-shot coverage within that scene as well as intercuts. A scene visit
-is not automatically one shot. Give each actual cut its own numbered Shot and local
-cut time in detailed_description, with a distinct composition and continuing action.
-Select viewpoints that reveal a meaningful subject, spatial relationship, action
-turn, reaction, performance detail or visual accent; do not merely rename the same
-framing. A push-in, pan or subject moving closer remains one shot, not an editorial cut.
-Choose flexible lengths with no minimum duration or fixed shot quota. Keep contact,
-response and vocal phrases readable across cuts. Specify the outgoing action state
-and the next view's new visual focus so a cut advances the same ongoing event.
-Honor explicit continuous-take requests and the assigned ending. Design each other
-shot length from its visual function, rather than defaulting to sustained coverage.
+DYNAMIC_EDITING = """Use motivated, numbered cuts when the current music or
+story benefits from a change of viewpoint, action detail, reaction, performance
+or parallel scene. A camera move is not a cut. Choose shot duration freely; do
+not cut at every beat, repeat completed action or force a closing pose.
+Honor commissioned one-take shots and preserve vocal phrases across edits.
 """
 
 CLIP_INTENSITY = {
@@ -359,6 +322,56 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                             'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
+def validate_native_mv_format(prompt, seconds):
+    """Check official Ref2VA shot timing and explicit speaker bindings, not story semantics.
+
+    Legacy prose-only outputs are accepted for saved/older workflows; native
+    six-section outputs receive deterministic structure and timeline checks.
+    """
+    from banana_mv.direction_contract import validate_h3_sections
+    if not re.search(r'^\s*(?:subject_definitions|detailed_description)\s*:',prompt,re.M):
+        return prompt
+    validate_h3_sections(prompt)
+    match=re.search(r'^\s*detailed_description\s*:(.*?)^\s*overall_soundscape\s*:',prompt,re.M|re.S)
+    if not match:
+        raise ValueError('Ref2VA 缺少詳細分鏡區塊。')
+    body=match.group(1).strip()
+    shots=list(re.finditer(r'\[Shot\s+(\d+)\]',body))
+    if not shots or len(shots)!=len(re.findall(r'\[Shot\b',body)):
+        raise ValueError('Ref2VA 詳細分鏡需使用 [Shot N]。')
+    previous=0.0
+    for i,shot in enumerate(shots):
+        if int(shot.group(1))!=i+1:
+            raise ValueError('分鏡必須從 [Shot 1] 開始連號。')
+        end=shots[i+1].start() if i+1<len(shots) else len(body)
+        description=body[shot.end():end]
+        timecode=re.match(r'\s*At\s+(\d{2}):(\d{2})\.(\d{3})\s*,?',description)
+        if i==0 and timecode:
+            raise ValueError('第一鏡 [Shot 1] 不需要切鏡時間碼。')
+        if i and not timecode:
+            raise ValueError(f'第 {i+1} 鏡需使用 At MM:SS.mmm。')
+        if timecode:
+            minute,second,millis=map(int,timecode.groups())
+            timestamp=minute*60+second+millis/1000
+            if second>=60 or not previous<timestamp<float(seconds):
+                raise ValueError(f'第 {i+1} 鏡時間碼必須遞增且小於 {seconds:g} 秒。')
+            previous=timestamp
+            description=description[timecode.end():]
+        if not description.strip():
+            raise ValueError(f'第 {i+1} 鏡缺少畫面描述。')
+    # H3 (S1)/(S2) represent global voices, including copied source-song voices.
+    # Do not require <d> or ban speaker markers: this is source-audio reuse.
+    speaker_to_subject={}
+    subject_to_speaker={}
+    for subject,speaker in re.findall(r'<Subject\s+(\d+)>\s*\(S(\d+)\)',prompt):
+        if ((speaker in speaker_to_subject and speaker_to_subject[speaker]!=subject) or
+            (subject in subject_to_speaker and subject_to_speaker[subject]!=speaker)):
+            raise ValueError('同一個 (Sx) 發聲者不可對應不同人物，人物發聲者 ID 亦不可變動。')
+        speaker_to_subject[speaker]=subject
+        subject_to_speaker[subject]=speaker
+    return prompt
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
@@ -464,13 +477,13 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                                    'contract_check_calls':0}
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
-            prompt=normalize_mv_prompt(_text(raw),len(refs))
+            prompt=validate_native_mv_format(normalize_mv_prompt(_text(raw),len(refs)),segment['seconds'])
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
             return prompt
         except ValueError as error:
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
-            attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
+            attempts=parts+[('text','Return only the current native H3 prompt. Fix H3 native formatting, shot timing or connected media only: '+str(error))]
 
 
