@@ -177,7 +177,13 @@ Extract shared SETUP from the user's fixed world, reference and vocal-role setti
 Keep their original wording and distinct locations; do not summarize or redesign them.
 SETUP will be sent to every clip director as FIXED REFERENCE SETTINGS.
 Include explicit name/role-to-<Picture N> bindings for every supplied actor and location,
-fixed geography, vocal duties and hard restrictions.
+fixed geography, vocal duties and invariant performance rules.
+Separate invariant rules (who sings, actor identity, separate locations) from story
+outcomes (who wins, an award, a final gag or final pose). A required outcome is still
+a plot event, never an invariant reference rule. Put the whole-work outcome in the
+separate STORY OUTCOME block for upstream planning only, then allocate its actual
+events to the CLIP commissions that perform them. STORY OUTCOME is NOT forwarded
+to clip directors. Do not duplicate it inside SETUP under "hard restrictions".
 When the brief requests unreferenced supporting roles, CREATE their fixed designs in
 SETUP before allocating clips: a stable name/role, distinctive appearance, costume,
 instrument/prop and home position/location for each. Follow requested adult status
@@ -225,7 +231,9 @@ the decisive action and establish the result; the tail continues that result.
 Do not hide the ending from the interval assigned to perform it.
 Use exactly these plain-text boundaries, every requested index, then END:
 === SETUP ===
-Original fixed world, separate scene definitions, reference roles and singing assignments.
+Original fixed world, separate scene definitions, reference roles and singing assignments only.
+=== STORY OUTCOME ===
+Whole-work outcome for upstream planning only. Its events must also appear in their assigned CLIP commissions.
 === CLIP 0 action ===
 Current situation and events for interval 0 only.
 === CLIP 1 story ===
@@ -275,7 +283,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
         timeline.append({k:seg[k] for k in ('index','start','seconds')} | {
             'local_srt':excerpt(req,seg),'audio_evidence':seg.get('audio_evidence',{}),
             'ending':clip_ending(req,dict(seg,direction_ending_contract=contract))})
-    task={'format':'isolated_shoot_briefs_v2',
+    task={'format':'isolated_shoot_briefs_v3',
           'brief':map_image_mentions(req.get('prompt',''),len(originals)),
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'style':req.get('director','auto'),'lyrics':req.get('lyrics',''),
@@ -286,7 +294,8 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
     fingerprint=digest(task)
     # Old schema-5 jobs did not fingerprint the two directing controls.
     old_task=dict(task,format='isolated_shoot_briefs_v1')
-    legacy_fingerprints={digest(old_task),digest({k:v for k,v in old_task.items()
+    legacy_fingerprints={digest(dict(task,format='isolated_shoot_briefs_v2')),
+                             digest(old_task),digest({k:v for k,v in old_task.items()
                                if k not in ('intensity','dynamic_cuts')})}
     path=Path(work)/'director_plan.json'
     if path.is_file():
@@ -313,7 +322,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
         try:
             from banana_mv.story_plan import direct_delivery
             text=_text(raw)
-            setup=re.match(r'^===\s*SETUP\s*===\s*\n(.*?)(?=^===\s*CLIP\s)',text,re.S|re.M)
+            setup=re.match(r'^===\s*SETUP\s*===\s*\n(.*?)(?=^===\s*(?:STORY OUTCOME\s*===|CLIP\s))',text,re.S|re.M)
             if not setup:raise SceneStateError('分段大綱缺少 SETUP 共用設定。')
             shared=_bound(setup[1].strip(),len(originals))
             delivery=direct_delivery(text)
@@ -329,6 +338,10 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             _check_distinct_events(result)
             plan={'version':5,'shared_setup':shared,'segments':result,'visual_verified':False,
                   'ending_contract':task['ending_contract'],'project_scope':req.get('project_scope','full')}
+            outcome=re.search(r'^===\s*STORY OUTCOME\s*===\s*\n(.*?)(?=^===\s*CLIP\s)',text,re.S|re.M)
+            if outcome:
+                # Upstream planning/audit only. Never included in fixed_reference_settings.
+                plan['story_outcome']=outcome[1].strip()
             plan['content_sha256']=digest(plan);plan['input_sha256']=fingerprint
             atomic_json(path,plan)
             return plan
@@ -372,7 +385,18 @@ changes and selected downbeats to motivate action payoffs, camera reveals and
 performance highlights. Write their timing into the shots, not an analysis appendix.
 Keep anticipation and contrast; do not cut on every beat. Labels can be wrong and
 do not identify instruments or override vocal roles. Use loudness only as acoustic evidence.
+The Current clip script is the authority for events, their causal order and the
+local end state. fixed_reference_settings supplies identities, appearances, locations
+and invariant performance rules only; it cannot authorize another plot event.
+If legacy fixed settings mention a whole-work outcome or final image, do not stage
+it unless this clip's commission explicitly assigns it. Neither a required eventual
+outcome nor an available prop makes it happen in this interval.
 Use the current clip's assigned beat and end state as the scope for visual development.
+Reach that local end state and stop there; a victory does not itself authorize an
+award ceremony or final gag. Do not add a future-event teaser shot. The interval
+explicitly assigned the resolution must still film it, including a preceding full
+interval assigned decisive events before a tiny residual tail. A first_frame is
+already visible continuity, not permission to invent the next plot milestone.
 Apply the adaptation policy below within that local scope. The commission supplies
 the needed current facts, opening state, events and local end state. Design compelling
 performance, coverage and montage to realize it. Use its assigned locations and asset roles;

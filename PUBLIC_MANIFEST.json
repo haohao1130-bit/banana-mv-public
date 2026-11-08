@@ -96,7 +96,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "00a803419ba56c7d09bc1d095ddca2124641c9c832152ac15e112907e592d2a1"
+      "sha256": "ddfe953d4e45ee6f061b35e8350e185b08fd06e40816e92d1416bc12b985de95"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -220,7 +220,7 @@
     },
     {
       "path": "tests/test_reference_handoff.py",
-      "sha256": "8bcb2d41b0018b030e4b190850fb429fdf5db83cb4cd9edf0b523985ba4bc706"
+      "sha256": "c8c62d85b15f7220bf86ac57c6c6a377d44a9ecdc0a5a161e61b1544eee01641"
     },
     {
       "path": "tests/test_runtime.py",
@@ -252,7 +252,7 @@
     },
     {
       "path": "tests/test_story_scope.py",
-      "sha256": "4f0473bec1d891037a384d770f663ee73ef7c80a14f7a5281cb442681ed3ae5a"
+      "sha256": "ec8264bed2d2424ab62e4e3e5b2c6b7acda024d0447f24a7b718cfc57acf1432"
     },
     {
       "path": "tests/test_takes.py",
