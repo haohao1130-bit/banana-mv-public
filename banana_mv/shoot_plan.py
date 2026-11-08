@@ -157,6 +157,9 @@ background displacement where relevant. Commit to direction, extent and speed.
 Keep important contact, reactions, vocal performance and causal results legible;
 respect explicit continuous-take requests and the allocated ending. Photographic
 intensity changes the filmmaking, not the assigned characters, vocal roles or outcome.
+Cinematic burst is not sped-up playback or universally faster bodies/cameras. Preserve
+believable acceleration, contact, follow-through and deceleration. Create impact via
+motivated cuts, viewpoints, timing and light; do not cram extra actions per second.
 """
 }
 
