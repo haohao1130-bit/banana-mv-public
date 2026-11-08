@@ -90,7 +90,8 @@ prompt. Treat the following as required decision slots; choose their values free
 from the assigned events, references, genre and musical context:
 1. TIME AND CONTINUITY: allocate the shot's local start and end within the clip.
 Carry the preceding action state, positions, held objects and consequences forward,
-including time off-screen. Budget readable actions and results, then ending holds.
+including time off-screen. Budget readable actions and reactions across the full
+interval; a technical clip boundary never calls for a pose hold or action stop.
 2. SUBJECT AND ACTION: identify the visible subject and reference identity, the
 attention or gesture target, the visible action progression and its end state.
 3. CAMERA AND PERSPECTIVE: choose the camera's location relative to the subject,
@@ -395,8 +396,11 @@ If legacy fixed settings mention a whole-work outcome or final image, do not sta
 it unless this clip's commission explicitly assigns it. Neither a required eventual
 outcome nor an available prop makes it happen in this interval.
 Use the current clip's assigned beat and end state as the scope for visual development.
-Reach that local end state and stop there; a victory does not itself authorize an
-award ceremony or final gag. Do not add a future-event teaser shot. The interval
+Reach the commissioned local narrative state without acting out a closing beat:
+for continuing intervals, performance, movement, reactions and ongoing action
+remain in progress through the technical boundary; do not stage a pause, victory
+pose, reset, farewell, fade, or miniature ending to mark the clip's last second.
+A victory does not itself authorize an award ceremony or final gag. Do not add a future-event teaser shot. The interval
 explicitly assigned the resolution must still film it, including a preceding full
 interval assigned decisive events before a tiny residual tail. A first_frame is
 already visible continuity, not permission to invent the next plot milestone.
@@ -432,7 +436,13 @@ music track, not N/A. Optional external effects are mixed separately, not genera
 by this filming prompt. Their policy is sparse, event-motivated accents with music
 and lead vocals dominant; no continuous crowd bed, repetitive effects or invented dialogue.
 Keep microphone grip and free-hand gestures physically consistent.
-Follow this clip's ending; an ongoing clip needs no whole-work finale.
+Follow the supplied whole-work ending scope; a continuing clip must not create
+its own ending, stopping pose or dramatic punctuation. A clip's last frame is
+just the next film interval's incoming state, not a cue to end the performance.
+For later clips, the first shot resumes the prior story/action line from its
+current consequence rather than reintroducing or restarting it. Preserve free
+music-video intercuts and parallel storylines: switching strands or camera
+angles does not reset the timeline of any strand.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """
     text+='\n'+adaptation_direction(req)
