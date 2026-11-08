@@ -204,7 +204,7 @@
     },
     {
       "path": "tests/test_runtime.py",
-      "sha256": "cd34270197108af76e1495bd3d8a28a8909e8536266762058e00ed0fef6d22cd"
+      "sha256": "c871fc879d40a01aacb5d3f314425a295241e8b94f610f4ae120669f095f8a53"
     },
     {
       "path": "tests/test_scene_state.py",
@@ -240,7 +240,7 @@
     },
     {
       "path": "tools/colab_runtime.py",
-      "sha256": "8b6949b9de8ee7eb4fc1b54666f57cac11272cf9aaeac5dd05771bc919a6e5e9"
+      "sha256": "557601f561461bac66e5092ddfe2a4e0f1bbdc4a656bc8060ebe5b5cd859b4a4"
     },
     {
       "path": "tools/public_clone.py",
