@@ -138,3 +138,8 @@ Banana MV is a self-hosted Colab music-video workflow with local prompt rewritin
 這與 H3 的全參考模式（Omni-reference／Ref2VA）不同：後者讓生成器參考音訊，
 本功能讓上游故事導演取得可檢查的音樂時間資訊，沒有替 9B 加入直接音訊輸入能力。
 來源：https://github.com/mir-aidj/all-in-one 、https://github.com/openmirlab/all-in-one-infer
+
+
+固定角色／圖片與場景設定現在會交接給各段攝影導演；當段狀態可覆蓋初始服裝與道具。未來事件留給負責段落，極短尾段前的完整段落先建立結局。更新後請建立新任務重新搓丹方，舊提示詞不會自動改寫。
+
+選填「音效／短配音軌」支援另行製作的純音效軌，與原曲同起點同長度、空白保留靜音；不應含歌曲本身。系統限制有聲佔比≤25%、單次約≤3秒，降低音效音量後在成片與回爐凝丹時混入。未提供則沿用原曲。此功能不自動產生音效／配音，不辨識搶唱或音效語意，仍需試聽確認。

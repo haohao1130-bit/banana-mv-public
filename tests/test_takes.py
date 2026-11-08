@@ -104,6 +104,18 @@ class TakeTests(unittest.TestCase):
         self.assertEqual(takes.take_source(self.job,0),self.work/'00_part_v2.mp4')
         self.assertTrue(takes.take_dir(self.job,0,'original').exists())
 
+    def test_retakes_keep_saved_effects_stem_and_gain_on_new_master(self):
+        fx=self.work/'sources/effects.wav';fx.write_bytes(b'sparse effects')
+        self.job['sources']['effects']='sources/effects.wav'
+        self.job['effects_mix']={'gain':.04,'coverage':.1}
+        app.write_state(self.job)
+        self.assemble.side_effect=lambda parts,song,dest,*args,**kwargs:dest.write_bytes(b'mixed master')
+        takes.retake(self.job['id'],[1]);job=self.run_background()
+        job=self.choose_latest(job,[1]);self.finish(job)
+        self.assertEqual(self.assemble.call_args.kwargs['effects'],{'path':fx,'gain':.04})
+        self.assertEqual(fx.read_bytes(),b'sparse effects')
+        self.assertEqual((self.work/'sources/song.wav').read_bytes(),b'original song')
+
     def test_multi_select_only_renders_selected_and_assembles_once(self):
         result=takes.retake(self.job['id'],[2,1,2])
         self.assertEqual(result['retake']['indices'],[1,2])
@@ -424,3 +436,4 @@ with patch('http.server.ThreadingHTTPServer') as http:
 
 
 if __name__=='__main__':unittest.main()
+

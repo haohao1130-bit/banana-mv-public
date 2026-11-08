@@ -238,7 +238,7 @@ def apply_takes(job,choices,song):
         master=None
         if complete:
             masters.preserve_current(job,work)
-            app.assemble(parts,song,final,job['duration'],job['output_size'])
+            app.assemble(parts,song,final,job['duration'],job['output_size'],**({'effects':app.effects_source(job)} if job.get('effects_mix') else {}))
             master=masters.archive(job,work,final,'selection' if job.get('retake',{}).get('status')=='selecting' else 'retake',choices)
         with PREVIEW_LOCK:
             for i,take_id in choices.items():
@@ -369,3 +369,4 @@ def selection_worker(job,choices,song,old_status):
     finally:
         try:app.write_state(job)
         finally:app.GPU_LOCK.release()
+

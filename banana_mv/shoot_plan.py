@@ -17,8 +17,8 @@ from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_
 # in the user message. No additional writer or fixed camera recipe is involved.
 NATIVE_ENHANCER_SYSTEM = (
     "You enhance prompts for reference-conditioned video and audio generation (Ref2VA). "
-    "Infer reference roles from the user's prompt and supplied media. "
-    "Preserve intent and explicit constraints while adding relevant visual and sound details. "
+    "Use the explicit fixed reference bindings; never reassign an actor by appearance or picture order. "
+    "Preserve intent and explicit constraints while developing visual details. Source-audio and optional effects rules below override sound examples in the guide. "
     "Follow the guide below and return only its six sections in order, "
     "with plain-text headers on separate lines and no Markdown fences.\n\n"
 )
@@ -165,7 +165,12 @@ turns each assigned beat into precise shots. Keep both parallel strands in each
 normal-length interval when requested; each strand advances in its own fixed space.
 Extract shared SETUP from the user's fixed world, reference and vocal-role settings.
 Keep their original wording and distinct locations; do not summarize or redesign them.
-SETUP is an upstream planning record only; the clip director will NOT receive it.
+SETUP will be sent to every clip director as FIXED REFERENCE SETTINGS.
+Include explicit name/role-to-<Picture N> bindings for every supplied actor and location,
+fixed geography, vocal duties and hard restrictions. Do not put plot chronology,
+future events, the specified story outcome or the final shot into SETUP.
+Each local script must also identify its active actors by their bound <Picture N>.
+The clip's current state takes precedence over reference clothing after a change.
 Write each CLIP as a self-contained local shooting commission. Include only the
 reference identities, relevant location facts, vocal duties and hard rules needed
 for this interval, its opening state, visible events and required local end state.
@@ -195,6 +200,11 @@ occurs once; later intervals continue from its consequence. A short tail sustain
 completes the ending already underway, not another complete replay of the ending.
 Do not shorten it into generic beats or add unrelated plot. Do not add shot lists;
 retain special camera directions already supplied by the user with their events.
+Use the timeline ending phases when allocating the specified outcome. A resolving
+interval receives the actual local ending events, not a vague hint to end later.
+If only a short residual tail remains, the preceding full interval must complete
+the decisive action and establish the result; the tail continues that result.
+Do not hide the ending from the interval assigned to perform it.
 Use exactly these plain-text boundaries, every requested index, then END:
 === SETUP ===
 Original fixed world, separate scene definitions, reference roles and singing assignments.
@@ -313,10 +323,12 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     def connected(text):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
+    fixed_setup=segment.get('fixed_reference_settings','')
     context={'seconds':segment['seconds'],'primary_mode':row['mode'],
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
+    if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     system=NATIVE_ENHANCER_SYSTEM+guide
@@ -339,7 +351,11 @@ the needed current facts, opening state, events and local end state. Design comp
 performance, coverage and montage to realize it. Use its assigned locations and asset roles;
 keep separate locations distinct, intercutting them rather than merging their sets or
 placing their casts in one shared frame. Select cast and supporting coverage to serve
-the current beat and adaptation policy, preserving the supplied identity bindings.
+the current beat and adaptation policy, preserving fixed_reference_settings bindings.
+These settings identify assets, not a mandatory cast list. Never turn the singer
+into the challenger or substitute <Picture 1> for another named actor.
+Do not infer an actor's role from its apparent species, outfit or upload position.
+Local current-state changes override initial clothing/props while identity stays fixed.
 Available reference images do not require unused characters or locations to appear.
 Use the actual reference appearance, not a generic version of its species or object type.
 Preserve current looks and props rather than resetting to
@@ -348,7 +364,16 @@ All shot times are LOCAL and within the target duration; alignment
 padding adds no story time. Continue actions across cuts, without replaying the event.
 Use only connected pictures and <Audio 1>: fully_copy. The source audio is supplied to
 H3, not heard by you. Only the assigned vocalist may lip-sync. Add no new speech,
-lyrics, subtitles, sound layers or replacement song. Supplied SRT is timing evidence, not dialogue.
+lyrics, subtitles or a replacement song. Supplied SRT is timing evidence, not dialogue.
+Describe <Audio 1> only as the supplied unchanged source track; you have not heard it.
+Do not claim it contains a whistle, crowd, instruments, low energy or silence unless
+explicitly supported by the supplied evidence. Visible instruments are not heard evidence.
+For source-only delivery, overall_soundscape states source audio unchanged; do not
+invent an audible arena/stage ambience. non_diegetic_music identifies the supplied
+music track, not N/A. Optional external effects are mixed separately, not generated
+by this filming prompt. Their policy is sparse, event-motivated accents with music
+and lead vocals dominant; no continuous crowd bed, repetitive effects or invented dialogue.
+Keep microphone grip and free-hand gestures physically consistent.
 Follow this clip's ending; an ongoing clip needs no whole-work finale.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """

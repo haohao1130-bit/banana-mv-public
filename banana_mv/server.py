@@ -363,6 +363,7 @@ def worker(job, cfg, original, song, drive):
                 seg['director_plan'] = row
                 if plan['version']==5:
                     seg.pop('shoot_setup',None)
+                    seg['fixed_reference_settings']=plan.get('shared_setup','')
                     seg['direction_ending_contract']=plan['ending_contract']
                 if plan['version']==4:
                     seg['prompt']=row['prompt']
@@ -498,7 +499,7 @@ def worker(job, cfg, original, song, drive):
         job['status']='assembling'; write_state(job)
         from banana_mv import masters
         masters.preserve_current(job,work)
-        assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'])
+        assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'],**({'effects':effects_source(job)} if job.get('effects_mix') else {}))
         master=masters.archive(job,work,work/'final.mp4','resume' if job.get('current_master') else 'original')
         job['current_master']=master['version']
         try:
@@ -572,6 +573,12 @@ def start(req):
     song = backend.LIBRARY/music['file']
     drive = backend.LIBRARY/vocal['file'] if vocal else song
     seconds = source_audio_duration(song)
+    effects = backend.asset(req['effects_id']) if req.get('effects_id') else None
+    effects_info = None
+    if effects:
+        if effects['kind']!='audio':raise ValueError('音效／配音軌必須是音訊。')
+        from banana_mv.sound_effects import validate_effects
+        effects_info=validate_effects(backend.LIBRARY/effects['file'],song,seconds)
     plan = segments(seconds,float(req.get('segment_seconds',15)))
     for seg in plan:
         seg.update(song_seconds=seconds,segment_count=len(plan))
@@ -609,6 +616,12 @@ def start(req):
              'image_comfy':images_comfy[0], 'images_comfy':images_comfy,
              'note':'尚未完成 Colab GPU 實測；末幀接續不攜帶前段動作 latent。'}
         save_sources(job,original,song,drive)
+        if effects:
+            src=backend.LIBRARY/effects['file']
+            dest=job_dir(job_id)/'sources'/('effects'+src.suffix.lower())
+            shutil.copyfile(src,dest)
+            job['sources']['effects']=str(dest.relative_to(job_dir(job_id)))
+            job['effects_mix']=effects_info
         original,song,drive = project_inputs(job,cfg)
         write_state(job)
         threading.Thread(target=worker,args=(job,cfg,original,song,drive),daemon=True).start()
@@ -626,8 +639,10 @@ def plan_revision(job):
                          'sources':job.get('sources'),'images_comfy':job['images_comfy'],
                          'duration':job['duration'],
                          'allocation':json.loads(path.read_text(encoding='utf-8')),
+                         **({'effects_mix':job['effects_mix']} if job.get('effects_mix') else {}),
                          'segments':[{k:s.get(k) for k in ('index','start','seconds','frames',
                                       'model_frames','director_plan','direction_ending_contract') +
+                                     (('fixed_reference_settings',) if 'fixed_reference_settings' in s else ()) +
                                      (('audio_evidence',) if job['request'].get('music_structure') else ())}
                                      for s in job['segments']]})
 
@@ -697,6 +712,13 @@ def save_sources(job, originals, song, drive):
     job['sources'] = {'images':images,'song':song_name,'drive':drive_name}
 
 
+def effects_source(job):
+    if not job.get('effects_mix'):return None
+    path=backend.safe_child(job_dir(job['id']),job['sources']['effects'])
+    if not path.is_file():raise ValueError('專案音效軌遺失，停止混音以免漏掉已確認素材。')
+    return {'path':path,'gain':job['effects_mix']['gain']}
+
+
 def project_inputs(job, cfg):
     if 'sources' not in job:
         req = job['request']
@@ -714,6 +736,7 @@ def project_inputs(job, cfg):
     drive = backend.safe_child(job_dir(job['id']),source['drive'])
     if not all(p.is_file() for p in originals+[song,drive]):
         raise ValueError('專案原始素材遺失，請還原 sources 資料夾。')
+    if job.get('effects_mix'):effects_source(job)
     names = job['images_comfy']
     if len(names) != len(originals):
         raise ValueError('專案圖片數量不符。')

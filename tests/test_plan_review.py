@@ -47,6 +47,7 @@ class PlanReviewTests(unittest.TestCase):
         self.assertEqual(saved['plan_revision'],server.plan_revision(saved))
         self.assertIn('CURRENT_COUNTER',saved['segments'][1]['director_plan']['event'])
         self.assertTrue(saved['plan_preview_setup'])
+        self.assertEqual(saved['segments'][0]['fixed_reference_settings'],saved['plan_preview_setup'])
         self.assertFalse(list(self.work.glob('*_workflow*.json')))
 
     def test_approval_reuses_exact_plan_and_only_then_generates_clips(self):
