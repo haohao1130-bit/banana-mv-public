@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 
 from banana_mv import server as app
 from banana_mv import takes
-from banana_mv import masters
 
 
 class TakeTests(unittest.TestCase):
@@ -59,80 +58,19 @@ class TakeTests(unittest.TestCase):
         self.assertFalse(app.GPU_LOCK.locked())
         return app.read_state(self.job['id'])
 
-    def choose_latest(self,job,indices):
-        for i in indices:takes.select_take(job['id'],i,job['segments'][i]['takes'][-1]['id'])
-        return app.read_state(job['id'])
-
-    def finish(self,job):
-        takes.condense(job['id'],job.get('selection_revision'))
-        return self.run_background()
-
-    def test_flat_versions_mix_choices_without_overwriting_earlier_media(self):
-        (self.work/'00_raw.mp4').write_bytes(b'original raw')
-        takes.retake(self.job['id'],[0,2]);job=self.run_background()
-        self.assertFalse((self.work/'takes').exists())
-        first=job['segments'][0]['takes'][-1]['id']
-        self.assertEqual(takes.take_file(job,0,first,'part.mp4').name,'00_part_v2.mp4')
-        self.assertEqual((self.work/'00_raw_v1.mp4').read_bytes(),b'original raw')
-        self.assertEqual((self.work/'00_raw_v2.mp4').read_bytes(),b'new')
-        job=self.choose_latest(job,[0,2])
-        app.backend.comfy_download.side_effect=lambda c,i,d:d.write_bytes(b'third')
-        takes.retake(job['id'],[0]);job=self.run_background()
-        third=job['segments'][0]['takes'][-1]['id']
-        self.assertEqual(takes.take_version(job,0,third),3)
-        self.assertEqual((self.work/'00_part_v2.mp4').read_bytes(),b'new')
-        self.assertEqual((self.work/'00_part_v3.mp4').read_bytes(),b'third')
-        job=self.finish(job)
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'new|old1|new|old3')
-        job=takes.select_take(job['id'],0,third);job=self.finish(job)
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'third|old1|new|old3')
-        self.assertEqual(takes.preview(job,0,first),self.work/'00_part_v2.mp4')
-
-    def test_legacy_migration_does_not_pair_old_root_raw_with_adopted_retake(self):
-        row=self.job['segments'][0]
-        row['takes']=[{'id':'original','status':'ready','seed':42},
-                      {'id':'abcdefabcdef','status':'ready','seed':43}]
-        row['selected_take']='abcdefabcdef'
-        for tid,content in [('original',b'old0'),('abcdefabcdef',b'new')]:
-            directory=takes.take_dir(self.job,0,tid);directory.mkdir(parents=True)
-            (directory/'part.mp4').write_bytes(content)
-        (takes.take_dir(self.job,0,'abcdefabcdef')/'raw.mp4').write_bytes(b'new raw')
-        (self.work/'00_raw.mp4').write_bytes(b'old raw')
-        takes.archive_original(self.job,0)
-        self.assertEqual((self.work/'00_raw_v1.mp4').read_bytes(),b'old raw')
-        self.assertEqual((self.work/'00_raw_v2.mp4').read_bytes(),b'new raw')
-        self.assertEqual(takes.take_source(self.job,0),self.work/'00_part_v2.mp4')
-        self.assertTrue(takes.take_dir(self.job,0,'original').exists())
-
-    def test_retakes_keep_saved_effects_stem_and_gain_on_new_master(self):
-        fx=self.work/'sources/effects.wav';fx.write_bytes(b'sparse effects')
-        self.job['sources']['effects']='sources/effects.wav'
-        self.job['effects_mix']={'gain':.04,'coverage':.1}
-        app.write_state(self.job)
-        self.assemble.side_effect=lambda parts,song,dest,*args,**kwargs:dest.write_bytes(b'mixed master')
-        takes.retake(self.job['id'],[1]);job=self.run_background()
-        job=self.choose_latest(job,[1]);self.finish(job)
-        self.assertEqual(self.assemble.call_args.kwargs['effects'],{'path':fx,'gain':.04})
-        self.assertEqual(fx.read_bytes(),b'sparse effects')
-        self.assertEqual((self.work/'sources/song.wav').read_bytes(),b'original song')
-
     def test_multi_select_only_renders_selected_and_assembles_once(self):
         result=takes.retake(self.job['id'],[2,1,2])
         self.assertEqual(result['retake']['indices'],[1,2])
         job=self.run_background()
         self.assertEqual(job['status'],'done');self.assertEqual(job['retake']['status'],'done')
-        self.assertEqual(app.backend.queue_prompt.call_count,2);self.assemble.assert_not_called()
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
-        self.assertEqual(job['segments'][1]['selected_take'],'original')
-        job=self.choose_latest(job,[1,2]);self.assemble.assert_not_called()
-        job=self.finish(job);self.assemble.assert_called_once()
+        self.assertEqual(app.backend.queue_prompt.call_count,2);self.assemble.assert_called_once()
         self.assertEqual((self.work/'00_part.mp4').read_bytes(),b'old0')
         self.assertEqual((self.work/'03_part.mp4').read_bytes(),b'old3')
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|new|old3')
         self.assertEqual((self.work/'scene_state.json').read_bytes(),b'original planned ledger')
         for i in (1,2):
             seg=job['segments'][i];self.assertNotEqual(seg['render_seed'],42+i)
-            self.assertEqual((takes.take_file(job,i,'original','part.mp4')).read_bytes(),f'old{i}'.encode())
+            self.assertEqual((takes.take_dir(job,i,'original')/'part.mp4').read_bytes(),f'old{i}'.encode())
             self.assertEqual((self.work/f'{i:02d}_scene_state.json').read_bytes(),b'original planned scene state')
         self.assertIn('&v=',job['video'])
         windows=app.audio_window.call_args_list
@@ -153,18 +91,14 @@ class TakeTests(unittest.TestCase):
         self.assertEqual((self.work/'01_part.mp4').read_bytes(),b'old1')
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
         candidate=job['segments'][1]['takes'][-1]['id']
-        selected=takes.select_take(job['id'],1,candidate)
-        self.assertEqual(selected['pending_takes'],{'1':candidate});self.assemble.assert_not_called()
-        selected=self.finish(selected)
+        takes.select_take(job['id'],1,candidate);selected=self.run_background()
         self.assertEqual(selected['segments'][1]['selected_take'],candidate)
         self.assertEqual(app.backend.queue_prompt.call_count,2) # adoption needs no GPU render
 
     def test_failed_assembly_does_not_replace_current_clips(self):
         self.assemble.side_effect=RuntimeError('ffmpeg failed')
         takes.retake(self.job['id'],[1,2]);job=self.run_background()
-        job=self.choose_latest(job,[1,2]);job=self.finish(job)
         self.assertEqual(job['retake']['status'],'error')
-        self.assertEqual(len(job['pending_takes']),2)
         for i in range(4):self.assertEqual((self.work/f'{i:02d}_part.mp4').read_bytes(),f'old{i}'.encode())
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
@@ -184,8 +118,8 @@ class TakeTests(unittest.TestCase):
         takes.retake(self.job['id'],[1,2]);job=self.run_background()
         sources=[c.args[0] for c in app.last_frame.call_args_list]
         self.assertEqual(sources[0],self.work/'00_part.mp4')
-        first=job['segments'][1]['takes'][-1]['id']
-        self.assertEqual(sources[1],takes.take_file(job,1,first,'part.mp4'))
+        first=job['segments'][1]['selected_take']
+        self.assertEqual(sources[1],takes.take_dir(job,1,first)/'part.mp4')
         self.assertEqual(job['segments'][2]['takes'][-1]['previous_take'],first)
         self.assertEqual((self.work/'03_part.mp4').read_bytes(),b'old3')
 
@@ -201,11 +135,8 @@ class TakeTests(unittest.TestCase):
         self.assertFalse(job['request']['sparse_attention'])
 
     def test_revert_original_reassembles_without_rewriting_or_sampling(self):
-        takes.retake(self.job['id'],[1]);job=self.run_background()
-        job=self.finish(self.choose_latest(job,[1]))
-        job=takes.select_take(self.job['id'],1,'original')
-        self.assertEqual(self.assemble.call_count,1)
-        job=self.finish(job)
+        takes.retake(self.job['id'],[1]);self.run_background()
+        takes.select_take(self.job['id'],1,'original');job=self.run_background()
         self.assertEqual((self.work/'01_part.mp4').read_bytes(),b'old1')
         self.assertEqual(job['segments'][1]['render_seed'],43)
         self.assertEqual(app.backend.queue_prompt.call_count,1)
@@ -227,11 +158,8 @@ class TakeTests(unittest.TestCase):
         self.job['status']='error';self.job['segments'][3]['status']='waiting'
         (self.work/'03_part.mp4').unlink();app.write_state(self.job)
         takes.retake(self.job['id'],[1]);job=self.run_background()
-        self.assertEqual(job['status'],'error');self.assemble.assert_not_called()
-        job=self.choose_latest(job,[1])
-        with self.assertRaisesRegex(ValueError,'未完成'):takes.condense(job['id'])
-        self.assertFalse(app.GPU_LOCK.locked())
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        self.assertEqual(job['status'],'error');self.assertTrue(job['final_stale'])
+        self.assertNotIn('video',job);self.assemble.assert_not_called()
 
     def test_preview_serves_silent_trimmed_part_without_audio_processing(self):
         source=takes.preview(self.job,1)
@@ -240,140 +168,8 @@ class TakeTests(unittest.TestCase):
         app.audio_window.assert_not_called()
         self.assemble.assert_not_called()
 
-    def configure_repair(self):
-        guide=self.root/'guide.md';guide.write_text('NATIVE_GUIDE')
-        self.cfg.update(guides={'ref':str(guide)},rewriter={'model':'9b'})
-
-    def test_local_correction_only_changes_selected_prompt_and_revert_restores_it(self):
-        self.configure_repair()
-        with patch.object(takes,'repair_prompt',return_value='fixed story 1 with closer hands') as repair:
-            takes.retake(self.job['id'],[1,2],{'1':'Only add a hand insert.','2':'  '})
-            job=self.run_background()
-        repair.assert_called_once()
-        self.assertEqual(repair.call_args.args[3],'fixed story 1')
-        self.assertEqual(job['segments'][1]['prompt'],'fixed story 1')
-        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1')
-        job=self.choose_latest(job,[1])
-        takes.retake(self.job['id'],[1]);job=self.run_background()
-        self.assertEqual(app.backend.queue_prompt.call_args.args[1]['7']['inputs']['prompt'],'fixed story 1 with closer hands')
-        self.assemble.assert_not_called()
-        job=self.finish(self.choose_latest(job,[1]))
-        self.assertEqual(job['segments'][1]['prompt'],'fixed story 1 with closer hands')
-        job=takes.select_take(self.job['id'],1,'original');job=self.finish(job)
-        self.assertEqual(job['segments'][1]['prompt'],'fixed story 1')
-        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1')
-
-    def test_failed_local_rewrite_keeps_current_master_and_prompt(self):
-        self.configure_repair()
-        with patch.object(takes,'repair_prompt',side_effect=RuntimeError('9B failed')):
-            takes.retake(self.job['id'],[1],{'1':'Stronger expression.'});job=self.run_background()
-        app.backend.queue_prompt.assert_not_called()
-        self.assertEqual(job['retake']['status'],'error')
-        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1')
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
-
-    def test_master_versions_keep_first_second_and_reverted_complete_movies(self):
-        takes.retake(self.job['id'],[1]);job=self.run_background()
-        job=self.finish(self.choose_latest(job,[1]))
-        self.assertEqual(job['current_master'],2)
-        self.assertEqual((self.work/'final_v001.mp4').read_bytes(),b'old master')
-        second=(self.work/'final_v002.mp4').read_bytes()
-        self.assertEqual(second,(self.work/'final.mp4').read_bytes())
-        job=takes.select_take(self.job['id'],1,'original');job=self.finish(job)
-        self.assertEqual(job['current_master'],3)
-        self.assertEqual((self.work/'final_v002.mp4').read_bytes(),second)
-        self.assertEqual((self.work/'final_v003.mp4').read_bytes(),(self.work/'final.mp4').read_bytes())
-        self.assertEqual(masters.source(job,self.work,'1'),self.work/'final_v001.mp4')
-        described=takes.describe(job)
-        self.assertEqual(described['final_video'],str(self.work/'final.mp4'))
-        self.assertIn('version=1',described['final_versions'][0]['download'])
-        for value in ('../final.mp4','0','999'):
-            with self.assertRaises(ValueError):masters.source(job,self.work,value)
-
-    def test_invalid_correction_payload_does_not_change_project(self):
-        for notes in ([],{'2':'unselected'},{'1':123},{'1':'x'*3001}):
-            with self.subTest(notes=str(notes)[:40]),self.assertRaises(ValueError):
-                takes.retake(self.job['id'],[1],notes)
-            self.assertFalse(app.GPU_LOCK.locked())
-            self.assertEqual(app.read_state(self.job['id']),self.job)
-
-    def test_repair_model_sees_only_current_prompt_notes_and_local_references(self):
-        from PIL import Image
-        self.configure_repair()
-        image=self.root/'actual.png';Image.new('RGB',(8,8)).save(image)
-        self.job['request']['prompt']='WHOLE_STORY_SECRET_FINAL_END'
-        self.job['segments'][0]['shoot_setup']='FUTURE_SETUP_SECRET'
-        dest=self.root/'repair';dest.mkdir()
-        with patch.object(app.backend,'rewrite_local',return_value='<Picture 1> UPDATED_NATIVE <Audio 1>: fully_copy.') as model:
-            result=takes.repair_prompt(self.cfg,self.job,self.job['segments'][0],'LOCAL_ORIGINAL','LOCAL_CORRECTION',[image],None,dest)
-        text=model.call_args.args[1]+model.call_args.args[2][0][1]
-        self.assertIn('LOCAL_ORIGINAL',text);self.assertIn('LOCAL_CORRECTION',text)
-        self.assertNotIn('WHOLE_STORY_SECRET_FINAL_END',text);self.assertNotIn('FUTURE_SETUP_SECRET',text)
-        self.assertIn('UPDATED_NATIVE',result)
-        self.assertTrue((dest/'repair_raw.txt').is_file())
-
-    def test_pending_choices_survive_new_batches_restart_and_cancel_back_to_current(self):
-        takes.retake(self.job['id'],[1]);job=self.run_background()
-        job=self.choose_latest(job,[1]);first=job['pending_takes']['1']
-        takes.retake(self.job['id'],[2]);job=self.run_background()
-        self.assertEqual(job['pending_takes'],{'1':first})
-        job=self.choose_latest(job,[2]);self.assertEqual(len(job['pending_takes']),2)
-        old_revision=job['selection_revision']
-        job=takes.select_take(job['id'],1,'original')
-        self.assertNotIn('1',job['pending_takes']);self.assertIn('2',job['pending_takes'])
-        with self.assertRaisesRegex(ValueError,'更新'):takes.condense(job['id'],old_revision)
-        self.assertFalse(app.GPU_LOCK.locked());self.assemble.assert_not_called()
-        job=self.finish(app.read_state(job['id']))
-        self.assertEqual(job['pending_takes'],{})
-        self.assertEqual((self.work/'01_part.mp4').read_bytes(),b'old1')
-        self.assertEqual(takes.take_source(job,2).read_bytes(),b'new')
-        with self.assertRaisesRegex(ValueError,'先選擇'):takes.condense(job['id'])
-        self.assertEqual(self.assemble.call_count,1)
-
-    def test_failed_condense_can_retry_same_pending_choices_without_resampling(self):
-        takes.retake(self.job['id'],[1,2]);job=self.run_background()
-        job=self.choose_latest(job,[1,2]);pending=copy.deepcopy(job['pending_takes'])
-        self.assemble.side_effect=RuntimeError('ffmpeg failed')
-        failed=self.finish(job)
-        self.assertEqual(failed['pending_takes'],pending)
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
-        self.assemble.side_effect=self.join
-        finished=self.finish(failed)
-        self.assertEqual(finished['pending_takes'],{})
-        self.assertEqual(finished['current_master'],2)
-        self.assertEqual(app.backend.queue_prompt.call_count,2)
-        self.assertEqual((self.work/'final_v001.mp4').read_bytes(),b'old master')
-
-    def test_chain_uses_saved_pending_previous_take_on_a_later_batch(self):
-        self.job['request']['mode']='chain';app.write_state(self.job)
-        takes.retake(self.job['id'],[1]);job=self.run_background()
-        job=self.choose_latest(job,[1]);previous=job['pending_takes']['1']
-        app.last_frame.reset_mock()
-        takes.retake(self.job['id'],[2]);job=self.run_background()
-        self.assertEqual(app.last_frame.call_args.args[0],takes.take_file(job,1,previous,'part.mp4'))
-        self.assertEqual(job['segments'][2]['takes'][-1]['previous_take'],previous)
-        self.assemble.assert_not_called()
-
-    def test_condense_rejects_busy_and_missing_pending_candidate_without_touching_master(self):
-        takes.retake(self.job['id'],[1]);job=self.run_background();job=self.choose_latest(job,[1])
-        app.GPU_LOCK.acquire()
-        with self.assertRaises(ValueError):takes.condense(job['id'])
-        app.GPU_LOCK.release()
-        takes.take_source(job,1,job['pending_takes']['1']).unlink()
-        with self.assertRaises(ValueError):takes.condense(job['id'])
-        self.assertFalse(app.GPU_LOCK.locked());self.assemble.assert_not_called()
-        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
-
 
 class PreviewHTTPTests(unittest.TestCase):
-    def test_condense_http_route_is_explicit_and_passes_selection_revision(self):
-        handler=object.__new__(app.Handler)
-        handler.path='/api/mv/condense';handler.body_json=Mock(return_value={'id':'abc','revision':'selected'})
-        handler.send_json=Mock()
-        with patch.object(takes,'condense',return_value={'id':'abc','status':'assembling'}) as confirm:
-            handler.do_POST();confirm.assert_called_once_with('abc','selected')
-        self.assertEqual(handler.send_json.call_args.args[0]['status'],'assembling')
-
     def test_script_launcher_and_take_routes_share_the_same_server_locks(self):
         import os
         import subprocess
@@ -408,9 +204,6 @@ with patch('http.server.ThreadingHTTPServer') as http:
             job={'id':work.name,'status':'done','seed':42,'request':{},'segments':[
                 {'index':0,'start':0,'seconds':1,'status':'done'}]}
             app.write_state(job)
-            shutil.copyfile(work/'00_part.mp4',work/'final.mp4')
-            shutil.copyfile(work/'00_part.mp4',work/'final_v001.mp4')
-            job['final_versions']=[{'version':1,'file':'final_v001.mp4'}];app.write_state(job)
             http=app.ThreadingHTTPServer(('127.0.0.1',0),app.Handler)
             thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
             base=f'http://127.0.0.1:{http.server_port}'
@@ -429,11 +222,7 @@ with patch('http.server.ThreadingHTTPServer') as http:
                 with urllib.request.urlopen(base+f'/api/mv/status?id={job["id"]}') as r:
                     status=json.load(r);self.assertIn('preview',status['segments'][0])
                 with urllib.request.urlopen(base+'/clip_review.js') as r:self.assertIn(b'renderClipPreviews',r.read())
-                master=base+f'/api/mv/file?id={job["id"]}&version=1'
-                with urllib.request.urlopen(master) as r:self.assertEqual(r.read(),(work/'final_v001.mp4').read_bytes())
-                with self.assertRaises(urllib.error.HTTPError):urllib.request.urlopen(master.replace('version=1','version=../raw.mp4'))
             finally:http.shutdown();http.server_close();thread.join()
 
 
 if __name__=='__main__':unittest.main()
-

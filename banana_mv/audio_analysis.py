@@ -172,11 +172,8 @@ def audio_guidance(evidence):
     if evidence['quiet_intervals_s']:
         text += ('Quiet intervals (clip-local seconds): ' + json.dumps(evidence['quiet_intervals_s']) +
                  '; allow a pause or reaction where the actual audio supports it. ')
-    if evidence.get('music_structure'):
-        from banana_mv.music_structure import direction
-        text += direction(evidence['music_structure']) + '\n'
     text += ('Keep the requested story and singer roles. Match visible singing to the actual audio, '
-             'not to energy or transient estimates. Acoustic cues alone do not identify lyrics or choruses; separately supplied structure labels are predictions.')
+             'not to energy or transient estimates. These cues do not identify lyrics or choruses.')
     return text
 
 

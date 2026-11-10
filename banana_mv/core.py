@@ -117,7 +117,7 @@ def last_frame(source, dest):
              '-frames:v', '1', '-update', '1', dest])
 
 
-def assemble(parts, song, dest, seconds, output_size=None, effects=None):
+def assemble(parts, song, dest, seconds, output_size=None):
     # Paths are generated job-local names; JSON quoting is not shell quoting.
     # ffconcat syntax has its own quote escaping, independently of shell arguments.
     listing = Path(dest).with_suffix('.ffconcat')
@@ -132,14 +132,8 @@ def assemble(parts, song, dest, seconds, output_size=None, effects=None):
         if (source['width'], source['height']) != (width, height):
             video_options = ['-vf', f'crop={width}:{height}', '-c:v', 'libx264',
                              '-threads', '1', '-crf', '18', '-pix_fmt', 'yuv420p']
-    audio_options=['-map','1:a:0']
-    extra=[]
-    if effects:
-        from banana_mv.sound_effects import effect_mix
-        extra=['-i',effects['path']]
-        audio_options=['-filter_complex',effect_mix(effects['gain']),'-map','[mixed]']
     command(['ffmpeg', '-y', '-v', 'error', '-safe', '0', '-f', 'concat', '-i', listing,
-             '-i', song, *extra, '-map', '0:v:0', *audio_options, *video_options,
+             '-i', song, '-map', '0:v:0', '-map', '1:a:0', *video_options,
              '-c:a', 'aac', '-b:a', '192k', '-t', f'{seconds:.9f}', '-movflags', '+faststart', dest])
 
 
@@ -300,5 +294,4 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
         model = ['sparse_attention',0]
     w['8']['inputs']['model'] = model
     return w
-
 

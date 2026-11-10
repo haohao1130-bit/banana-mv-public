@@ -336,58 +336,21 @@ class ShootPlanTests(unittest.TestCase):
                     stack.enter_context(patch.object(owner,name,value))
                 server.worker(job,cfg,images,root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'error');self.assertEqual(model.call_count,3)
-                self.assertFalse((work/'02_prompt_v1.txt').exists())
-                first=(work/'00_part_v1.mp4').read_bytes();saved=(work/'01_prompt_v1.txt').read_text()
+                self.assertFalse((work/'02_prompt.txt').exists())
+                first=(work/'00_part.mp4').read_bytes();saved=(work/'01_prompt.txt').read_text()
                 job['resuming']=True;lock.acquire()
                 server.worker(job,cfg,images,root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'done',job.get('error'))
                 self.assertEqual(model.call_count,4)  # One allocation + three native directors.
-                self.assertEqual((work/'00_part_v1.mp4').read_bytes(),first)
-                self.assertEqual((work/'01_prompt_v1.txt').read_text(),saved)
+                self.assertEqual((work/'00_part.mp4').read_bytes(),first)
+                self.assertEqual((work/'01_prompt.txt').read_text(),saved)
                 self.assertEqual([g['7']['inputs']['prompt'] for g in graphs],
                                  [outputs[0],outputs[1],outputs[1],outputs[2]])
                 self.assertTrue(all(g['7']['inputs']['audio_mode']=='lock_source' for g in graphs))
                 for call in model.call_args_list[1:]:
                     self.assertNotIn('PRIVATE_FULL_STORY',call.args[2][0][1])
 
-    def test_native_mv_shots_follow_official_cut_clock(self):
-        from banana_mv.shoot_plan import validate_native_mv_format
-        def native(body):
-            return ('subject_definitions:\n<Subject 1> is the singer from <Picture 1>.\n\n'
-                    'summary:\n[reference generation + audio reuse] Performance.\n\n'
-                    'retention_analysis:\n<Audio 1>: fully_copy.\n\n'
-                    'detailed_description:\n'+body+'\n\n'
-                    'overall_soundscape:\n<Audio 1>: fully_copy.\n\n'
-                    'non_diegetic_music:\nUse only <Audio 1>.')
-        good=native('[Shot 1] Wide singing shot.\n[Shot 2] At 00:04.200, a new close-up.')
-        self.assertEqual(validate_native_mv_format(good,10),good)
-        for bad in (
-            '[Shot 1] Wide.\n[Shot 2] At 00:11.000, too late.',
-            '[Shot 1] Wide.\n[Shot 2] At 00:04.200, cut.\n[Shot 3] At 00:03.500, backward.',
-            '[Shot 1] Wide.\n[Shot 2] A cut without timecode.',
-            '[Shot 1] At 00:00.000, invalid first shot.',
-            '[Shot 1] Wide.\n[Shot 3] At 00:04.200, wrong number.'
-        ):
-            with self.subTest(bad=bad), self.assertRaises(ValueError):
-                validate_native_mv_format(native(bad),10)
-
-    def test_native_mv_speaker_id_preserves_source_audio_identity(self):
-        from banana_mv.shoot_plan import validate_native_mv_format
-        def native(body):
-            return ('subject_definitions:\n<Subject 1> (S1) is the original singer.\n'
-                    '<Audio 1> supplies the copied song.\n\n'
-                    'summary:\n[reference generation + audio reuse] Vocal performance.\n\n'
-                    'retention_analysis:\n<Audio 1>: fully_copy.\n\n'
-                    'detailed_description:\n'+body+'\n\n'
-                    'overall_soundscape:\n<Audio 1>: fully_copy.\n\n'
-                    'non_diegetic_music:\nUse only <Audio 1>.')
-        valid=native('[Shot 1] <Subject 1> (S1) lip-syncs the original soundtrack.')
-        self.assertEqual(validate_native_mv_format(valid,8),valid)
-        # Source-song vocal ID is valid without new <d> dialogue.
-        bad=native('[Shot 1] <Subject 2> (S1) sings while <Subject 1> listens.')
-        with self.assertRaises(ValueError):
-            validate_native_mv_format(bad,8)
-
-
 
 if __name__=='__main__':unittest.main()
+
+

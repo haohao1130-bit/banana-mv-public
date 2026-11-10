@@ -1,4 +1,0 @@
-{
-  "finding": "C2 低：既有 CI 要求 notebook 重建後 git diff 為零。Banana_MV_Public.ipynb 與 tools/build_notebook.py 有一個空白行差異，會令該既有步驟失敗。已重新產生筆記本，沒有改變程式內容或測試條件。",
-  "validation": "See PR Checks for the follow-up commit; no GPU execution."
-}

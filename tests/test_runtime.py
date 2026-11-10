@@ -14,41 +14,6 @@ runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
 
 
 class RuntimeTests(unittest.TestCase):
-    def test_music_venv_skips_ensurepip_and_repairs_existing_partial_environment(self):
-        for existing in (False,True):
-            with self.subTest(existing=existing),tempfile.TemporaryDirectory() as tmp:
-                root=Path(tmp);python=root/'.music-venv/bin/python'
-                if existing:
-                    python.parent.mkdir(parents=True);python.touch()
-                commands=[]
-                def run(command,**kwargs):
-                    commands.append(command)
-                    if 'venv' in command:
-                        python.parent.mkdir(parents=True,exist_ok=True);python.touch()
-                    return types.SimpleNamespace(returncode=0)
-                with patch.object(runtime,'ROOT',root),patch.object(runtime.subprocess,'run',side_effect=run), \
-                     patch.object(runtime.subprocess,'check_output',side_effect=['revision123\n','2.9.0+cu130\n']):
-                    runtime.install_music_analysis()
-                creates=[c for c in commands if 'venv' in c]
-                self.assertEqual(len(creates),int(not existing))
-                if creates:self.assertIn('--without-pip',creates[0])
-                bootstrap=next(c for c in commands if '--python' in c)
-                self.assertEqual(bootstrap[bootstrap.index('--python')+1],str(python))
-                self.assertTrue((root/'.music-venv/bootstrap.log').exists())
-                self.assertTrue((root/'.music-venv/install.log').exists())
-                self.assertEqual((root/'.music-venv/torch-constraint.txt').read_text(),'torch==2.9.0+cu130\n')
-
-    def test_music_install_error_preserves_actual_pip_cause(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/'install.log'
-            def fail(command,**kwargs):
-                kwargs['stdout'].write('ERROR: No module named pip\n')
-                return types.SimpleNamespace(returncode=1)
-            with patch.object(runtime.subprocess,'run',side_effect=fail),self.assertRaisesRegex(RuntimeError,'No module named pip'):
-                runtime.music_install_command(['test'],path)
-            self.assertIn('ERROR:',path.read_text())
-
-
     def test_shutdown_cell_only_renders_until_manual_click(self):
         process=Mock();process.poll.return_value=None
         old=Mock(disabled=False)
@@ -150,4 +115,3 @@ class RuntimeTests(unittest.TestCase):
                 compile(source,'colab-cell','exec')
                 self.assertEqual(cell['outputs'],[])
         self.assertEqual(notebook['metadata']['colab']['gpuType'],'G4')
-

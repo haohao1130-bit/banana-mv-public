@@ -175,8 +175,7 @@ class StoryPlanTests(unittest.TestCase):
                  patch.object(server,'audio_window'),patch.object(server,'preflight'), \
                  patch.object(server.backend,'queue_prompt',side_effect=queue), \
                  patch.object(server,'wait_generation',return_value={'outputs':{'video':{'images':[{'filename':'x.mp4'}]}}}), \
-                 patch.object(server.backend,'comfy_download'),patch.object(server,'trim_video'), \
-                 patch.object(server,'assemble',side_effect=lambda parts,song,dest,*a:dest.write_bytes(b'assembled fixture')):
+                 patch.object(server.backend,'comfy_download'),patch.object(server,'trim_video'),patch.object(server,'assemble'):
                 server.worker(job,cfg,[photo],root/'song.wav',root/'song.wav')
             self.assertEqual(job['status'],'done',job.get('error'))
             self.assertEqual(len(prompts),3) # one full-song plan, two segment rewrites
@@ -288,6 +287,5 @@ class UnifiedIntervalContractTests(unittest.TestCase):
             'to':'stage','operation':'update','event_index':0}]
         with self.assertRaises(SceneStateError):
             validate_unified_plan(raw,self.timeline(),0)
-
 
 

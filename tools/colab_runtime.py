@@ -61,40 +61,8 @@ def install(ns):
                         '--index-url', 'https://download.pytorch.org/whl/cu130'], check=True)
     subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '-r', str(COMFY/'requirements.txt'),
                     'huggingface_hub', 'hf_xet', 'Pillow', 'numpy'], check=True)
-    install_music_analysis()
     ns['COMFY'] = COMFY
     print('✅ Banana MV、固定版 ComfyUI 與 H3 Audio T8 安裝完成。')
-
-
-def music_install_command(command, log_path):
-    """Keep resolver output and include the useful error in Colab's traceback."""
-    print('安裝音樂分析器；完整日誌：',log_path,flush=True)
-    with Path(log_path).open('w',encoding='utf-8') as log:
-        result = subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,text=True)
-    if result.returncode:
-        tail='\n'.join(Path(log_path).read_text(encoding='utf-8',errors='replace').splitlines()[-60:])
-        raise RuntimeError(f'音樂分析器安裝失敗（代碼 {result.returncode}）；日誌：{log_path}\n{tail}')
-
-
-def install_music_analysis():
-    """Keep all music dependencies outside the working ComfyUI environment."""
-    revision = subprocess.check_output([sys.executable,'-c',
-        'from banana_mv.music_structure import REVISION; print(REVISION)'],cwd=ROOT,text=True).strip()
-    torch_version = subprocess.check_output([sys.executable,'-c','import torch; print(torch.__version__)'],text=True).strip()
-    folder = ROOT/'.music-venv'
-    python = folder/'bin/python'
-    if not python.is_file():
-        subprocess.run([sys.executable,'-m','venv','--system-site-packages','--without-pip',str(folder)],check=True)
-    # Colab's distro Python can lack ensurepip. Bootstrap using the working
-    # host pip's --python support; also repairs an existing half-created venv.
-    music_install_command([sys.executable,'-m','pip','--python',str(python),
-                           'install','--upgrade','pip'], folder/'bootstrap.log')
-    constraints = folder/'torch-constraint.txt'
-    constraints.write_text('torch=='+torch_version+'\n',encoding='utf-8')
-    music_install_command([str(python),'-m','pip','install','-c',str(constraints),
-                    'all-in-one-infer @ git+https://github.com/openmirlab/all-in-one-infer.git@'+revision],
-                    folder/'install.log')
-    subprocess.run([str(python),'-c','import allin1_infer; import torch; print("音樂結構分析器已安裝（CPU；首次分析會下載模型）")'],check=True)
 
 
 def download(ns, include_rewriter=True, use_drive_cache=False):

@@ -281,14 +281,14 @@ class UnifiedWorkerTests(unittest.TestCase):
                 server.worker(job,cfg,[photo],root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'error',job.get('error'))
                 self.assertEqual(len(json.loads((work/'scene_state.json').read_text())['commits']),1)
-                first=(work/'00_part_v1.mp4').read_bytes()
+                first=(work/'00_part.mp4').read_bytes()
                 lock.acquire();job.update(status='running',resuming=True)
                 server.worker(job,cfg,[photo],root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'done',job.get('error'))
                 ledger=json.loads((work/'scene_state.json').read_text())
                 self.assertEqual(len(ledger['commits']),3)
                 self.assertEqual(ledger['commits'][2]['scene_state_out']['character_states']['S1']['garments']['coat']['current_status'],'placed')
-                self.assertEqual((work/'00_part_v1.mp4').read_bytes(),first)
+                self.assertEqual((work/'00_part.mp4').read_bytes(),first)
                 self.assertEqual(sum(s.startswith('Plan the supplied MV once') for s in calls),1)
                 self.assertEqual(len(calls),4) # one whole-song plan, three plain writers
                 self.assertEqual(graphs[0]['10']['inputs']['noise_seed'],42)
@@ -298,3 +298,4 @@ class UnifiedWorkerTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
