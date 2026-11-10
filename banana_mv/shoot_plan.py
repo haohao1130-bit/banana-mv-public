@@ -119,8 +119,9 @@ DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial cover
 movement. Separate changes of storyline from changes of viewpoint within a scene.
 For an energetic passage with several distinct action or performance accents, use
 purposeful short-shot coverage within that scene as well as intercuts. A scene visit
-is not automatically one shot. Give each actual cut its own numbered Shot and local
-cut time in detailed_description, with a distinct composition and continuing action.
+is not automatically one shot. A numbered Shot may include motivated internal cuts, reverse angles or montage
+transitions. Describe the new view clearly; do not require a fresh Shot number
+for every editorial cut. Keep distinct compositions and continuing action.
 Select viewpoints that reveal a meaningful subject, spatial relationship, action
 turn, reaction, performance detail or visual accent; do not merely rename the same
 framing. A push-in, pan or subject moving closer remains one shot, not an editorial cut.
@@ -171,13 +172,16 @@ A solo label does not establish its instrument; labels never override vocal role
 Write SETUP and CLIP story prose in English; retain original character names and reference tokens.
 Apply the supplied adaptation policy while developing and allocating the story.
 Build filmable events at the selected intensity; the native clip director later
-turns each assigned beat into precise shots. Keep both parallel strands in each
-normal-length interval when requested; each strand advances in its own fixed space.
+turns each assigned beat into precise shots. Preserve requested parallel strands as meaningful recurring material across the MV.
+Choose irregular intercuts from music and events, without a per-clip scene quota.
 Extract shared SETUP from the user's fixed world, reference and vocal-role settings.
 Keep their original wording and distinct locations; do not summarize or redesign them.
 SETUP will be sent to every clip director as FIXED REFERENCE SETTINGS.
 Include explicit name/role-to-<Picture N> bindings for every supplied actor and location,
-fixed geography, vocal duties and hard restrictions.
+fixed geography, vocal duties and invariant performance rules.
+Keep the whole-work outcome in a separate STORY OUTCOME block, for upstream
+allocation only. Winning, awards and final poses are plot events, never fixed
+reference rules. Allocate them only to the CLIP that performs them.
 When the brief requests unreferenced supporting roles, CREATE their fixed designs in
 SETUP before allocating clips: a stable name/role, distinctive appearance, costume,
 instrument/prop and home position/location for each. Follow requested adult status
@@ -225,7 +229,9 @@ the decisive action and establish the result; the tail continues that result.
 Do not hide the ending from the interval assigned to perform it.
 Use exactly these plain-text boundaries, every requested index, then END:
 === SETUP ===
-Original fixed world, separate scene definitions, reference roles and singing assignments.
+Original fixed world, separate scene definitions, reference roles and singing assignments only.
+=== STORY OUTCOME ===
+Whole-work outcome for upstream allocation only; never repeat it in SETUP.
 === CLIP 0 action ===
 Current situation and events for interval 0 only.
 === CLIP 1 story ===
@@ -275,7 +281,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
         timeline.append({k:seg[k] for k in ('index','start','seconds')} | {
             'local_srt':excerpt(req,seg),'audio_evidence':seg.get('audio_evidence',{}),
             'ending':clip_ending(req,dict(seg,direction_ending_contract=contract))})
-    task={'format':'isolated_shoot_briefs_v2',
+    task={'format':'isolated_shoot_briefs_v3',
           'brief':map_image_mentions(req.get('prompt',''),len(originals)),
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'style':req.get('director','auto'),'lyrics':req.get('lyrics',''),
@@ -286,7 +292,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
     fingerprint=digest(task)
     # Old schema-5 jobs did not fingerprint the two directing controls.
     old_task=dict(task,format='isolated_shoot_briefs_v1')
-    legacy_fingerprints={digest(old_task),digest({k:v for k,v in old_task.items()
+    legacy_fingerprints={digest(dict(task,format='isolated_shoot_briefs_v2')),digest(old_task),digest({k:v for k,v in old_task.items()
                                if k not in ('intensity','dynamic_cuts')})}
     path=Path(work)/'director_plan.json'
     if path.is_file():
@@ -313,7 +319,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
         try:
             from banana_mv.story_plan import direct_delivery
             text=_text(raw)
-            setup=re.match(r'^===\s*SETUP\s*===\s*\n(.*?)(?=^===\s*CLIP\s)',text,re.S|re.M)
+            setup=re.match(r'^===\s*SETUP\s*===\s*\n(.*?)(?=^===\s*(?:STORY OUTCOME\s*===|CLIP\s))',text,re.S|re.M)
             if not setup:raise SceneStateError('分段大綱缺少 SETUP 共用設定。')
             shared=_bound(setup[1].strip(),len(originals))
             delivery=direct_delivery(text)
@@ -329,6 +335,8 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             _check_distinct_events(result)
             plan={'version':5,'shared_setup':shared,'segments':result,'visual_verified':False,
                   'ending_contract':task['ending_contract'],'project_scope':req.get('project_scope','full')}
+            outcome=re.search(r'^===\s*STORY OUTCOME\s*===\s*\n(.*?)(?=^===\s*CLIP\s)',text,re.S|re.M)
+            if outcome:plan['story_outcome']=outcome[1].strip()  # Upstream only.
             plan['content_sha256']=digest(plan);plan['input_sha256']=fingerprint
             atomic_json(path,plan)
             return plan
@@ -355,6 +363,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
+    # Strip only the explicit upstream outcome block in legacy settings. No
+    # keyword blacklist: identity, scene duties and current results stay intact.
+    fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
@@ -372,6 +383,11 @@ changes and selected downbeats to motivate action payoffs, camera reveals and
 performance highlights. Write their timing into the shots, not an analysis appendix.
 Keep anticipation and contrast; do not cut on every beat. Labels can be wrong and
 do not identify instruments or override vocal roles. Use loudness only as acoustic evidence.
+The current clip script alone assigns plot events. Fixed reference settings carry
+identity and scene duties, never permission to perform a future ending. If old
+fixed settings mention a whole-work outcome, perform it only when assigned here.
+Opening conditions are already true; do not replay how they occurred. Preserve
+current consequences while designing music-led coverage and internal cuts freely.
 Use the current clip's assigned beat and end state as the scope for visual development.
 Apply the adaptation policy below within that local scope. The commission supplies
 the needed current facts, opening state, events and local end state. Design compelling

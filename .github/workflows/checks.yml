@@ -18,3 +18,16 @@ jobs:
       - run: python -m unittest discover -s tests
       - run: node tests/check_ui.cjs
       - run: python tools/build_notebook.py && git diff --exit-code Banana_MV_Public.ipynb
+
+  windows-launchers:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: powershell
+        run: |
+          Get-ChildItem tools/*classic*.ps1 | ForEach-Object {
+            $parseErrors = $null
+            $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+          }
