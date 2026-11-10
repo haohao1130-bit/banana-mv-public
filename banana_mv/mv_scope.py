@@ -4,7 +4,7 @@ import math
 
 def validate_scope(value):
     if value not in ('full', 'excerpt'):
-        raise ValueError('作品範圍必須是 full（整首 MV）或 excerpt（其中一段）。')
+        raise ValueError('作品範圍必須是 full（本次音檔演完完整故事）或 excerpt（故事片段、保留後續）。')
     return value
 
 
@@ -28,11 +28,12 @@ def ending_contract(req, total, segments=None):
         window=tail+(nominal if tail<nominal*.5 and total>nominal else 0)
     window=min(total,window)
     hold = min(1.5, total * .2)
+    scope_instruction = ('This uploaded audio is the complete available duration for the entire requested story, even when cropped from a longer song or ending during a verse/chorus. Allocate the complete beginning, development, resolution and specified final image within it. Read the entire story before budgeting time; compress optional middle staging rather than stopping before the ending. Preserve causal progression and all mandatory milestones and the specified outcome.' if req.get('story_scope_version',req.get('story_completion_version'))==1 else 'This is the complete MV. Preserve the outline, causal progression and specified outcome.')
     return {'project_scope':scope, 'finish_work':True,
             'resolve_start_by':round(total-window,6),
             'settle_by':round(total-hold,6), 'end_time':total,
             'hold_seconds':hold,
-            'instruction':'This is the complete MV. Preserve the outline, causal progression and specified outcome. Begin resolution by resolve_start_by, finish required action by settle_by, then sustain the terminal image through end_time. A short last interval completes an ending already underway; it must not introduce a new unresolved action or a last-second scene switch. Do not extend, replace or fade the source song.'}
+            'instruction':scope_instruction+' Begin resolution by resolve_start_by, finish required action by settle_by, then sustain the terminal image through end_time. A short last interval completes an ending already underway; it must not introduce a new unresolved action or a last-second scene switch. Do not extend, replace or fade the source song.'}
 
 
 def validate_ending(raw, req, segments):
@@ -79,3 +80,4 @@ def clip_ending(req, segment):
         due=closing['resolved_by']
         contract['local_resolution_by']=max(0,due-start) if end>=due else None
     return contract
+

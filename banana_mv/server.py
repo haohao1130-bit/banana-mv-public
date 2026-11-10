@@ -29,6 +29,7 @@ from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_inp
                                    final_context, CLIP_SYSTEM, parse_object as parse_scene_object,
                                    atomic_json as write_scene_json, update_scene_memory, rewrite_retry_count, digest as scene_digest)
 from banana_mv.song_context import segment_context
+from banana_mv.music_structure import load_structure, local_structure
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
 from banana_mv.prompt_quality import (reference_policy, enforce_reference_policy,
@@ -300,7 +301,8 @@ def export_finished_video(job,source):
     folder=backend.DATA/'videos'
     folder.mkdir(parents=True,exist_ok=True)
     title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
-    target=folder/f'{title}_{job["id"]}.mp4'
+    suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
+    target=folder/f'{title}_{job["id"]}{suffix}.mp4'
     temp=target.with_name('.'+target.name+'.tmp')
     try:
         shutil.copyfile(source,temp)
@@ -319,27 +321,38 @@ def worker(job, cfg, original, song, drive):
     def rewrite_progress(info):
         job['rewrite_attempt']=info;write_state(job)
     try:
+        approved_review=bool(job['request'].get('plan_review') and job.get('plan_approved'))
+        if approved_review and job['plan_approved']!=plan_revision(job):
+            raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
         # Old projects keep their saved prompt behavior. New projects opt in by
-        # a persisted request field; no GPU or additional model downloads needed.
-        needs_analysis = job['request'].get('audio_analysis', False) and any(
-            not (seg.get('status') == 'done' and valid_part(work/f'{seg["index"]:02d}_part.mp4', seg, job['size']))
-            and not (job.get('resuming') and (work/f'{seg["index"]:02d}_prompt.txt').is_file()
+        # a persisted request field. Structure inference is CPU-only in an isolated process.
+        needs_analysis = not approved_review and job['request'].get('audio_analysis', False) and any(
+            not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
+            and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
         if needs_analysis:
             job['status'] = 'analyzing_audio'; write_state(job)
             music_analysis = load_analysis(song, work/'audio_analysis.json')
+            structure = None
+            if job['request'].get('music_structure',False):
+                job['audio_analysis']={'status':'analyzing_structure'}; write_state(job)
+                structure = load_structure(song, work/'music_structure.json', music_analysis['seconds'])
             vocal_analysis = load_analysis(drive, work/'vocal_analysis.json') if drive != song else None
             for seg in job['segments']:
                 seg['audio_evidence'] = segment_evidence(music_analysis, seg, vocal_analysis)
+                if structure:
+                    seg['audio_evidence']['music_structure'] = local_structure(structure, seg)
             job['audio_analysis'] = {'version': AUDIO_VERSION, 'status': 'ready',
-                                     'pulse': music_analysis['pulse']}
+                                     'pulse': music_analysis['pulse'],
+                                     'structure': {'status':'ready','bpm':structure['bpm'],
+                                                   'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
-        needs_plan = (job['request'].get('director_version', 1) >= 2
+        needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
                       and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
                       and job['request'].get('rewrite', True)
                       and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5))
-                      and any(not (s.get('status') == 'done' and valid_part(work/f'{s["index"]:02d}_part.mp4', s, job['size']))
-                              and not (job.get('resuming') and (work/f'{s["index"]:02d}_prompt.txt').is_file()
+                      and any(not (s.get('status') == 'done' and valid_part(adopted_part(job,s), s, job['size']))
+                              and not (job.get('resuming') and ((work/f'{s["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{s["index"]:02d}_prompt.txt').is_file())
                                        and not s.get('refresh_prompt')) for s in job['segments']))
         if needs_plan:
             if job['id'] in CANCEL:
@@ -350,10 +363,11 @@ def worker(job, cfg, original, song, drive):
                 seg['director_plan'] = row
                 if plan['version']==5:
                     seg.pop('shoot_setup',None)
+                    seg['fixed_reference_settings']=plan.get('shared_setup','')
                     seg['direction_ending_contract']=plan['ending_contract']
                 if plan['version']==4:
                     seg['prompt']=row['prompt']
-                    (work/f'{seg["index"]:02d}_prompt.txt').write_text(row['prompt'],encoding='utf-8')
+                    (work/f'{seg["index"]:02d}_prompt_v1.txt').write_text(row['prompt'],encoding='utf-8')
                     seg['prompt_profile']={'source':'whole_song_director','writer_calls':0,'contract_check_calls':0}
                 if plan['version'] in (3,4):
                     seg['direction_constraints']=plan['constraints']
@@ -365,7 +379,37 @@ def worker(job, cfg, original, song, drive):
                 if index and plan['version']!=5:
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
+            if job['request'].get('plan_review'):
+                job['plan_preview_setup']=plan.get('shared_setup','')
             job['status']='running'; write_state(job)
+        if job['request'].get('plan_review') and not approved_review:
+            if job['id'] in CANCEL:
+                job['status']='cancelled';write_state(job);return
+            if not all(s.get('director_plan') for s in job['segments']):
+                raise ValueError('丹方尚未完整，不能進入審閱或開爐。')
+            if job['request'].get('preview_zh',False):
+                from banana_mv.plan_translation import translate_plan
+                revision=plan_revision(job)
+                job['status']='translating_review';write_state(job)
+                def translation_progress(done,total):
+                    job['translation_progress']={'done':done,'total':total};write_state(job)
+                translation_cfg=copy.deepcopy(cfg)
+                translation_cfg['free_after_rewrite']=False
+                try:
+                    job['plan_translation']=translate_plan(job,work,translation_cfg,backend.rewrite_local,
+                        revision,translation_progress,lambda:job['id'] in CANCEL)
+                except InterruptedError:
+                    job['status']='cancelled';write_state(job);return
+                except Exception as error:
+                    # Review translation must never replace or invalidate the English plan.
+                    job['plan_translation']={'status':'error','source_plan_revision':revision,'error':str(error)}
+                finally:
+                    try:backend.comfy(cfg,'/free',{'unload_models':True,'free_memory':True})
+                    except Exception:pass
+                if job['id'] in CANCEL:
+                    job['status']='cancelled';write_state(job);return
+            job.update(status='plan_ready',plan_revision=plan_revision(job))
+            write_state(job);return
         ledger=None
         if job['request'].get('scene_state_version')==1:
             if job['id'] in CANCEL:
@@ -373,14 +417,19 @@ def worker(job, cfg, original, song, drive):
             job['status']='planning_state';write_state(job)
             ledger=ensure_scene_state(cfg,job['request'],job['segments'],original,work,backend.rewrite_local,
                                       progress=rewrite_progress)
-            reconcile_history(job,work,ledger,lambda s:valid_part(work/f'{s["index"]:02d}_part.mp4',s,job['size']))
+            reconcile_history(job,work,ledger,lambda s:valid_part(work/f'{s["index"]:02d}_part_v1.mp4' if (work/f'{s["index"]:02d}_part_v1.mp4').is_file() else adopted_part(job,s),s,job['size']))
             job['scene_state_summary']={'version':1,'committed_clips':len(ledger['commits']),'visual_verified':False}
             job['status']='running';write_state(job)
         for seg in job['segments']:
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             i = seg['index']
-            part = work/f'{i:02d}_part.mp4'
+            from banana_mv import takes
+            try:part=takes.take_source(job,i)
+            except ValueError:
+                if seg.get('takes') and seg.get('status')=='done':
+                    raise ValueError('已採用的丹藥版本檔案遺失，請恢復該版本或另選現存丹藥。')
+                part=work/f'{i:02d}_part_v1.mp4'
             if seg.get('status')=='done' and valid_part(part,seg,job['size']):
                 if ledger is not None:
                     record=cached_clip(work,ledger,seg)
@@ -401,7 +450,7 @@ def worker(job, cfg, original, song, drive):
                 first = f'banana_{job["id"]}_{i}.png'
                 (inp/first).write_bytes(tail.read_bytes())
             seg['status']='preparing' if job['request'].get('director_schema')==4 else 'rewriting'; write_state(job)
-            saved = work/f'{i:02d}_prompt.txt'
+            saved = takes.existing_file(job,i,seg.get('selected_take','original'),'prompt.txt')
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
             record=cached_clip(work,ledger,seg) if ledger is not None else None
@@ -425,7 +474,7 @@ def worker(job, cfg, original, song, drive):
             if not prompt:
                 raise RuntimeError('提示詞改寫回傳空白，請關閉改寫或檢查本地模型。')
             seg['prompt']=prompt
-            (work/f'{i:02d}_prompt.txt').write_text(prompt,encoding='utf-8')
+            (work/f'{i:02d}_prompt_v1.txt').write_text(prompt,encoding='utf-8')
             if state_replanned:
                 seg.pop('prompt_id',None)
                 seg.pop('scene_state_prompt_sha256',None)
@@ -433,8 +482,9 @@ def worker(job, cfg, original, song, drive):
             wf = build_workflow(job['images_comfy'],name,*job['size'],seg['model_frames'],prompt,
                                 seg.get('render_seed',(job['seed']+i) % (2**48)),first,
                                 **graph_options(job['request'],seg['seconds'],seg))
+            wf['16']['inputs']['filename_prefix']=f'BananaMV/{job["id"]}/{i:02d}_v1'
             preflight(cfg,wf)
-            (work/f'{i:02d}_workflow_api.json').write_text(json.dumps(wf,ensure_ascii=False,indent=2),encoding='utf-8')
+            (work/f'{i:02d}_workflow_v1.json').write_text(json.dumps(wf,ensure_ascii=False,indent=2),encoding='utf-8')
             seg['status']='generating'; write_state(job)
             entry = None
             if (job.get('resuming') and seg.get('prompt_id') and
@@ -448,9 +498,9 @@ def worker(job, cfg, original, song, drive):
                 if ledger is not None:seg['scene_state_prompt_sha256']=scene_digest(prompt)
                 write_state(job)
                 entry = wait_generation(cfg,pid,job)
-            raw = work/f'{i:02d}_raw.mp4'
+            raw = work/f'{i:02d}_raw_v1.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
-            part = work/f'{i:02d}_part.mp4'
+            part = work/f'{i:02d}_part_v1.mp4'
             trim_video(raw,part,seg['frames'])
             parts.append(part)
             if job['request']['mode']=='chain':
@@ -468,7 +518,11 @@ def worker(job, cfg, original, song, drive):
         if job['id'] in CANCEL:
             job['status']='cancelled'; write_state(job); return
         job['status']='assembling'; write_state(job)
-        assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'])
+        from banana_mv import masters
+        masters.preserve_current(job,work)
+        assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'],**({'effects':effects_source(job)} if job.get('effects_mix') else {}))
+        master=masters.archive(job,work,work/'final.mp4','resume' if job.get('current_master') else 'original')
+        job['current_master']=master['version']
         try:
             export_finished_video(job,work/'final.mp4')
         except OSError as error:
@@ -495,13 +549,23 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=5,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=5,story_scope_version=1,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
     from banana_mv.mv_scope import validate_scope
     validate_scope(req['project_scope'])
     req['rewrite_retries']=rewrite_retry_count(req)
+    req.setdefault('plan_review',False)
+    if not isinstance(req['plan_review'],bool):
+        raise ValueError('先搓丹方必須為布林值。')
+    req.setdefault('preview_zh',False)
+    if not isinstance(req['preview_zh'],bool):
+        raise ValueError('preview_zh 必須為布林值。')
+    if req['preview_zh'] and not req['plan_review']:
+        raise ValueError('繁中審閱翻譯僅供先搓丹方使用。')
+    if req['plan_review'] and not req.get('rewrite',True):
+        raise ValueError('先搓丹方需要開啟本地提示詞改寫。')
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
     # New projects allocate once, then write each isolated native prompt. Old projects keep their
@@ -509,6 +573,11 @@ def start(req):
     req.update(scene_state_version=0,persistent_scene_state=False)
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):
         raise ValueError('face_identity 必須為布林值。')
+    req.setdefault('music_structure',False)
+    if not isinstance(req['music_structure'],bool):
+        raise ValueError('music_structure 必須為布林值。')
+    if req['music_structure'] and not req['audio_analysis']:
+        raise ValueError('音樂結構分析需要同時開啟音樂分析引導。')
     if not isinstance(req['audio_analysis'], bool):
         raise ValueError('audio_analysis 必須為布林值。')
     if not isinstance(req['story_plan'], bool):
@@ -530,6 +599,12 @@ def start(req):
     song = backend.LIBRARY/music['file']
     drive = backend.LIBRARY/vocal['file'] if vocal else song
     seconds = source_audio_duration(song)
+    effects = backend.asset(req['effects_id']) if req.get('effects_id') else None
+    effects_info = None
+    if effects:
+        if effects['kind']!='audio':raise ValueError('音效／配音軌必須是音訊。')
+        from banana_mv.sound_effects import validate_effects
+        effects_info=validate_effects(backend.LIBRARY/effects['file'],song,seconds)
     plan = segments(seconds,float(req.get('segment_seconds',15)))
     for seg in plan:
         seg.update(song_seconds=seconds,segment_count=len(plan))
@@ -547,8 +622,10 @@ def start(req):
     # Fail invalid image mentions before queueing any rewrite or GPU work.
     fallback_prompt(req['prompt'], False, '', len(images))
     images_comfy = [img['comfy_name'] for img in images]
-    graph = build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
-                           **graph_options(req,plan[0]['seconds']))
+    graph = ({'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
+              'generate':{'class_type':'TextGenerate','inputs':{}}} if req['plan_review'] else
+             build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
+                            **graph_options(req,plan[0]['seconds'])))
     preflight(cfg,graph)
     if not GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 工作執行中，請等它完成。')
@@ -565,12 +642,73 @@ def start(req):
              'image_comfy':images_comfy[0], 'images_comfy':images_comfy,
              'note':'尚未完成 Colab GPU 實測；末幀接續不攜帶前段動作 latent。'}
         save_sources(job,original,song,drive)
+        if effects:
+            src=backend.LIBRARY/effects['file']
+            dest=job_dir(job_id)/'sources'/('effects'+src.suffix.lower())
+            shutil.copyfile(src,dest)
+            job['sources']['effects']=str(dest.relative_to(job_dir(job_id)))
+            job['effects_mix']=effects_info
         original,song,drive = project_inputs(job,cfg)
         write_state(job)
         threading.Thread(target=worker,args=(job,cfg,original,song,drive),daemon=True).start()
         return job
     except Exception:
         GPU_LOCK.release(); raise
+
+
+def plan_revision(job):
+    """Bind approval to saved allocation, timing, source bindings and render settings."""
+    path=job_dir(job['id'])/'director_plan.json'
+    if not path.is_file():raise ValueError('保存的丹方遺失，不能開爐。')
+    return scene_digest({'request':{k:v for k,v in job['request'].items() if k!='rewrite_retries'},'seed':job['seed'],
+                         'size':job['size'],'output_size':job.get('output_size'),
+                         'sources':job.get('sources'),'images_comfy':job['images_comfy'],
+                         'duration':job['duration'],
+                         'allocation':json.loads(path.read_text(encoding='utf-8')),
+                         **({'effects_mix':job['effects_mix']} if job.get('effects_mix') else {}),
+                         'segments':[{k:s.get(k) for k in ('index','start','seconds','frames',
+                                      'model_frames','director_plan','direction_ending_contract') +
+                                     (('fixed_reference_settings',) if 'fixed_reference_settings' in s else ()) +
+                                     (('audio_evidence',) if job['request'].get('music_structure') else ())}
+                                     for s in job['segments']]})
+
+
+def open_furnace(job_id,revision):
+    """Approve an existing plan once; reuse its exact allocation without replanning."""
+    if not GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請稍後開爐。')
+    handed_off=False
+    try:
+        job=read_state(job_id)
+        if (job['status']!='plan_ready' or not job['request'].get('plan_review') or
+                job['request'].get('production')=='film'):
+            raise ValueError('只有待確認的 MV 丹方可以開爐。')
+        if not isinstance(revision,str) or revision!=job.get('plan_revision') or revision!=plan_revision(job):
+            raise ValueError('丹方已有更新或內容不符，請重新開啟專案檢查。')
+        if any(s.get('prompt_id') or s.get('prompt') or s.get('status')=='done' for s in job['segments']):
+            raise ValueError('此專案已有開拍內容，不能重複確認丹方。')
+        cfg=copy.deepcopy(backend.load_config())
+        q=backend.comfy(cfg,'/queue')
+        if q.get('queue_running') or q.get('queue_pending'):
+            raise ValueError('ComfyUI 還有工作，請稍後開爐。')
+        original,song,drive=project_inputs(job,cfg)
+        seg=job['segments'][0]
+        preflight(cfg,build_workflow(job['images_comfy'],'preflight.wav',*job['size'],
+                  seg['model_frames'],'',job['seed'],**graph_options(job['request'],seg['seconds'])))
+        job.update(status='running',plan_approved=revision,resumed=time.time())
+        CANCEL.discard(job_id);write_state(job)
+        try:
+            threading.Thread(target=worker,args=(job,cfg,original,song,drive),daemon=True).start()
+            handed_off=True
+        except Exception:
+            job.pop('plan_approved',None);job['status']='plan_ready';write_state(job);raise
+        return job
+    finally:
+        if not handed_off:GPU_LOCK.release()
+
+
+def adopted_part(job,seg):
+    from banana_mv.takes import existing_file
+    return existing_file(job,seg['index'],seg.get('selected_take','original'),'part.mp4')
 
 
 def valid_part(path, seg, size):
@@ -600,6 +738,13 @@ def save_sources(job, originals, song, drive):
     job['sources'] = {'images':images,'song':song_name,'drive':drive_name}
 
 
+def effects_source(job):
+    if not job.get('effects_mix'):return None
+    path=backend.safe_child(job_dir(job['id']),job['sources']['effects'])
+    if not path.is_file():raise ValueError('專案音效軌遺失，停止混音以免漏掉已確認素材。')
+    return {'path':path,'gain':job['effects_mix']['gain']}
+
+
 def project_inputs(job, cfg):
     if 'sources' not in job:
         req = job['request']
@@ -617,6 +762,7 @@ def project_inputs(job, cfg):
     drive = backend.safe_child(job_dir(job['id']),source['drive'])
     if not all(p.is_file() for p in originals+[song,drive]):
         raise ValueError('專案原始素材遺失，請還原 sources 資料夾。')
+    if job.get('effects_mix'):effects_source(job)
     names = job['images_comfy']
     if len(names) != len(originals):
         raise ValueError('專案圖片數量不符。')
@@ -652,7 +798,7 @@ def repair_unstarted_timeline(job, song):
     work = job_dir(job['id'])
     if any(seg.get('prompt_id') or seg.get('status')=='done' for seg in job['segments']):
         return
-    if any(list(work.glob(pattern)) for pattern in ('*_prompt.txt','*_workflow_api.json','*_part.mp4','*_raw.mp4')):
+    if any(list(work.glob(pattern)) for pattern in ('*_prompt*.txt','*_workflow*.json','*_part*.mp4','*_raw*.mp4')):
         return
     actual = source_audio_duration(song)
     if abs(actual-job['duration']) > .25:
@@ -673,7 +819,7 @@ def restore_render_settings(job):
     """Infer absent legacy render switches without changing saved choices."""
     if 'sampling_steps' not in job['request']:
         # Existing projects keep their saved schedule rather than silently mixing 6 and 8 steps.
-        saved=sorted(job_dir(job['id']).glob('*_workflow_api.json'))
+        saved=sorted(job_dir(job['id']).glob('*_workflow*.json'))
         saved_steps=6
         if saved:
             previous=json.loads(saved[0].read_text(encoding='utf-8'))
@@ -682,8 +828,8 @@ def restore_render_settings(job):
         job['request']['sampling_steps']=saved_steps
     # Older projects predate explicit feature switches. Infer only absent switches.
     if not job.get('settings_version'):
-        workflows=sorted(job_dir(job['id']).glob('*_workflow_api.json'))
-        prompts=sorted(job_dir(job['id']).glob('*_prompt.txt'))
+        workflows=sorted(job_dir(job['id']).glob('*_workflow*.json'))
+        prompts=sorted(job_dir(job['id']).glob('*_prompt*.txt'))
         if workflows:
             graph=json.loads(workflows[0].read_text(encoding='utf-8'))
             kinds={n['class_type'] for n in graph.values()}
@@ -713,8 +859,10 @@ def resume(job_id,rewrite_retries=None):
         restore_render_settings(job)
         missing=False
         for seg in job['segments']:
-            part=job_dir(job_id)/f"{seg['index']:02d}_part.mp4"
+            part=adopted_part(job,seg)
             usable=valid_part(part,seg,job['size'])
+            if not usable and seg.get('takes'):
+                raise ValueError('採用版毛片遺失或損壞，請恢復該版本或另選現存版本；不覆寫原丹。')
             if not usable or (missing and job['request']['mode']=='chain'):
                 seg['status']='waiting'
                 if missing and job['request']['mode']=='chain':
@@ -778,7 +926,9 @@ class Handler(WebHandler):
                 return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/file':
             try:
-                path=job_dir(dict(urllib.parse.parse_qsl(url.query))['id'])/'final.mp4'
+                from banana_mv import masters
+                args=dict(urllib.parse.parse_qsl(url.query))
+                path=masters.source(read_state(args['id']),job_dir(args['id']),args.get('version'))
                 return self.send_file(path)
             except Exception as e:
                 return self.send_json({'error':str(e)},400)
@@ -797,13 +947,20 @@ class Handler(WebHandler):
                     GPU_LOCK.release()
             if path=='/api/mv/start':
                 return self.send_json(start(self.body_json()))
+            if path=='/api/mv/open-furnace':
+                body=self.body_json()
+                return self.send_json(open_furnace(body['id'],body.get('revision')))
             if path=='/api/mv/resume':
                 body=self.body_json()
                 return self.send_json(resume(body['id'],body.get('rewrite_retries')))
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices')))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions')))
+            if path=='/api/mv/condense':
+                from banana_mv.takes import condense
+                body=self.body_json()
+                return self.send_json(condense(body['id'],body.get('revision')))
             if path=='/api/mv/select-take':
                 from banana_mv.takes import select_take
                 body=self.body_json()
@@ -823,12 +980,9 @@ if __name__=='__main__':
     # Don't leave stale runs looking active after a Colab restart.
     for p in RUNS.glob('*/status.json'):
         job=json.loads(p.read_text(encoding='utf-8'))
-        if job['status'] not in ('done','error','cancelled','interrupted'):
+        if job['status'] not in ('done','error','cancelled','interrupted','plan_ready'):
             job.update(status='interrupted',error='執行階段已重啟；已完成片段仍保存在工作資料夾。')
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
-
-
-
 

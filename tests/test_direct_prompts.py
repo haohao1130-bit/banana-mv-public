@@ -168,13 +168,13 @@ class DirectPromptTests(unittest.TestCase):
                     stack.enter_context(patch.object(owner,name,value))
                 server.worker(job,cfg,images,root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'error');self.assertEqual(model.call_count,1)
-                self.assertTrue(all((work/f'{i:02d}_prompt.txt').is_file() for i in range(3)))
-                first=(work/'00_part.mp4').read_bytes()
+                self.assertTrue(all((work/f'{i:02d}_prompt_v1.txt').is_file() for i in range(3)))
+                first=(work/'00_part_v1.mp4').read_bytes()
                 job['resuming']=True;lock.acquire()
                 server.worker(job,cfg,images,root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'done',job.get('error'))
                 self.assertEqual(model.call_count,1)
-                self.assertEqual((work/'00_part.mp4').read_bytes(),first)
+                self.assertEqual((work/'00_part_v1.mp4').read_bytes(),first)
                 prompts=[g['7']['inputs']['prompt'] for g in graphs]
                 self.assertEqual(prompts,[r['prompt'] for r in delivery()['segments'][:2]]+
                                  [r['prompt'] for r in delivery()['segments'][1:]])

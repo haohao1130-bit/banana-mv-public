@@ -336,14 +336,14 @@ class ShootPlanTests(unittest.TestCase):
                     stack.enter_context(patch.object(owner,name,value))
                 server.worker(job,cfg,images,root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'error');self.assertEqual(model.call_count,3)
-                self.assertFalse((work/'02_prompt.txt').exists())
-                first=(work/'00_part.mp4').read_bytes();saved=(work/'01_prompt.txt').read_text()
+                self.assertFalse((work/'02_prompt_v1.txt').exists())
+                first=(work/'00_part_v1.mp4').read_bytes();saved=(work/'01_prompt_v1.txt').read_text()
                 job['resuming']=True;lock.acquire()
                 server.worker(job,cfg,images,root/'song.wav',root/'song.wav')
                 self.assertEqual(job['status'],'done',job.get('error'))
                 self.assertEqual(model.call_count,4)  # One allocation + three native directors.
-                self.assertEqual((work/'00_part.mp4').read_bytes(),first)
-                self.assertEqual((work/'01_prompt.txt').read_text(),saved)
+                self.assertEqual((work/'00_part_v1.mp4').read_bytes(),first)
+                self.assertEqual((work/'01_prompt_v1.txt').read_text(),saved)
                 self.assertEqual([g['7']['inputs']['prompt'] for g in graphs],
                                  [outputs[0],outputs[1],outputs[1],outputs[2]])
                 self.assertTrue(all(g['7']['inputs']['audio_mode']=='lock_source' for g in graphs))
@@ -352,5 +352,3 @@ class ShootPlanTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
-
-

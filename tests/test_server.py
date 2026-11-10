@@ -178,8 +178,8 @@ class ServerIntegration(unittest.TestCase):
                             previous=app.read_state(job_id)
                             self.assertEqual(previous['request']['lyrics'],'全曲語意參考')
                             self.assertEqual(previous['request']['srt_cues'][0]['start'],0)
-                            work=app.job_dir(job_id);original_part=(work/'00_part.mp4').read_bytes()
-                            (work/'01_part.mp4').unlink();(work/'final.mp4').unlink()
+                            work=app.job_dir(job_id);original_part=(work/'00_part_v1.mp4').read_bytes()
+                            (work/'01_part_v1.mp4').unlink();(work/'final.mp4').unlink()
                             previous['segments'][1]['status']='generating'
                             previous['segments'][1].pop('prompt_id',None)
                             previous.update(status='interrupted',error='simulated restart')
@@ -199,7 +199,7 @@ class ServerIntegration(unittest.TestCase):
                             self.assertIn('attention_backend',captured[0])
                             self.assertEqual('sparse_attention' in captured[0],previous['request']['sparse_attention'])
                             self.assertNotIn('realism_people',captured[0])
-                            self.assertEqual((work/'00_part.mp4').read_bytes(),original_part)
+                            self.assertEqual((work/'00_part_v1.mp4').read_bytes(),original_part)
                             self.assertEqual('first_frame' in captured[0]['7']['inputs'],previous['request']['mode']=='chain')
                             for _ in range(100):
                                 if not app.GPU_LOCK.locked():break
@@ -241,5 +241,3 @@ class ServerIntegration(unittest.TestCase):
                         self.assertIn('<Picture 3> 場景',parts[0][1])
             finally:
                 http.shutdown();http.server_close()
-
-
