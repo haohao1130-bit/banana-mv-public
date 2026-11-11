@@ -18,14 +18,28 @@ MOTION_LORAS = {'combat': 'H3_Combat_V2.safetensors', 'repair': 'Motion_Repair.s
 
 
 def command(args):
-    result = subprocess.run([str(a) for a in args], capture_output=True, text=True)
+    # ffprobe emits UTF-8 JSON. Windows' default subprocess codec can differ
+    # (e.g. cp950), unlike the working local VNext subprocess contract.
+    result = subprocess.run([str(a) for a in args], capture_output=True,
+                            text=True, encoding='utf-8', errors='replace')
     if result.returncode:
-        raise RuntimeError(result.stderr[-2500:] or f'Command failed: {args[0]}')
+        raise RuntimeError((result.stderr or '')[-2500:] or f'Command failed: {args[0]}')
+    if result.stdout is None:
+        raise RuntimeError(f'{args[0]} returned no captured output; check the selected Python and executable.')
     return result.stdout
 
 
 def probe(path):
-    return json.loads(command(['ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', path]))
+    raw = command(['ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', path])
+    if not isinstance(raw, str) or not raw.strip():
+        raise RuntimeError('ffprobe returned no JSON for media upload; verify ffprobe on PATH and the source audio file.')
+    try:
+        info = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError('ffprobe returned invalid JSON for media upload: '+str(error)) from error
+    if not isinstance(info, dict) or not isinstance(info.get('streams'), list):
+        raise RuntimeError('ffprobe media metadata is missing its streams list.')
+    return info
 
 
 def duration(path):

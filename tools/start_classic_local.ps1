@@ -1,13 +1,24 @@
 param(
     [string]$ComfyUrl = 'http://127.0.0.1:8000',
     [int]$Port = 8191,
-    [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'BananaMVClassic')
+    [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'BananaMVClassic'),
+    [string]$PythonPath = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $env:LOCALAPPDATA 'Banana9B-cu130\Scripts\python.exe'
 $comfyRoot = Join-Path $env:USERPROFILE 'Documents\ComfyUI'
-if (-not (Test-Path -LiteralPath $python)) { throw 'CU130 Python not found. Start with your existing working CU130 environment.' }
+$vnextPython = Join-Path $comfyRoot '.venv\Scripts\python.exe'
+$cu130Python = Join-Path $env:LOCALAPPDATA 'Banana9B-cu130\Scripts\python.exe'
+if (-not $PythonPath) {
+    if (Test-Path -LiteralPath $vnextPython) { $PythonPath = $vnextPython }
+    else { $PythonPath = $cu130Python }
+}
+$python = $PythonPath
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    throw "Python not found: $python. Use -PythonPath with the interpreter from your working VNext launch."
+}
+& $python -c 'import PIL, numpy'
+if ($LASTEXITCODE -ne 0) { throw "Python lacks Pillow or numpy: $python. Select the same working Python as VNext." }
 foreach ($binary in @('ffmpeg','ffprobe')) {
     if (-not (Get-Command $binary -ErrorAction SilentlyContinue)) { throw "$binary is missing from PATH." }
 }
@@ -54,6 +65,8 @@ Write-Host "Repository: $projectRoot"
 & git -C $projectRoot branch --show-current
 & git -C $projectRoot log -1 --oneline
 Write-Host "Data: $DataRoot"
+Write-Host "Python: $python"
+Write-Host "ffprobe: $((Get-Command ffprobe).Source)"
 Write-Host "ComfyUI: $ComfyUrl"
 Write-Host "Classic MV: http://127.0.0.1:$Port"
 Write-Host 'Prepare recipe first. Video rendering needs the matching H3 models and Banana audio node.'
