@@ -17,10 +17,98 @@ from banana_mv.timed_slots import parse_timed_source, allocate_timed_chapters
 
 
 CHAPTER = re.compile(
-    r'^\s*(?:第[一二三四五六七八九十百零〇\d]+幕|終幕|尾聲|'
+    r'^\s*(?:第[一二三四五六七八九十百零〇\d]+[幕段]|終幕|尾聲|'
     r'ACT\s+\d+|FINALE)\s*[|｜:：\-—]\s*(.+)$', re.I)
 GLOBAL_RULES = re.compile(r'^\s*(?:全曲執行原則|GLOBAL\s+RULES|全曲固定原則)\s*$', re.I)
 SENTENCES = re.compile(r'(?<=[。！？!?；;])\s*')
+
+
+# Normalize presentation syntax only when the brief has identifiable story sections.
+SECTION_PREFIX = re.compile(r'^(?:(?:\d+|[一二三四五六七八九十]+)\s*[｜|、.．:：\-—]\s*)?')
+SECTION_STORY = frozenset(('故事內容', '故事劇情', '劇情內容', '故事大綱', '劇情大綱', '劇本內容', 'MV 故事'))
+SECTION_SETUP = frozenset(('角色設定', '人物設定', '人物介紹', '角色介紹', '人物',
+                           '角色綁定', 'MV 主題', '主題', '風格', '世界觀', '場景設定',
+                           '演唱與劇情安排', '演唱與攝影', '演唱安排', '劇情連續性',
+                           '特殊要求', '攝影與舞蹈', '導演自由發揮', '全曲執行原則',
+                           '全曲固定原則', 'GLOBAL RULES'))
+MARKDOWN_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+')
+
+
+def _plain_source_line(original):
+    """Remove visual Markdown without discarding the text that follows it."""
+    line = original.strip()
+    if not line or re.fullmatch(r'(?:-{3,}|\*{3,}|_{3,}|━{3,}|\x60{3,}.*)', line):
+        return ''
+    line = re.sub(r'^\s{0,3}#{1,6}\s+', '', line)
+    line = re.sub(r'^>\s*', '', line)
+    line = re.sub(r'^[-*+]\s+', '', line)
+    line = re.sub(r'^\d+[.)]\s+', '', line)
+    line = re.sub(r'\*\*(.+?)\*\*|__(.+?)__',
+                  lambda m: m.group(1) or m.group(2), line)
+    return line.strip()
+
+
+def _source_section(line):
+    title = SECTION_PREFIX.sub('', line).strip().rstrip('：:').strip()
+    if title in SECTION_STORY:
+        return 'story', title
+    if title in SECTION_SETUP:
+        return 'setup', title
+    return None, title
+
+
+def _sectioned_source(prompt):
+    """Separate sectioned briefs into setup and source chapters before allocation.
+
+    Both Markdown and plain-text numbered headings are valid. This adapter
+    makes no slot, event-timing or narrative decisions.
+    """
+    raw_lines = prompt.replace('\r\n', '\n').splitlines()
+    lines = [(_plain_source_line(line), bool(MARKDOWN_HEADING.match(line)))
+             for line in raw_lines]
+    has_story_section = any(_source_section(line)[0] == 'story'
+                            for line, _ in lines if line)
+    has_new_chapter = any(CHAPTER.match(line) and
+                          (md or re.match(r'^第[一二三四五六七八九十百零〇\d]+段', line))
+                          for line, md in lines if line)
+    if not has_story_section and not has_new_chapter:
+        return None
+    fixed, chapters = [], []
+    in_story = not has_story_section
+    current = None
+    for line, markdown_heading in lines:
+        if not line:
+            continue
+        kind, title = _source_section(line)
+        if kind == 'story':
+            in_story = True
+            current = None
+            continue
+        if kind == 'setup':
+            in_story = False
+            current = None
+            fixed.append(title + '：')
+            continue
+        if CHAPTER.match(line) and in_story:
+            current = {'title': line, 'actions': []}
+            chapters.append(current)
+            continue
+        if markdown_heading:
+            # Other headings are labels, never filmable actions.
+            if not in_story:
+                fixed.append(line)
+            continue
+        if in_story:
+            if current is None:
+                current = {'title': 'User story', 'actions': []}
+                chapters.append(current)
+            current['actions'].extend(x.strip() for x in SENTENCES.split(line) if x.strip())
+        else:
+            fixed.append(line)
+    chapters = [chapter for chapter in chapters if chapter['actions']]
+    if not chapters:
+        return None
+    return '\n'.join(fixed), chapters
 
 
 def split_source(prompt):
@@ -30,6 +118,9 @@ def split_source(prompt):
     remains source material; only unambiguous image binding lines are fixed.
     Global rules after '全曲執行原則' remain fixed, never plotted as action.
     """
+    sectioned = _sectioned_source(prompt)
+    if sectioned is not None:
+        return sectioned
     baseline, rules, chapters = [], [], []
     current = None
     in_rules = False
