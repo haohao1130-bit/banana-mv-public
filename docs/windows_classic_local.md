@@ -7,16 +7,19 @@ small isolation change separates upstream STORY OUTCOME from shared identities
 and scene duties. Internal cuts inside a numbered Shot remain allowed. There
 is no new semantic reviewer or strict camera-timing gate.
 
-The launcher reuses CU130 ComfyUI on port 8000, or starts your existing
-ComfyUI source with the CU130 Python if that port is unavailable. It does
-not open a second ComfyUI when the API already responds. This launcher
-uses `%LOCALAPPDATA%\Banana9B-cu130\Scripts\python.exe`; it does not install or
-upgrade Python, Torch, CUDA, ComfyUI, or model weights.
+The launcher reuses working CU130 ComfyUI on port 8000, or starts your existing
+ComfyUI source if the API is unavailable. It does not launch a second ComfyUI
+when the API already responds. Classic's backend now prefers the same Python
+interpreter as the working local VNext launcher:
+`%USERPROFILE%\Documents\ComfyUI\.venv\Scripts\python.exe` when it exists.
+Otherwise it falls back to `%LOCALAPPDATA%\Banana9B-cu130\Scripts\python.exe`.
+Use `-PythonPath` to select a custom known-working interpreter. This does not
+install or upgrade Python, Torch, CUDA, ComfyUI, or model weights.
 
 Clone the classic repo into a separate folder, leaving VNext and its outputs:
 
 ```powershell
-git clone --branch experiment/classic-mv-isolation https://github.com/haohao1130-bit/banana-mv-public.git "$env:USERPROFILE\banana-mv-classic"
+git clone --branch main https://github.com/haohao1130-bit/banana-mv-public.git "$env:USERPROFILE\banana-mv-classic"
 ```
 
 Create the desktop shortcut:
@@ -50,3 +53,14 @@ does not claim successful RTX 5070 H3 video generation.
 To compare existing VNext, its server can remain at 8190; do not submit
 concurrent GPU jobs from both UIs. The current Tailscale proxy for port 8190
 continues to point to VNext unless explicitly changed.
+
+For troubleshooting audio upload, Classic prints the selected Python and ffprobe
+paths. ffprobe JSON uses explicit UTF-8 decoding (as in local VNext); if its
+capture is empty or invalid the backend reports an actionable media-probe error
+instead of a generic JSON NoneType failure.
+
+If your VNext launcher uses a custom Python, launch Classic with the same path:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\banana-mv-classic\tools\start_classic_local.ps1" -PythonPath "C:\\path\\to\\working\\python.exe"
+```
