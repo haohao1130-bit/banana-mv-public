@@ -163,7 +163,7 @@ def _local_filmed_actions(commission_text):
             active = False
         if active and line.startswith('- '):
             action = line[2:].strip()
-            if not SCOPE_NOTE.match(action):
+            if not SCOPE_NOTE.match(action) and not action.startswith('【Python當前狀態'):
                 yield action
         elif not active and line.startswith('- ') and ' | ' in line and 'Current interval actions' not in commission_text:
             action = line.split(' | ', 1)[1].strip()
@@ -210,6 +210,32 @@ def _actor_state_lines(state):
     return '\n'.join(lines)
 
 
+def _current_appearance_anchor(state):
+    """A factual, non-filmable starting condition beside local filming actions.
+
+    The marker is separate from new plot actions: no removal or redressing is
+    staged by this line. The Python ledger remains the authority for each
+    explicitly known property; unspecified properties still use the references.
+    """
+    names = {'Torso': '上身', 'Bottom': '下身', 'Feet': '雙腳'}
+    facts = []
+    for kind in ('Torso', 'Bottom', 'Feet'):
+        item = state.get(kind)
+        if item is None:
+            continue
+        label, status = item['label'], item['status']
+        if status == 'removed':
+            fact = ('雙腳赤腳' if kind == 'Feet' else names[kind] + '已無' + label)
+            facts.append(fact + f'（{label}已卸除）')
+        elif status == 'unfastened':
+            facts.append(f'{names[kind]}的{label}已解開，尚未移除')
+        else:
+            facts.append(f'{names[kind]}穿著{label}')
+    return ('- 【Python當前狀態：既定外觀，非新增動作】'
+            + '；'.join(facts) + '。以下拍攝沿用此狀態；只有本段明確指定的事件可改變，'
+            '已移除物品不重新出現，也不重演移除過程。')
+
+
 def _inject_actor_state(events, fixed, chapters):
     """Carry the actual planned before/after state through every local slot."""
     state = _opening_actor_state(fixed, chapters)
@@ -217,10 +243,19 @@ def _inject_actor_state(events, fixed, chapters):
         return events
     out = []
     for event in events:
+        start_state = {kind: item.copy() for kind, item in state.items()}
         before = _actor_state_lines(state)
         for action in _local_filmed_actions(event):
             _advance_actor_state(state, action)
         after = _actor_state_lines(state)
+        anchor = _current_appearance_anchor(start_state)
+        if 'Current interval actions in original order:\n' in event:
+            event = event.replace('Current interval actions in original order:\n',
+                                  'Current interval actions in original order:\n'
+                                  + anchor + '\n', 1)
+        else:
+            # Merged segments and short tails have no ordinary action list.
+            event = anchor + '\n' + event
         out.append('CURRENT_ACTOR_STATE (at clip start; authoritative over opening wardrobe in fixed references):\n'
                    + before + '\nEXPECTED_ACTOR_STATE_AFTER_THIS_CLIP (planned consequence):\n'
                    + after + '\nOnly the assigned actions below may change this state. '
