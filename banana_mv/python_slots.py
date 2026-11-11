@@ -4,6 +4,7 @@ No LLM runs here. Python owns decoded-audio segment boundaries, ordered source
 actions, stable references, saved plans and short-tail continuity. It does not
 infer narrative meaning from loudness or fabricate a complete story.
 """
+import json
 import math
 import re
 from pathlib import Path
@@ -107,10 +108,10 @@ def commission(chapter, chapter_slot, chapter_slots, previous):
     end = ((chapter_slot+1)*size)//chapter_slots
     local = actions[begin:end]
     if not local:
-        anchor = actions[min(begin, size-1)]
         local = [
-            'Develop one NEW visual consequence or character reaction within this '
-            'ongoing moment, without replaying its trigger: '+anchor
+            'Develop fresh anticipation, environmental interaction and character '
+            'behavior within this chapter without performing its NEXT listed '
+            'turning point. Keep the current causal state advancing.'
         ]
     instructions = [
         'PYTHON-OWNED SOURCE INTERVAL — film ONLY this local commission.',
@@ -147,7 +148,7 @@ def ensure_python_slot_plan(req, segments, originals, work):
     fingerprint = digest(task)
     path = Path(work)/'director_plan.json'
     if path.is_file():
-        saved = __import__('json').loads(path.read_text(encoding='utf-8'))
+        saved = json.loads(path.read_text(encoding='utf-8'))
         if (saved.get('version') != 6 or saved.get('input_sha256') != fingerprint or
                 saved.get('content_sha256') != digest({
                     k:v for k,v in saved.items()
