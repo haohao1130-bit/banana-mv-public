@@ -233,6 +233,63 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertIn('END_ONLY_17',s[3])
         self.assertNotIn('SOURCE SONG SHORT TAIL',s[3])
 
+    def test_sectioned_brief_with_and_without_markdown_keeps_setup_out_of_actions(self):
+        markdown = (
+            '# 午夜歌舞 MV\n'
+            '## 1｜角色設定\n'
+            '開場穿著：黑色馬甲與高跟鞋。\n'
+            '服裝逐步變化，最後才赤腳演出。\n'
+            '## 2｜MV 主題\n'
+            '紅幕歌舞舞台。\n'
+            '## 3｜故事內容\n'
+            '### 第一段｜紅幕開場\n'
+            'OPEN_1 主角登上舞台演唱。\n'
+            'OPEN_2 主角轉身面向麥克風。\n'
+            '### 第二段｜變化\n'
+            'CHANGE_1 主角摘下帽子。\n'
+            'CHANGE_2 主角繼續演唱。\n'
+            '### 第三段｜謝幕\n'
+            'END_1 主角走到紅幕中央。\n'
+            'END_2 紅幕落下。\n'
+            '## 4｜演唱與劇情安排\n'
+            '歌手全程維持身份一致。\n'
+            '## 5｜特殊要求\n'
+            '完成的事件不得重演。\n'
+            '## 6｜導演自由發揮\n'
+            '全片按故事順序推進。\n'
+        )
+        plain = markdown.replace('### ', '').replace('## ', '').replace('# ', '')
+        plans = []
+        for brief in (markdown, plain):
+            fixed, chapters = split_source(brief)
+            self.assertEqual(len(chapters), 3)
+            self.assertEqual([c['title'] for c in chapters],
+                             ['第一段｜紅幕開場', '第二段｜變化', '第三段｜謝幕'])
+            self.assertIn('開場穿著', fixed)
+            self.assertIn('紅幕歌舞舞台', fixed)
+            self.assertIn('特殊要求', fixed)
+            self.assertIn('完成的事件不得重演', fixed)
+            self.assertNotIn('##', fixed)
+            all_actions = '\n'.join(a for c in chapters for a in c['actions'])
+            self.assertNotIn('服裝逐步變化，最後才赤腳演出', all_actions)
+            self.assertNotIn('開場穿著', all_actions)
+            self.assertNotIn('特殊要求', all_actions)
+            self.assertIn('CHANGE_1', all_actions)
+            segs = [{'index': i, 'start': 5.0*i, 'seconds': 5.0,
+                     'song_seconds': 60.0, 'segment_count': 12} for i in range(12)]
+            with tempfile.TemporaryDirectory() as d:
+                plan = ensure_python_slot_plan(dict(request(), prompt=brief), segs,
+                                               [Path(d)/'ref.png'], d)
+            self.assertEqual(plan['source_timing'], 'legacy_ordered')
+            self.assertNotEqual(plan['shared_setup'], '')
+            events = [x['event'] for x in plan['segments']]
+            self.assertNotIn('服裝逐步變化，最後才赤腳演出', '\n'.join(events))
+            self.assertNotIn('END_1', '\n'.join(events[:8]))
+            self.assertIn('END_2', '\n'.join(events[-4:]))
+            self.assertNotIn('##', '\n'.join(events))
+            plans.append((fixed, chapters))
+        self.assertEqual(plans[0], plans[1])
+
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
         nb=json.loads((root/'BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb').read_text(encoding='utf-8'))
