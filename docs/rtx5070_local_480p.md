@@ -33,3 +33,17 @@ Windows-specific local assumptions are inherited from the user's previously work
 Download the Windows desktop installer ZIP distributed with the 5070 package, extract it, and double-click `Install_Desktop_Shortcut.cmd` once. It copies persistent launchers into `%LOCALAPPDATA%\BananaMV-5070-CU130-Launcher` and creates desktop shortcuts for normal launch, optional CPU VAE, and explicit T8 repair. The normal shortcut opens the Banana UI at **http://127.0.0.1:8193** automatically. **8192 is Fusion Lab and must not be reused.**
 
 Missing `MiniMaxH3AudioConditioningT8` is now a non-blocking launcher warning so that the Banana frontend can still open, but generation requires the node. The optional T8 repair helper clones only the custom-node source after explicit confirmation, never auto-downloads models or modifies Torch/CUDA. Restart existing ComfyUI manually after a repair; an instance started with `--disable-all-custom-nodes` will never load T8.
+
+
+## Timecoded full-prompt parsing (5070-only fix)
+The 5070 branch now recognizes Markdown scene headings such as `### 第一段｜00:00–00:10｜午夜開場` and routes them according to their **explicit song-time interval**, independent of whether H3 chunks are 5 or 10 seconds. Multiple story phases can share a technical chunk if a boundary crosses it. Cast, location, camera policy and generalized continuity statements remain in shared fixed setup, while ordinal-targeted rules (`第一段...`, `第四、第五段...`) and final-time instructions are sent only to their associated chapters. User-defined scenes remain ordered; later-scene actions are not supplied to earlier commissions.
+
+An actual 44.5-second source song in 5-second chunks yields **9 clips: 0–5, 5–10, 10–15, 15–20, 20–25, 25–30, 30–35, 35–40, 40–44.5**, corresponding to five explicitly defined 10/10/10/10/4.5-second story chapters. The legacy numbered-act parser is untouched for scripts without explicit timestamped Markdown scenes.
+
+### Testing it on Windows
+1. Stop the **Banana 5070 backend** window, then double-click the existing 5070 desktop shortcut. If the checkout is clean, its launcher fast-forwards this branch automatically; ComfyUI and model files are reused.
+2. Open `http://127.0.0.1:8193` and check `git -C "$env:USERPROFILE\banana-mv-5070" log -1 --oneline`.
+3. Create a **fresh test project** and choose 5-second clips, 720p if already validated on that machine.
+4. Inspect the new `director_plan.json`: every clip must contain only its applicable timecoded story chapter and no standalone Markdown metadata as actions.
+
+Saved projects retain their original `director_plan.json` and are **not silently rewritten** on update; to verify the parser fix, use a fresh test project.
