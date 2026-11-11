@@ -22,7 +22,7 @@ class SourceTimedEndingTests(unittest.TestCase):
         self.assertEqual(penultimate['phase'],'continuing')
         self.assertFalse(penultimate['finish_work'])
         self.assertEqual(last['phase'],'resolving')
-        self.assertNotIn('hold',last['instruction'].lower())
+        self.assertIn('do not invent a fixed ending hold',last['instruction'])
 
     def test_short_residual_finishes_in_preceding_full_clip(self):
         for seconds, tail in ((202,2),(203,3),(72,2)):
