@@ -296,34 +296,34 @@ class PythonSlotsTests(unittest.TestCase):
         # previously removed garments merely because global setup includes them.
         brief = (
             '## 1｜角色設定\n'
-            '@圖片1：小語，唯一演出者。\n'
+            '@圖片1：演員，唯一演出者。\n'
             '開場穿著：\n'
-            '黑色前扣式馬甲胸衣\n'
-            '黑色高腰舞台內褲\n'
-            '黑色高跟舞鞋\n'
+            '藍色外套\n'
+            '灰色長褲\n'
+            '黑色長靴\n'
             '## 2｜MV 主題\n'
-            '夜總會紅幕歌舞。\n'
+            '排練室的表演。\n'
             '## 3｜故事內容\n'
             '### 第一段｜紅幕開場\n'
-            '小語穿著完整馬甲胸衣與舞台內褲及高跟鞋登場。\n'
+            '演員穿著完整藍色外套與長褲及黑色長靴登場。\n'
             '她正面對嘴演唱並旋轉。\n'
             '攝影機拉至中全景。\n'
             '本段保留完整開場服裝。\n'
             '### 第二段｜第一件落幕\n'
-            '小語繼續演唱。\n'
-            '她解開馬甲胸衣，完成本段服裝變化。\n'
-            '接著以上身裸露、保留內褲及高跟鞋的狀態跳舞。\n'
+            '演員繼續演唱。\n'
+            '她解開藍色外套，完成本段服裝變化。\n'
+            '接著以上身裸露、保留長褲及黑色長靴的狀態跳舞。\n'
             '攝影機穿插特寫與全身鏡頭。\n'
-            '本段只完成馬甲胸衣卸除。\n'
+            '本段只完成藍色外套卸除。\n'
             '### 第三段｜第二件落幕\n'
             '歌聲持續並切換旋轉舞步。\n'
-            '小語向鏡頭露出笑容。\n'
-            '她完成黑色高腰舞台內褲的卸除。\n'
-            '接著以全裸、僅穿高跟鞋的狀態跳舞。\n'
-            '本段只完成高腰舞台內褲卸除。\n'
+            '演員向鏡頭露出笑容。\n'
+            '她完成灰色長褲的卸除。\n'
+            '接著以全裸、僅穿黑色長靴的狀態跳舞。\n'
+            '本段只完成灰色長褲卸除。\n'
             '### 第四段｜最後一件\n'
-            '小語延續歌舞。\n'
-            '她依序卸除左右高跟鞋。\n'
+            '演員延續歌舞。\n'
+            '她依序卸除左右黑色長靴。\n'
             '完成後她赤腳繼續舞蹈。\n'
             '攝影機追蹤她的旋轉。\n'
             '本段完成最後的服裝變化。\n'
@@ -343,15 +343,15 @@ class PythonSlotsTests(unittest.TestCase):
                           '第三段','第三段','第四段','第四段'])
         self.assertIn('Torso: Bare;', events[3])  # Already removed before fourth clip.
         self.assertIn('Torso: Bare;', events[4])  # No reinstatement at next chapter.
-        self.assertIn('Bottom: 黑色高腰舞台內褲 worn.', events[4])
+        self.assertIn('Bottom: 灰色長褲 worn.', events[4])
         self.assertIn('Bottom: Bare;', events[6])
-        self.assertIn('Feet: 黑色高跟舞鞋 worn.', events[6])
+        self.assertIn('Feet: 黑色長靴 worn.', events[6])
         self.assertIn('Feet: Barefoot;', events[7])
         self.assertNotIn('Current interval actions in original order:\n- 本段只完成',
                          '\n'.join(events))
         self.assertNotIn('ALREADY ESTABLISHED; do not restage or repeat: 本段只完成',
                          '\n'.join(events))
-        self.assertNotIn('高跟鞋的卸除', '\n'.join(events[:6]))
+        self.assertNotIn('黑色長靴的卸除', '\n'.join(events[:6]))
         # Input scene and film mode must remain meaningful despite state header.
         self.assertEqual(plan['segments'][7]['mode'], 'story')
 
