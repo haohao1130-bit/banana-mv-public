@@ -350,6 +350,52 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                             'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
+def _fixed_reference_with_python_priority(fixed_setup, event):
+    """Remove superseded opening-wardrobe facts, not reference identities.
+
+    Only slots with a populated Python state take this path. Untracked
+    appearance properties continue to fall back to the original reference.
+    """
+    match = re.search(
+        r'(?s)^CURRENT_ACTOR_STATE[^\n]*\n(.*?)\nEXPECTED_ACTOR_STATE_AFTER_THIS_CLIP',
+        event)
+    if not match:
+        return fixed_setup
+    known = [line.strip() for line in match.group(1).splitlines()
+             if re.match(r'^- (?:Torso|Bottom|Feet): ', line)]
+    if not known:
+        return fixed_setup
+    # Bind identity to the reference, but never bind today's clothing to the
+    # reference's historic opening wardrobe.
+    fixed_setup = fixed_setup.replace(
+        '與開場服裝依照參考圖片',
+        '依照參考圖片；開場服裝僅是初始造型，不代表本段外觀')
+    output = []
+    opening = False
+    for line in fixed_setup.splitlines():
+        stripped = line.strip().lstrip('-* ').strip()
+        opener = re.match(r'^(開場穿著|初始穿著|初始服裝|開場服裝)\s*[：:]\s*(.*)$',
+                          stripped)
+        if opener:
+            opening = True
+            output.append('初始服裝僅作歷史參考；本段已記錄的屬性由 Python 當前狀態決定。')
+            inline = opener.group(2).strip()
+            if inline and not any(inline in entry for entry in known):
+                output.append(inline)
+            continue
+        if opening:
+            if (not stripped or stripped.endswith(('：', ':')) or
+                    stripped.startswith(('服裝依', '已卸除', '不重新', '人物', '整體',
+                                         '故事', '演唱', '攝影', '後半段'))):
+                opening = False
+            elif any(stripped in entry for entry in known):
+                # The Python-ledger category is known; discard the stale
+                # reference outfit for this category. Other items stay.
+                continue
+        output.append(line)
+    return '\n'.join(output)
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
@@ -366,6 +412,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     # Strip only the explicit upstream outcome block in legacy settings. No
     # keyword blacklist: identity, scene duties and current results stay intact.
     fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
+    fixed_setup = _fixed_reference_with_python_priority(fixed_setup, row['event'])
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
