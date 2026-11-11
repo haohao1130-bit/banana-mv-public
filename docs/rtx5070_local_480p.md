@@ -14,7 +14,7 @@ This branch is isolated from `main`, Classic Colab, VNext, and Fusion.
 An accompanying downloadable launcher ZIP starts this branch at:
 - repo: `%USERPROFILE%\banana-mv-5070`
 - data: `%LOCALAPPDATA%\BananaMV5070`
-- Banana web: `http://127.0.0.1:8192`
+- Banana web: `http://127.0.0.1:8193`
 - shared ComfyUI: `http://127.0.0.1:8000`
 
 It checks the existing CUDA 13.0 PyTorch environment and required ComfyUI node types, makes no Git resets or force merges, and does not stop existing GPU processes.
@@ -29,3 +29,7 @@ Windows-specific local assumptions are inherited from the user's previously work
 4. Only after that, test 10 seconds or a longer song, and finally consider an independent NVIDIA upscale stage.
 
 **Limitations:** Static branch/UI/launcher inspection only; no actual RTX 5070 GPU execution in this environment. H3's total model weight footprint is much greater than 12 GB, so dynamic offloading/host RAM are essential and OOM is possible. 5s is a reasonable first experiment, not a guarantee of success.
+## Windows desktop installer (V2)
+Run `tools/local_5070/Install_Desktop_Shortcut.cmd` once (after downloading the installer ZIP). It copies persistent launchers into `%LOCALAPPDATA%\BananaMV-5070-CU130-Launcher` and creates desktop shortcuts for normal launch, optional CPU VAE, and explicit T8 repair. The normal shortcut opens the Banana UI at **http://127.0.0.1:8193** automatically. **8192 is Fusion Lab and must not be reused.**
+
+Missing `MiniMaxH3AudioConditioningT8` is now a non-blocking launcher warning so that the Banana frontend can still open, but generation requires the node. The optional T8 repair helper clones only the custom-node source after explicit confirmation, never auto-downloads models or modifies Torch/CUDA. Restart existing ComfyUI manually after a repair; an instance started with `--disable-all-custom-nodes` will never load T8.
