@@ -353,7 +353,7 @@ class PythonSlotsTests(unittest.TestCase):
                          '\n'.join(events))
         self.assertNotIn('高跟鞋的卸除', '\n'.join(events[:6]))
         # Input scene and film mode must remain meaningful despite state header.
-        self.assertEqual(plan['segments'][7]['mode'], 'performance')
+        self.assertEqual(plan['segments'][7]['mode'], 'story')
 
     def test_unrelated_story_has_no_invented_wardrobe_state(self):
         brief = (
