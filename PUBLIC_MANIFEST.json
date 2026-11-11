@@ -4,7 +4,7 @@
   "files": [
     {
       "path": ".github/workflows/checks.yml",
-      "sha256": "945bbb8ac782b2d5f0f5c7692a4239b322c6f3f3cfbf9d2e9f958e476efa121c"
+      "sha256": "3f7ee742c5079058c9301b9184aae956f10033d453b4b78d9194415135b06724"
     },
     {
       "path": ".gitignore",
@@ -88,15 +88,15 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "30e0646af1e9867b9ee6d50b4575b610ed3d00a0ac62d453280acf5c9b6683ad"
+      "sha256": "d6096e9397915734b3d0bd1ae8778e3ca9ca4fe3dbafecf4faccb3f927ab08a0"
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "a6c088ee4503f5a9d8dc200440f216ed50c6d2a2e94f86c418e9a6fcaaa8cbe9"
+      "sha256": "5655e3adb2d6fe12f383c19186b72a0e76af6025feee7d6a79a7495f27c86368"
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "361d00849c1b96755a7c2c7d009a4495ad5189004134dbdc370d7d0bd39b0e00"
+      "sha256": "d65f667508588909c22bf6cc55d66767c0ef0ef368da44b1f5872907996fdd1d"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -112,7 +112,7 @@
     },
     {
       "path": "banana_mv/takes.py",
-      "sha256": "cd652cf16fa19cc914d1d9e51b6afa7d2c2866bbf39fe9417ac9ba0b31148a29"
+      "sha256": "365c5c7671c7d4bb066ff0ac37f1998c0b17c241abeeb5bd161d08e79686be71"
     },
     {
       "path": "banana_mv/web/clip_review.js",
@@ -120,7 +120,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "9933b3885fd41328be88981cfc28c88dafa2145e8849696519aefbc995ce06b1"
+      "sha256": "eede2e5af98d990f540551007ae108b309b9188414076aba38bd8bfab4bbdd6e"
     },
     {
       "path": "docs/clip_review.md",
@@ -139,44 +139,8 @@
       "sha256": "b660a2500647befbc7b0e53096abe707a75e2111fc9a0f2b352178b7b5fb61b8"
     },
     {
-      "path": "docs/vnext-audit.md",
-      "sha256": "945ba906bc5b84d77c4fd004c0bd6b318a3104a72c315405ce4ec6e5a410f987"
-    },
-    {
-      "path": "docs/vnext_evidence/baseline.txt",
-      "sha256": "38646bfccf04155846e185c16654b5923abf20ac9c45c37cc6e230531b943d55"
-    },
-    {
-      "path": "docs/vnext_evidence/ci-followup.json",
-      "sha256": "91f4b832b4b672d1c47c7819f7655c47539985229fd44af0ad16725adb1d1b44"
-    },
-    {
-      "path": "docs/vnext_evidence/final-suite.txt",
-      "sha256": "76add5fc2b4409b07e2ac1cecf0c629b09e36e15f2c4e072cb11a627ef8abfdc"
-    },
-    {
-      "path": "docs/vnext_evidence/input.json",
-      "sha256": "a819fe25f2174505df10f55031a8fae95607431f135e42bd9854148d3e74138b"
-    },
-    {
-      "path": "docs/vnext_evidence/reproduction.txt",
-      "sha256": "4c4d1ee01885da624e32b6983e937565883b73c26728463ae8a5385a3280cb44"
-    },
-    {
-      "path": "docs/vnext_evidence/results.json",
-      "sha256": "7729c4ad30dd710ee145147edbf4873ee955873fda810c1ea1021f67b5fd24d2"
-    },
-    {
-      "path": "tests/check_asset_reuse.cjs",
-      "sha256": "63d2c0d5fff30cca03f697df577b2f7de558f5ff6d7a1f69173ad2ef49e2a87e"
-    },
-    {
       "path": "tests/check_ui.cjs",
       "sha256": "e99928857757077d6720074cbf0465a42880540146b85e89f7d7549fc08eeae0"
-    },
-    {
-      "path": "tests/test_asset_reuse.py",
-      "sha256": "96eedd8151b4ee84b541765295e0f9d106971f080eb9ba15c95dda18de4857e7"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -231,10 +195,6 @@
       "sha256": "5ad314695e13007f02a4b03715310168714c56bb1242b822f12c3a727440781f"
     },
     {
-      "path": "tests/test_mv_motion_intensity.py",
-      "sha256": "8b35ed7111e0f970a2fbe3d664434f5a71c69e2951ecb9fdc302716323765084"
-    },
-    {
       "path": "tests/test_mv_scope.py",
       "sha256": "31377559af49f67c7e621ddca37ccf318942e8669cfb3b94e83e825c45830b75"
     },
@@ -260,7 +220,7 @@
     },
     {
       "path": "tests/test_reference_handoff.py",
-      "sha256": "c8c62d85b15f7220bf86ac57c6c6a377d44a9ecdc0a5a161e61b1544eee01641"
+      "sha256": "8bcb2d41b0018b030e4b190850fb429fdf5db83cb4cd9edf0b523985ba4bc706"
     },
     {
       "path": "tests/test_runtime.py",
@@ -276,7 +236,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "18aeb1e03d27d30dadde2cca258cec2cef205427a20eb3e8cc3e48a9b0bda112"
+      "sha256": "128ec7b10afe13a485ec4fae4e54a7d93221ff9e193d738517a11bef9f826cc4"
     },
     {
       "path": "tests/test_services.py",
@@ -284,7 +244,7 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "ab4e072da951a99df0a1a4ae87c1f9a6ac19a4b69295330e26728868ef905c80"
+      "sha256": "84051e76ce8e566e37d90506ab83010ff18edceb69ef56f5ed5348062371d896"
     },
     {
       "path": "tests/test_sound_effects.py",
@@ -292,7 +252,7 @@
     },
     {
       "path": "tests/test_story_scope.py",
-      "sha256": "ec8264bed2d2424ab62e4e3e5b2c6b7acda024d0447f24a7b718cfc57acf1432"
+      "sha256": "4f0473bec1d891037a384d770f663ee73ef7c80a14f7a5281cb442681ed3ae5a"
     },
     {
       "path": "tests/test_takes.py",
@@ -301,10 +261,6 @@
     {
       "path": "tests/test_unified_direction.py",
       "sha256": "779d209f4da73346731fd0a669dccdb287a4b21b3354ad5dabc8f4a55ab3d011"
-    },
-    {
-      "path": "tests/test_vnext_regression.py",
-      "sha256": "4daa0ec130a105dae8468baca692223f85aa3e6f267cd5b14dac88ea44553fa1"
     },
     {
       "path": "tools/build_notebook.py",
@@ -325,6 +281,26 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
+    },
+    {
+      "path": "tools/start_classic_local.ps1",
+      "sha256": "10977e97f90986ef6145810faac5c781992424603dd9ba68414069122f03c0a9"
+    },
+    {
+      "path": "tools/start_classic_local.cmd",
+      "sha256": "4b707cc2f34d3e1b48ccb4acbfad6a40e9163dc2d2277ac47f1882bd823ff32b"
+    },
+    {
+      "path": "tools/create_classic_shortcut.ps1",
+      "sha256": "65c25a376626969011df4ba18c8cfc4063f8b41a31ccf7e86c4e86b9a45c5af1"
+    },
+    {
+      "path": "docs/windows_classic_local.md",
+      "sha256": "76e17fd31c08dce2b95f0b92475da96b92c09db396846c12ff7fcada76b798ce"
+    },
+    {
+      "path": "tests/test_classic_isolation.py",
+      "sha256": "3c9b8daafe5693c28d07aefd87bd2c710b5de65713fe995c684e350cbc2bb1fb"
     }
   ]
 }

@@ -1,6 +1,5 @@
 """Banana-owned settings, compatible asset storage and local prompt rewriting."""
 import copy
-import hashlib
 import json
 import os
 import random
@@ -57,42 +56,6 @@ def library_index():
     return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else []
 
 
-
-def find_asset(cfg, sha256, size):
-    """Reuse verified stored content, including assets uploaded before hashes existed."""
-    if (not isinstance(sha256, str) or len(sha256) != 64
-            or any(c not in '0123456789abcdef' for c in sha256)
-            or type(size) is not int or size < 0):
-        raise ValueError('無效的素材指紋。')
-    with ASSET_LOCK:
-        index = library_index()
-        changed, found = False, None
-        for row in index:
-            source = safe_child(LIBRARY, row['file'])
-            if not source.is_file():
-                continue
-            stat = source.stat()
-            if stat.st_size != size:
-                continue
-            if row.get('content_stat') != [stat.st_size, stat.st_mtime_ns]:
-                with source.open('rb') as stream:
-                    row['sha256'] = hashlib.file_digest(stream, 'sha256').hexdigest()
-                row['content_stat'] = [stat.st_size, stat.st_mtime_ns]
-                changed = True
-            if row.get('sha256') == sha256:
-                target = safe_child(Path(cfg['comfy_input_dir']), row['comfy_name'])
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if not target.exists():
-                    shutil.copyfile(source, target)
-                found = row
-                break
-        if changed:
-            temp = LIBRARY/'library.json.tmp'
-            temp.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding='utf-8')
-            temp.replace(LIBRARY/'library.json')
-        return found
-
-
 def asset(asset_id):
     item = next((row for row in library_index() if row['id'] == asset_id), None)
     if item is None:
@@ -118,10 +81,6 @@ def add_asset(cfg, filename, body):
     image = suffix in ('.png', '.jpg', '.jpeg', '.webp')
     if not image and suffix not in ('.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac', '.mp4', '.webm'):
         raise ValueError('請上傳 PNG/JPEG/WebP 圖片或支援的音訊檔。')
-    digest = hashlib.sha256(body).hexdigest()
-    existing = find_asset(cfg, digest, len(body))
-    if existing is not None:
-        return existing
     LIBRARY.mkdir(parents=True, exist_ok=True)
     aid = uuid.uuid4().hex[:12]
     stored = LIBRARY/(aid+suffix)
@@ -139,9 +98,6 @@ def add_asset(cfg, filename, body):
                 row['width'], row['height'] = ImageOps.exif_transpose(pic).size
         elif not any(s['codec_type']=='audio' for s in probe(stored)['streams']):
             raise ValueError('檔案內沒有音軌。')
-        row['sha256'] = digest
-        stat = stored.stat()
-        row['content_stat'] = [stat.st_size, stat.st_mtime_ns]
         shutil.copyfile(stored, target)
         with ASSET_LOCK:
             index = library_index()
@@ -213,4 +169,3 @@ def rewrite_local(cfg, system, parts, job_id):
             (Path(cfg['comfy_input_dir'])/name).unlink(missing_ok=True)
         if entry is not None and cfg.get('free_after_rewrite', True):
             comfy(cfg, '/free', {'unload_models': True, 'free_memory': True})
-

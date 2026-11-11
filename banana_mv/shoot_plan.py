@@ -80,19 +80,56 @@ Keep lip movement compatible with the supplied audio; add no new vocal material.
 """
 
 
-AUTO_FILMING = """Direct concrete, expressive shots using the supplied H3 camera and
-shot-writing guide. Choose focal subject, position, viewpoint, composition, motion,
-lighting and attention shifts from the commissioned event; never impose a fixed
-shot count or camera recipe. Carry each event and its physical state through cuts.
-A clip boundary is not a story ending. Preserve source-song performance, the
-assigned vocalist's lip sync, and changes in visual energy motivated by the music.
+AUTO_FILMING = """Direct the visual sequence first: decide what the viewer sees, how attention moves
+between performance, action details, reactions and environment, and how those images
+connect. Invent the coverage yourself from the current beat and adaptation policy;
+the user need not supply a shot list. Select coverage before framing a visible singer
+for readable lip sync. A whole event need not remain on the singer's face.
+Then complete a concrete shooting decision for EVERY Shot before writing the final
+prompt. Treat the following as required decision slots; choose their values freely
+from the assigned events, references, genre and musical context:
+1. TIME AND CONTINUITY: allocate the shot's local start and end within the clip.
+Carry the preceding action state, positions, held objects and consequences forward,
+including time off-screen. Budget readable actions and results, then ending holds.
+2. SUBJECT AND ACTION: identify the visible subject and reference identity, the
+attention or gesture target, the visible action progression and its end state.
+3. CAMERA AND PERSPECTIVE: choose the camera's location relative to the subject,
+height, viewing angle, shot size and perspective. Express lens effects concretely
+when useful, such as spatial depth or compression; numerical focal lengths are optional.
+4. COMPOSITION AND SPACE: place the subject in the frame with a clear scale; specify
+foreground and background relationships, depth, gaze or movement direction and focus.
+Describe the visible environment where an empty scene itself is the subject.
+5. CAMERA MOVEMENT: choose a static camera or a specific movement. For movement,
+state its direction, target, extent and speed; coordinate it with the visible action.
+6. LIGHTING: choose scene-consistent light direction and quality, contrast and the
+illuminated visual focus, at the selected photographic intensity.
+Resolve every slot as an executable choice. A shot description states what is visible
+and how it changes, rather than merely naming a cinematic technique.
+Write these decisions naturally inside each Shot of detailed_description, using the
+native guide's Shot labels and local cut times. The first shot begins at zero without
+a timestamp; each later shot starts at its cut time, and the last ends at clip duration.
+Keep the decision worksheet internal; deliver the existing native sections only.
+Give adjacent shots independently chosen viewpoints and compositions serving their
+attention shifts. Connect them through the same ongoing event and spatial relationships.
+Develop compatible staging and performance freely within the assigned story;
+primary_mode guides the passage without prescribing every shot's method.
 """
 
-DYNAMIC_EDITING = """Use motivated, numbered cuts when the current music or
-story benefits from a change of viewpoint, action detail, reaction, performance
-or parallel scene. A camera move is not a cut. Choose shot duration freely; do
-not cut at every beat, repeat completed action or force a closing pose.
-Honor commissioned one-take shots and preserve vocal phrases across edits.
+DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial coverage, not just camera
+movement. Separate changes of storyline from changes of viewpoint within a scene.
+For an energetic passage with several distinct action or performance accents, use
+purposeful short-shot coverage within that scene as well as intercuts. A scene visit
+is not automatically one shot. A numbered Shot may include motivated internal cuts, reverse angles or montage
+transitions. Describe the new view clearly; do not require a fresh Shot number
+for every editorial cut. Keep distinct compositions and continuing action.
+Select viewpoints that reveal a meaningful subject, spatial relationship, action
+turn, reaction, performance detail or visual accent; do not merely rename the same
+framing. A push-in, pan or subject moving closer remains one shot, not an editorial cut.
+Choose flexible lengths with no minimum duration or fixed shot quota. Keep contact,
+response and vocal phrases readable across cuts. Specify the outgoing action state
+and the next view's new visual focus so a cut advances the same ongoing event.
+Honor explicit continuous-take requests and the assigned ending. Design each other
+shot length from its visual function, rather than defaulting to sustained coverage.
 """
 
 CLIP_INTENSITY = {
@@ -121,9 +158,6 @@ background displacement where relevant. Commit to direction, extent and speed.
 Keep important contact, reactions, vocal performance and causal results legible;
 respect explicit continuous-take requests and the allocated ending. Photographic
 intensity changes the filmmaking, not the assigned characters, vocal roles or outcome.
-Cinematic burst is not sped-up playback or universally faster bodies/cameras. Preserve
-believable acceleration, contact, follow-through and deceleration. Create impact via
-motivated cuts, viewpoints, timing and light; do not cram extra actions per second.
 """
 }
 
@@ -138,19 +172,16 @@ A solo label does not establish its instrument; labels never override vocal role
 Write SETUP and CLIP story prose in English; retain original character names and reference tokens.
 Apply the supplied adaptation policy while developing and allocating the story.
 Build filmable events at the selected intensity; the native clip director later
-turns each assigned beat into precise shots. Keep both parallel strands in each
-normal-length interval when requested; each strand advances in its own fixed space.
+turns each assigned beat into precise shots. Preserve requested parallel strands as meaningful recurring material across the MV.
+Choose irregular intercuts from music and events, without a per-clip scene quota.
 Extract shared SETUP from the user's fixed world, reference and vocal-role settings.
 Keep their original wording and distinct locations; do not summarize or redesign them.
 SETUP will be sent to every clip director as FIXED REFERENCE SETTINGS.
 Include explicit name/role-to-<Picture N> bindings for every supplied actor and location,
 fixed geography, vocal duties and invariant performance rules.
-Separate invariant rules (who sings, actor identity, separate locations) from story
-outcomes (who wins, an award, a final gag or final pose). A required outcome is still
-a plot event, never an invariant reference rule. Put the whole-work outcome in the
-separate STORY OUTCOME block for upstream planning only, then allocate its actual
-events to the CLIP commissions that perform them. STORY OUTCOME is NOT forwarded
-to clip directors. Do not duplicate it inside SETUP under "hard restrictions".
+Keep the whole-work outcome in a separate STORY OUTCOME block, for upstream
+allocation only. Winning, awards and final poses are plot events, never fixed
+reference rules. Allocate them only to the CLIP that performs them.
 When the brief requests unreferenced supporting roles, CREATE their fixed designs in
 SETUP before allocating clips: a stable name/role, distinctive appearance, costume,
 instrument/prop and home position/location for each. Follow requested adult status
@@ -200,7 +231,7 @@ Use exactly these plain-text boundaries, every requested index, then END:
 === SETUP ===
 Original fixed world, separate scene definitions, reference roles and singing assignments only.
 === STORY OUTCOME ===
-Whole-work outcome for upstream planning only. Its events must also appear in their assigned CLIP commissions.
+Whole-work outcome for upstream allocation only; never repeat it in SETUP.
 === CLIP 0 action ===
 Current situation and events for interval 0 only.
 === CLIP 1 story ===
@@ -261,8 +292,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
     fingerprint=digest(task)
     # Old schema-5 jobs did not fingerprint the two directing controls.
     old_task=dict(task,format='isolated_shoot_briefs_v1')
-    legacy_fingerprints={digest(dict(task,format='isolated_shoot_briefs_v2')),
-                             digest(old_task),digest({k:v for k,v in old_task.items()
+    legacy_fingerprints={digest(dict(task,format='isolated_shoot_briefs_v2')),digest(old_task),digest({k:v for k,v in old_task.items()
                                if k not in ('intensity','dynamic_cuts')})}
     path=Path(work)/'director_plan.json'
     if path.is_file():
@@ -306,9 +336,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             plan={'version':5,'shared_setup':shared,'segments':result,'visual_verified':False,
                   'ending_contract':task['ending_contract'],'project_scope':req.get('project_scope','full')}
             outcome=re.search(r'^===\s*STORY OUTCOME\s*===\s*\n(.*?)(?=^===\s*CLIP\s)',text,re.S|re.M)
-            if outcome:
-                # Upstream planning/audit only. Never included in fixed_reference_settings.
-                plan['story_outcome']=outcome[1].strip()
+            if outcome:plan['story_outcome']=outcome[1].strip()  # Upstream only.
             plan['content_sha256']=digest(plan);plan['input_sha256']=fingerprint
             atomic_json(path,plan)
             return plan
@@ -320,61 +348,6 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             attempts=parts+[('text','Deliver the original fixed settings in SETUP and ALL CLIP scripts, then END. '
                             'Keep the selected adaptation policy and photographic intensity while allocating the story backbone across the supplied intervals. '
                             'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
-
-
-def validate_native_mv_format(prompt, seconds, *, require_native=False):
-    """Check official Ref2VA shot timing and explicit speaker bindings, not story semantics.
-
-    Legacy prose-only outputs are accepted for saved/older workflows; native
-    six-section outputs receive deterministic structure and timeline checks.
-    """
-    from banana_mv.direction_contract import validate_h3_sections
-    if not require_native and not re.search(
-            r'^\s*(?:subject_definitions|summary|retention_analysis|detailed_description|overall_soundscape|non_diegetic_music)\s*:',prompt,re.M):
-        return prompt
-    validate_h3_sections(prompt)
-    if require_native:
-        retention=re.search(r'^\s*retention_analysis\s*:(.*?)^\s*detailed_description\s*:',prompt,re.M|re.S)[1]
-        if not re.search(r'<Audio 1>\s*:\s*fully_copy\b',retention):
-            raise ValueError('MV 原始音訊必須在 retention_analysis 保留 <Audio 1>: fully_copy。')
-    match=re.search(r'^\s*detailed_description\s*:(.*?)^\s*overall_soundscape\s*:',prompt,re.M|re.S)
-    if not match:
-        raise ValueError('Ref2VA 缺少詳細分鏡區塊。')
-    body=match.group(1).strip()
-    shots=list(re.finditer(r'\[Shot\s+(\d+)\]',body))
-    if not shots or len(shots)!=len(re.findall(r'\[Shot\b',body)):
-        raise ValueError('Ref2VA 詳細分鏡需使用 [Shot N]。')
-    previous=0.0
-    for i,shot in enumerate(shots):
-        if int(shot.group(1))!=i+1:
-            raise ValueError('分鏡必須從 [Shot 1] 開始連號。')
-        end=shots[i+1].start() if i+1<len(shots) else len(body)
-        description=body[shot.end():end]
-        timecode=re.match(r'\s*At\s+(\d{2}):(\d{2})\.(\d{3})\s*,?',description)
-        if i==0 and timecode:
-            raise ValueError('第一鏡 [Shot 1] 不需要切鏡時間碼。')
-        if i and not timecode:
-            raise ValueError(f'第 {i+1} 鏡需使用 At MM:SS.mmm。')
-        if timecode:
-            minute,second,millis=map(int,timecode.groups())
-            timestamp=minute*60+second+millis/1000
-            if second>=60 or not previous<timestamp<float(seconds):
-                raise ValueError(f'第 {i+1} 鏡時間碼必須遞增且小於 {seconds:g} 秒。')
-            previous=timestamp
-            description=description[timecode.end():]
-        if not description.strip():
-            raise ValueError(f'第 {i+1} 鏡缺少畫面描述。')
-    # H3 (S1)/(S2) represent global voices, including copied source-song voices.
-    # Do not require <d> or ban speaker markers: this is source-audio reuse.
-    speaker_to_subject={}
-    subject_to_speaker={}
-    for subject,speaker in re.findall(r'<Subject\s+(\d+)>\s*\(S(\d+)\)',prompt):
-        if ((speaker in speaker_to_subject and speaker_to_subject[speaker]!=subject) or
-            (subject in subject_to_speaker and subject_to_speaker[subject]!=speaker)):
-            raise ValueError('同一個 (Sx) 發聲者不可對應不同人物，人物發聲者 ID 亦不可變動。')
-        speaker_to_subject[speaker]=subject
-        subject_to_speaker[subject]=speaker
-    return prompt
 
 
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
@@ -390,6 +363,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
+    # Strip only the explicit upstream outcome block in legacy settings. No
+    # keyword blacklist: identity, scene duties and current results stay intact.
+    fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
@@ -407,21 +383,12 @@ changes and selected downbeats to motivate action payoffs, camera reveals and
 performance highlights. Write their timing into the shots, not an analysis appendix.
 Keep anticipation and contrast; do not cut on every beat. Labels can be wrong and
 do not identify instruments or override vocal roles. Use loudness only as acoustic evidence.
-The Current clip script is the authority for events, their causal order and the
-local end state. fixed_reference_settings supplies identities, appearances, locations
-and invariant performance rules only; it cannot authorize another plot event.
-If legacy fixed settings mention a whole-work outcome or final image, do not stage
-it unless this clip's commission explicitly assigns it. Neither a required eventual
-outcome nor an available prop makes it happen in this interval.
+The current clip script alone assigns plot events. Fixed reference settings carry
+identity and scene duties, never permission to perform a future ending. If old
+fixed settings mention a whole-work outcome, perform it only when assigned here.
+Opening conditions are already true; do not replay how they occurred. Preserve
+current consequences while designing music-led coverage and internal cuts freely.
 Use the current clip's assigned beat and end state as the scope for visual development.
-Reach the commissioned local narrative state without acting out a closing beat:
-for continuing intervals, performance, movement, reactions and ongoing action
-remain in progress through the technical boundary; do not stage a pause, victory
-pose, reset, farewell, fade, or miniature ending to mark the clip's last second.
-A victory does not itself authorize an award ceremony or final gag. Do not add a future-event teaser shot. The interval
-explicitly assigned the resolution must still film it, including a preceding full
-interval assigned decisive events before a tiny residual tail. A first_frame is
-already visible continuity, not permission to invent the next plot milestone.
 Apply the adaptation policy below within that local scope. The commission supplies
 the needed current facts, opening state, events and local end state. Design compelling
 performance, coverage and montage to realize it. Use its assigned locations and asset roles;
@@ -454,13 +421,7 @@ music track, not N/A. Optional external effects are mixed separately, not genera
 by this filming prompt. Their policy is sparse, event-motivated accents with music
 and lead vocals dominant; no continuous crowd bed, repetitive effects or invented dialogue.
 Keep microphone grip and free-hand gestures physically consistent.
-Follow the supplied whole-work ending scope; a continuing clip must not create
-its own ending, stopping pose or dramatic punctuation. A clip's last frame is
-just the next film interval's incoming state, not a cue to end the performance.
-For later clips, the first shot resumes the prior story/action line from its
-current consequence rather than reintroducing or restarting it. Preserve free
-music-video intercuts and parallel storylines: switching strands or camera
-angles does not reset the timeline of any strand.
+Follow this clip's ending; an ongoing clip needs no whole-work finale.
 Return only the native filming prompt, no analysis, JSON or management instructions.
 """
     text+='\n'+adaptation_direction(req)
@@ -482,14 +443,13 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                                    'contract_check_calls':0}
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
-            prompt=validate_native_mv_format(normalize_mv_prompt(_text(raw),len(refs)),segment['seconds'],
-                require_native=req.get('h3_validation_version')==1)
+            prompt=normalize_mv_prompt(_text(raw),len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
             return prompt
         except ValueError as error:
             if attempt>=rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
-            attempts=parts+[('text','Return only the current native H3 prompt. Fix H3 native formatting, shot timing or connected media only: '+str(error))]
+            attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 
 

@@ -89,16 +89,11 @@ def graph_options(req, seconds, segment=None):
     steps=req.get('sampling_steps',8)
     if isinstance(steps,bool) or steps not in (6,8):
         raise ValueError('採樣步數僅支援 6 或 8。')
-    intensity=req.get('intensity','high')
-    if intensity not in ('normal','high','extreme'):
-        raise ValueError('未知攝影強度。')
-    if req.get('mv_motion_version')==2 and intensity=='extreme':
-        intensity='high'  # Photographic burst is not an extra motion-LoRA boost.
     return {'steps':int(steps),'acceleration': req.get('acceleration', True),
             'kitchen_attention': req.get('kitchen_attention',req.get('acceleration',True)),
             'sparse_attention': req.get('sparse_attention',req.get('acceleration',True)),
             'motion_lora': req.get('motion_lora', True),
-            'director_mode': mode, 'intensity': intensity}
+            'director_mode': mode, 'intensity': req.get('intensity', 'high')}
 
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
@@ -554,9 +549,8 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=5,h3_validation_version=1,story_scope_version=1,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=5,story_scope_version=1,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
-             mv_motion_version=2,
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
     from banana_mv.mv_scope import validate_scope
@@ -943,15 +937,6 @@ class Handler(WebHandler):
     def do_POST(self):
         path=urllib.parse.urlparse(self.path).path
         try:
-            if path=='/api/assets/lookup':
-                if not GPU_LOCK.acquire(blocking=False):
-                    raise ValueError('MV 執行中，請完成後再準備素材。')
-                try:
-                    body=self.body_json()
-                    return self.send_json({'asset':backend.find_asset(
-                        backend.load_config(),body.get('sha256'),body.get('size'))})
-                finally:
-                    GPU_LOCK.release()
             if path=='/api/upload':
                 if not GPU_LOCK.acquire(blocking=False):
                     raise ValueError('MV 執行中，請完成後再上傳素材。')

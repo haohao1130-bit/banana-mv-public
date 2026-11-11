@@ -118,12 +118,6 @@ class ServerIntegration(unittest.TestCase):
                     self.assertEqual(err.exception.code,404)
                     image=post('/api/upload',photo.read_bytes(),{'X-Filename':'photo.png'})
                     audio=post('/api/upload',song.read_bytes(),{'X-Filename':'song.wav'})
-                    import hashlib
-                    lookup={'sha256':hashlib.sha256(photo.read_bytes()).hexdigest(),'size':photo.stat().st_size}
-                    reused=post('/api/assets/lookup',json.dumps(lookup).encode())
-                    self.assertEqual(reused['asset']['id'],image['id'])
-                    self.assertIsNone(post('/api/assets/lookup',json.dumps({'sha256':'0'*64,'size':1}).encode())['asset'])
-
                     for mode,count,legacy in [('independent',1,True),('chain',1,True),('independent',3,False),('chain',3,False)]:
                         captured.clear()
                         req={'image_id':image['id'],'song_id':audio['id'],'mode':mode,
@@ -247,4 +241,3 @@ class ServerIntegration(unittest.TestCase):
                         self.assertIn('<Picture 3> 場景',parts[0][1])
             finally:
                 http.shutdown();http.server_close()
-

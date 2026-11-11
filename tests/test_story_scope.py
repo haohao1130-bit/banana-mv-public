@@ -53,17 +53,3 @@ class StoryScopeTests(unittest.TestCase):
         self.assertEqual(fixture.model.call_count,1)
         fixture.queue.assert_not_called()
         self.assertEqual(fixture.job['status'],'plan_ready')
-
-    def test_saved_v2_allocation_reused_without_rewriting_existing_clips(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);images,cfg,req=shots.ShootPlanTests().fixture(root)
-            model=Mock(return_value=shots.allocation())
-            plan=ensure_shoot_plan(cfg,req,timeline(),images,root,model)
-            task=json.loads(model.call_args.args[2][0][1])
-            plan['input_sha256']=digest(dict(task,format='isolated_shoot_briefs_v2'))
-            path=root/'director_plan.json';path.write_text(json.dumps(plan))
-            before=path.read_bytes()
-            model.reset_mock()
-            self.assertEqual(ensure_shoot_plan(cfg,req,timeline(),images,root,model),plan)
-            model.assert_not_called()
-            self.assertEqual(path.read_bytes(),before)
