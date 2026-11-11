@@ -57,7 +57,9 @@ continues to point to VNext unless explicitly changed.
 For troubleshooting audio upload, Classic prints the selected Python and ffprobe
 paths. ffprobe JSON uses explicit UTF-8 decoding (as in local VNext); if its
 capture is empty or invalid the backend reports an actionable media-probe error
-instead of a generic JSON NoneType failure.
+instead of a generic JSON NoneType failure. If the backend upload route fails,
+it writes the local traceback to `%LOCALAPPDATA%\\BananaMVClassic\\upload_error.log`
+for inspection; this log is never served by the web interface.
 
 If your VNext launcher uses a custom Python, launch Classic with the same path:
 
