@@ -144,6 +144,7 @@ class PythonSlotsTests(unittest.TestCase):
             '@小語：成年女歌手，固定高馬尾。\n'
             '## 2｜MV 主題\n'
             '復古夜總會與紅色布幕。\n'
+            '歌手持續表演，最後以謝幕姿態結尾。\n'
             '## 3｜故事內容\n'
             '### 第一段｜00:00–00:10｜開場\n'
             'OPEN_1 歌手登上舞台。\n'
@@ -179,6 +180,9 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertNotIn('第一段只完成',fixed)
         self.assertNotIn('第四、第五段',fixed)
         self.assertNotIn('最後 4.5 秒',fixed)
+        self.assertNotIn('最後以謝幕',fixed)
+        self.assertTrue(any('最後以謝幕' in x for x in chapters[4]['constraints']))
+        self.assertFalse(any('最後以謝幕' in x for x in chapters[0]['constraints']))
         self.assertTrue(any('第一段只完成' in s for s in chapters[0]['constraints']))
         self.assertTrue(any('第四、第五段' in s for s in chapters[3]['constraints']))
         self.assertTrue(any('最後 4.5 秒' in s for s in chapters[4]['constraints']))
