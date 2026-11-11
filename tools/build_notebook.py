@@ -64,3 +64,8 @@ for index,cell in enumerate(cells):
     cell['id']=f'banana-public-{index:02d}'
 nb={'nbformat':4,'nbformat_minor':5,'metadata':{'kernelspec':{'name':'python3','display_name':'Python 3'},'language_info':{'name':'python'},'colab':{'provenance':[],'gpuType':'G4'},'accelerator':'GPU'},'cells':cells}
 (ROOT/'Banana_MV_Public.ipynb').write_text(json.dumps(nb,ensure_ascii=False,indent=1)+'\n',encoding='utf-8')
+# Name-distinct Colab entrypoint. Keep the historical filename so saved Colab
+# links, GitHub bookmarks and existing builder checks still work.
+named_nb=json.loads(json.dumps(nb,ensure_ascii=False))
+named_nb['cells'][0]['source'][0]='# 🍌 BANANAMV CLASSIC｜標準公開版\n'
+(ROOT/'BANANAMV_CLASSIC_PUBLIC.ipynb').write_text(json.dumps(named_nb,ensure_ascii=False,indent=1)+'\n',encoding='utf-8')
