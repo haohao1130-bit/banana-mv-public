@@ -371,6 +371,54 @@ class PythonSlotsTests(unittest.TestCase):
                          '\n'.join(row['event'] for row in plan['segments']))
         self.assertIn('工程師找出錯誤',plan['segments'][1]['event'])
 
+    def test_python_appearance_anchor_is_first_local_bullet_and_carries_forward(self):
+        from banana_mv.python_slots import _inject_actor_state, _local_filmed_actions
+        fixed = '開場穿著：\n藍色外套\n灰色長褲\n黑色長靴\n'
+        events = [
+            'Current interval actions in original order:\n'
+            '- 演員脫下藍色外套。\n'
+            'Stage these actions with physical cause.\n',
+            'Current interval actions in original order:\n'
+            '- 演員開始唱歌並繞過舞台。\n'
+            'Stage these actions with physical cause.\n',
+            'Current interval actions in original order:\n'
+            '- 演員向鏡頭揮手。\n'
+            'Stage these actions with physical cause.\n',
+        ]
+        result = _inject_actor_state(events, fixed, [])
+        anchor = 'Current interval actions in original order:\n- 【Python當前狀態'
+        self.assertTrue(all(anchor in x for x in result))
+        self.assertIn('上身已無藍色外套', result[1])
+        self.assertIn('上身已無藍色外套', result[2])
+        self.assertIn('下身穿著灰色長褲', result[2])
+        self.assertIn('雙腳穿著黑色長靴', result[2])
+        self.assertIn('Torso: Bare;', result[2])
+        self.assertEqual(list(_local_filmed_actions(result[1])),
+                         ['演員開始唱歌並繞過舞台。'])
+        self.assertNotIn('演員脫下藍色外套。', result[1])
+
+    def test_fixed_reference_priority_is_per_property_and_absent_state_falls_back(self):
+        from banana_mv.shoot_plan import _fixed_reference_with_python_priority
+        fixed = ('人物五官與開場服裝依照參考圖片。\n'
+                 '開場穿著：\n'
+                 '藍色外套\n'
+                 '灰色長褲\n'
+                 '黑色長靴\n'
+                 '舞台設計：\n'
+                 '銀色麥克風與白色聚光燈。')
+        event = ('CURRENT_ACTOR_STATE (at clip start; authoritative):\n'
+                 '- Torso: Bare; 藍色外套 already removed, stays off.\n'
+                 'EXPECTED_ACTOR_STATE_AFTER_THIS_CLIP (planned consequence):\n'
+                 '- Torso: Bare; 藍色外套 already removed, stays off.\n')
+        cleaned = _fixed_reference_with_python_priority(fixed, event)
+        self.assertNotIn('\n藍色外套\n', cleaned)
+        self.assertIn('\n灰色長褲\n', cleaned)
+        self.assertIn('\n黑色長靴\n', cleaned)
+        self.assertIn('人物五官依照參考圖片', cleaned)
+        self.assertIn('銀色麥克風與白色聚光燈', cleaned)
+        self.assertEqual(_fixed_reference_with_python_priority(fixed, '沒有狀態紀錄'),
+                         fixed)
+
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
         nb=json.loads((root/'BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb').read_text(encoding='utf-8'))
