@@ -71,7 +71,7 @@ class PythonSlotsTests(unittest.TestCase):
             self.assertIn('<Picture 1>',plan['shared_setup'])
             self.assertIn('<Picture 2>',plan['shared_setup'])
             self.assertIn('previous full interval',plan['segments'][-1]['event'])
-            self.assertEqual(ensure_python_slot_plan(request(),clips(),[],root)['version'],6)
+            self.assertEqual(ensure_python_slot_plan(request(),clips(),[root/'one.png',root/'two.png'],root)['version'],6)
             self.assertTrue((root/'director_plan.json').is_file())
 
     def test_python_slot_plan_rejects_timing_mutation_without_clobber(self):
@@ -127,9 +127,12 @@ class PythonSlotsTests(unittest.TestCase):
                 received=model.call_args.args[2][0][1]
                 self.assertIn('OFFICIAL_H3_GUIDE_INTACT',system)
                 self.assertIn('Current clip script:',received)
-                self.assertNotIn('OPEN_01',received) if index>0 else None
-                self.assertNotIn('ENDING_03',received) if index<26 else None
-                self.assertNotIn('CRISIS_02',received) if index==0 else None
+                if index>0:
+                    self.assertNotIn('OPEN_01',received)
+                if index<26:
+                    self.assertNotIn('ENDING_03',received)
+                if index==0:
+                    self.assertNotIn('CRISIS_02',received)
             self.assertEqual(plan['segments'][-1]['index'],27)
 
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
