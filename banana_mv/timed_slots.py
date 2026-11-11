@@ -18,6 +18,7 @@ TARGET_RULE = re.compile(
     r'(?:[、,，及與和]\s*第?(?P<b>[一二三四五六七八九十\d]+))?段'
 )
 LAST_SECONDS = re.compile(r'^最後\s*\d+(?:\.\d+)?\s*秒')
+FINAL_EVENT = re.compile(r'最後(?:以|在|由|才|完成|進行|出現|唱|一段|一句|謝幕)')
 SENTENCES = re.compile(r'(?<=[。！？!?；;])\s+')
 CHINESE = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10}
 
@@ -100,15 +101,16 @@ def parse_timed_source(prompt):
 
     retained = []
     for line in fixed:
+        if LAST_SECONDS.match(line) or FINAL_EVENT.search(line):
+            # Keep user-authored finale notes out of earlier clips.
+            chapters[-1]['constraints'].append(line)
+            continue
         match = TARGET_RULE.match(line)
         target_numbers = set()
         if match:
             target_numbers = {_number(match.group('a'))}
             if match.group('b'):
                 target_numbers.add(_number(match.group('b')))
-        elif LAST_SECONDS.match(line):
-            if chapters:
-                target_numbers.add(chapters[-1]['ordinal'])
         matched = [chapter for chapter in chapters if chapter['ordinal'] in target_numbers]
         if matched:
             for chapter in matched:
