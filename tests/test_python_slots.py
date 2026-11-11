@@ -290,6 +290,87 @@ class PythonSlotsTests(unittest.TestCase):
             plans.append((fixed, chapters))
         self.assertEqual(plans[0], plans[1])
 
+
+    def test_completed_wardrobe_events_propagate_across_5s_slots(self):
+        # Regression: the 4th/5th/6th/7th local shots must not re-dress
+        # previously removed garments merely because global setup includes them.
+        brief = (
+            '## 1｜角色設定\n'
+            '@圖片1：小語，唯一演出者。\n'
+            '開場穿著：\n'
+            '黑色前扣式馬甲胸衣\n'
+            '黑色高腰舞台內褲\n'
+            '黑色高跟舞鞋\n'
+            '## 2｜MV 主題\n'
+            '夜總會紅幕歌舞。\n'
+            '## 3｜故事內容\n'
+            '### 第一段｜紅幕開場\n'
+            '小語穿著完整馬甲胸衣與舞台內褲及高跟鞋登場。\n'
+            '她正面對嘴演唱並旋轉。\n'
+            '攝影機拉至中全景。\n'
+            '本段保留完整開場服裝。\n'
+            '### 第二段｜第一件落幕\n'
+            '小語繼續演唱。\n'
+            '她解開馬甲胸衣，完成本段服裝變化。\n'
+            '接著以上身裸露、保留內褲及高跟鞋的狀態跳舞。\n'
+            '攝影機穿插特寫與全身鏡頭。\n'
+            '本段只完成馬甲胸衣卸除。\n'
+            '### 第三段｜第二件落幕\n'
+            '歌聲持續並切換旋轉舞步。\n'
+            '小語向鏡頭露出笑容。\n'
+            '她完成黑色高腰舞台內褲的卸除。\n'
+            '接著以全裸、僅穿高跟鞋的狀態跳舞。\n'
+            '本段只完成高腰舞台內褲卸除。\n'
+            '### 第四段｜最後一件\n'
+            '小語延續歌舞。\n'
+            '她依序卸除左右高跟鞋。\n'
+            '完成後她赤腳繼續舞蹈。\n'
+            '攝影機追蹤她的旋轉。\n'
+            '本段完成最後的服裝變化。\n'
+            '## 4｜特殊要求\n'
+            '所有已卸除衣物都不得重新穿回。\n'
+        )
+        segs = [{'index':i, 'start':i*5.0, 'seconds':5.0,
+                 'song_seconds':40.0, 'segment_count':8} for i in range(8)]
+        with tempfile.TemporaryDirectory() as d:
+            plan = ensure_python_slot_plan(dict(request(), prompt=brief), segs,
+                                           [Path(d)/'ref.png'], d)
+        events = [row['event'] for row in plan['segments']]
+        self.assertEqual(len(events), 8)
+        self.assertEqual([events[i].split('Source chapter: ')[1].splitlines()[0].split('｜')[0]
+                          for i in range(8)],
+                         ['第一段','第一段','第二段','第二段',
+                          '第三段','第三段','第四段','第四段'])
+        self.assertIn('Torso: Bare;', events[3])  # Already removed before fourth clip.
+        self.assertIn('Torso: Bare;', events[4])  # No reinstatement at next chapter.
+        self.assertIn('Bottom: 黑色高腰舞台內褲 worn.', events[4])
+        self.assertIn('Bottom: Bare;', events[6])
+        self.assertIn('Feet: 黑色高跟舞鞋 worn.', events[6])
+        self.assertIn('Feet: Barefoot;', events[7])
+        self.assertNotIn('Current interval actions in original order:\n- 本段只完成',
+                         '\n'.join(events))
+        self.assertNotIn('ALREADY ESTABLISHED; do not restage or repeat: 本段只完成',
+                         '\n'.join(events))
+        self.assertNotIn('高跟鞋的卸除', '\n'.join(events[:6]))
+        # Input scene and film mode must remain meaningful despite state header.
+        self.assertEqual(plan['segments'][7]['mode'], 'performance')
+
+    def test_unrelated_story_has_no_invented_wardrobe_state(self):
+        brief = (
+            '第一幕｜控制室\n'
+            '宗主操作控制台，丹爐亮起。\n'
+            '第二幕｜修復\n'
+            '工程師找出錯誤並恢復系統。\n'
+        )
+        segs = [{'index':i,'start':i*5.0,'seconds':5.0,
+                 'song_seconds':10.0,'segment_count':2} for i in range(2)]
+        with tempfile.TemporaryDirectory() as d:
+            plan = ensure_python_slot_plan(dict(request(),prompt=brief),segs,
+                                           [Path(d)/'ref.png'],d)
+        self.assertNotIn('CURRENT_ACTOR_STATE',
+                         '\n'.join(row['event'] for row in plan['segments']))
+        self.assertIn('工程師找出錯誤',plan['segments'][1]['event'])
+
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
         nb=json.loads((root/'BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb').read_text(encoding='utf-8'))
