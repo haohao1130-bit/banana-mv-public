@@ -970,6 +970,16 @@ class Handler(WebHandler):
                 return self.send_json({'ok':True,'message':'目前這段完成後停止。'})
             return self.send_error(404)
         except Exception as e:
+            if path == '/api/upload':
+                # The browser only displays a short error. Preserve a LOCAL
+                # traceback so NoneType failures can be pinpointed without
+                # uploading recordings or exposing diagnostic paths via HTTP.
+                import traceback
+                try:
+                    (backend.DATA/'upload_error.log').write_text(
+                        traceback.format_exc(), encoding='utf-8')
+                except OSError:
+                    pass
             return self.send_json({'error':str(e)},400)
 
 
