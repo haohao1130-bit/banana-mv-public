@@ -1,12 +1,17 @@
 # 🍌 Banana MV｜大乘蕉宗公開煉丹房
 
+## Colab 版本辨識
+
+**正式標準公開版：`BANANAMV_CLASSIC_PUBLIC.ipynb`**（本倉庫 `main`）。
+私人自用版用 `BANANAMV_CLASSIC_PRIVATE.ipynb`；實驗版用 `BANANAMV_VNEXT.ipynb`，分屬不同倉庫。原 `Banana_MV_Public.ipynb` 保留，讓舊書籤和已儲存的 Colab 連結不失效。
+
 新任務先一次分配各段故事大綱，再由本地 9B 逐段使用原生 H3 指南產生完整分鏡提示詞。當段只收到自足的拍攝委託、必要素材、本段劇情與音樂資訊，不傳全劇共用設定或未來結局，不重讀全片或前段故事。正常為一次規劃加每段一次導演；稿件保存後供續跑與回爐重用。舊專案保留原流程，實際 9B／H3 品質仍需測試。詳見[導演架構說明](docs/director_architecture.md)。
 
 參考圖片＋原歌曲，在自己的 Google Colab 上生成音樂 MV。支援手機前端、本地 9B 導演、多圖角色分工、分段生成與斷點續跑，還有真的會投藥、開火、出丹的煉丹爐。
 
 圖片1–9欄位預設全部顯示，每格只選一張；清除不會改動其他圖片編號，中間空格需補齊，末尾可留空。接續版最多8張。
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/main/Banana_MV_Public.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haohao1130-bit/banana-mv-public/blob/main/BANANAMV_CLASSIC_PUBLIC.ipynb)
 
 **這是自行運行的實驗工具。** 請使用自己的 Colab GPU 與額度；沒有共用的免費生成伺服器，也不需要付費模型 API。模型下載需要數十 GB 空間，生成時間與效果依 GPU、歌曲長度和設定而變化。
 
@@ -116,7 +121,7 @@ Banana MV is a self-hosted Colab music-video workflow with local prompt rewritin
 
 ## Colab 入口整理
 
-本倉庫根目錄只保留正式生成筆記本 `Banana_MV_Public.ipynb`。舊 T8 攝影政策 A/B 測試已停用，請使用 main 分支。這與正式生成所需的 H3 Audio T8 音訊鎖定節點不同，音訊節點仍保留。
+本倉庫正式推薦入口為 `BANANAMV_CLASSIC_PUBLIC.ipynb`；原 `Banana_MV_Public.ipynb` 作為相容舊連結的保留入口。舊 T8 攝影政策 A/B 測試已停用，請使用 main 分支。這與正式生成所需的 H3 Audio T8 音訊鎖定節點不同，音訊節點仍保留。
 
 回爐／重拍使用同目錄分段版本檔（例如 `00_raw_v2.mp4`、`00_part_v2.mp4`），先預覽、選好各段版本，再確認凝丹／合成。重拍不自動替換成片。詳見 [版本與回爐說明](docs/clip_review.md)。
 
