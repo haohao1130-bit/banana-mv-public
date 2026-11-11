@@ -98,7 +98,7 @@ def graph_options(req, seconds, segment=None):
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
-    if req.get('director_schema')==5 and req.get('rewrite',True):
+    if req.get('director_schema') in (5,6) and req.get('rewrite',True):
         from banana_mv.shoot_plan import write_shoot_prompt
         originals=original if isinstance(original,list) else [original]
         return write_shoot_prompt(cfg,req,segment,originals,tail,backend.rewrite_local,progress)
@@ -348,9 +348,9 @@ def worker(job, cfg, original, song, drive):
                                                    'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
         needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
-                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6))
                       and job['request'].get('rewrite', True)
-                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5))
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6))
                       and any(not (s.get('status') == 'done' and valid_part(adopted_part(job,s), s, job['size']))
                               and not (job.get('resuming') and ((work/f'{s["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{s["index"]:02d}_prompt.txt').is_file())
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -358,10 +358,14 @@ def worker(job, cfg, original, song, drive):
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             job['status']='planning_story'; write_state(job)
-            plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
+            if job['request'].get('director_schema')==6:
+                from banana_mv.python_slots import ensure_python_slot_plan
+                plan = ensure_python_slot_plan(job['request'], job['segments'], original, work)
+            else:
+                plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
-                if plan['version']==5:
+                if plan['version'] in (5,6):
                     seg.pop('shoot_setup',None)
                     seg['fixed_reference_settings']=plan.get('shared_setup','')
                     seg['direction_ending_contract']=plan['ending_contract']
@@ -549,7 +553,7 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=5,story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=6,story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
