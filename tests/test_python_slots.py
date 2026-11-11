@@ -135,6 +135,100 @@ class PythonSlotsTests(unittest.TestCase):
                     self.assertNotIn('CRISIS_02',received)
             self.assertEqual(plan['segments'][-1]['index'],27)
 
+
+    def test_timed_markdown_five_chapters_fill_nine_5s_slots(self):
+        from banana_mv.timed_slots import parse_timed_source
+        prompt = (
+            '# 作品｜午夜劇場\n'
+            '## 1｜角色設定\n'
+            '@小語：成年女歌手，固定高馬尾。\n'
+            '## 2｜MV 主題\n'
+            '復古夜總會與紅色布幕。\n'
+            '## 3｜故事內容\n'
+            '### 第一段｜00:00–00:10｜開場\n'
+            'OPEN_1 歌手登上舞台。\n'
+            'OPEN_2 歌手開始演唱。\n'
+            'OPEN_3 觀眾開始鼓掌。\n'
+            '### 第二段｜00:10–00:20｜升溫\n'
+            'WARM_1 伴舞開始加入。\n'
+            'WARM_2 樂隊開始合奏。\n'
+            '### 第三段｜00:20–00:30｜轉折\n'
+            'TURN_1 舞台忽然停電。\n'
+            'TURN_2 主角摸索開關。\n'
+            '### 第四段｜00:30–00:40｜高潮\n'
+            'PEAK_1 聚光燈重新亮起。\n'
+            'PEAK_2 全場歡呼。\n'
+            '### 第五段｜00:40–00:44.5｜謝幕\n'
+            'END_1 主角唱出最後一句。\n'
+            'END_2 紅色布幕落下。\n'
+            '## 4｜演唱與攝影\n'
+            '她是唯一主唱，鏡頭跟隨演出。\n'
+            '## 5｜劇情連續性\n'
+            '第一段只完成開場表演。\n'
+            '第四、第五段維持紅色主燈光。\n'
+            '每段延續舞台狀態。\n'
+            '## 6｜導演自由發揮\n'
+            '最後 4.5 秒專注謝幕。\n'
+        )
+        parsed=parse_timed_source(prompt)
+        self.assertIsNotNone(parsed)
+        fixed,chapters=parsed
+        self.assertEqual(len(chapters),5)
+        self.assertIn('成年女歌手',fixed)
+        self.assertIn('唯一主唱',fixed)
+        self.assertNotIn('第一段只完成',fixed)
+        self.assertNotIn('第四、第五段',fixed)
+        self.assertNotIn('最後 4.5 秒',fixed)
+        self.assertTrue(any('第一段只完成' in s for s in chapters[0]['constraints']))
+        self.assertTrue(any('第四、第五段' in s for s in chapters[3]['constraints']))
+        self.assertTrue(any('最後 4.5 秒' in s for s in chapters[4]['constraints']))
+        segs=[{'index':i,'start':5*i,'seconds':min(5.0,44.5-5*i),
+               'song_seconds':44.5,'segment_count':9} for i in range(9)]
+        with tempfile.TemporaryDirectory() as d:
+            req=dict(request(),prompt=prompt)
+            plan=ensure_python_slot_plan(req,segs,[Path(d)/'one.png'],d)
+        self.assertEqual(plan['source_timing'],'explicit_markdown')
+        self.assertEqual(len(plan['segments']),9)
+        self.assertEqual([plan['segments'][i]['event'].split('Source chapter: ')[1].splitlines()[0].split('｜')[0]
+                          for i in range(9)],
+                         ['第一段','第一段','第二段','第二段','第三段','第三段','第四段','第四段','第五段'])
+        slots=[entry['event'] for entry in plan['segments']]
+        self.assertIn('OPEN_1',slots[0])
+        self.assertNotIn('OPEN_3',slots[0])
+        self.assertIn('OPEN_3',slots[1])
+        self.assertIn('WARM_1',slots[2])
+        self.assertNotIn('WARM_1',slots[1])
+        self.assertIn('END_1',slots[8])
+        self.assertNotIn('END_1','\n'.join(slots[:8]))
+        self.assertNotIn('## 1｜角色設定','\n'.join(slots))
+        self.assertNotIn('## 5｜劇情連續性','\n'.join(slots))
+        self.assertNotIn('ALREADY ESTABLISHED; do not restage or repeat: ##','\n'.join(slots))
+
+    def test_explicit_timed_boundary_crossing_and_short_final_slot(self):
+        prompt=(
+            '### 第一段｜00:00–00:07｜開場\n'
+            'FIRST_1 開場。\n'
+            'FIRST_2 移動。\n'
+            '### 第二段｜00:07–00:15｜轉折\n'
+            'SECOND_1 進入新場景。\n'
+            'SECOND_2 發現線索。\n'
+            '### 第三段｜00:15–00:17｜短尾結局\n'
+            'END_ONLY_17 完成最後事件。\n'
+        )
+        segs=[{'index':i,'start':i*5,'seconds':min(5.0,17-i*5),
+               'song_seconds':17.0,'segment_count':4} for i in range(4)]
+        with tempfile.TemporaryDirectory() as d:
+            plan=ensure_python_slot_plan(dict(request(),prompt=prompt),
+                                         segs,[Path(d)/'ref.png'],d)
+        s=[p['event'] for p in plan['segments']]
+        self.assertIn('FIRST_1',s[0])
+        self.assertIn('FIRST_2',s[1])
+        self.assertIn('SECOND_1',s[1])
+        self.assertIn('2.000–5.000s',s[1])
+        self.assertNotIn('END_ONLY_17','\n'.join(s[:3]))
+        self.assertIn('END_ONLY_17',s[3])
+        self.assertNotIn('SOURCE SONG SHORT TAIL',s[3])
+
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
         nb=json.loads((root/'BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb').read_text(encoding='utf-8'))
