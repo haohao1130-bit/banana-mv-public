@@ -13,6 +13,7 @@ from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
 from banana_mv.mv_scope import ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest
+from banana_mv.timed_slots import parse_timed_source, allocate_timed_chapters
 
 
 CHAPTER = re.compile(
@@ -156,14 +157,20 @@ def ensure_python_slot_plan(req, segments, originals, work):
             raise SceneStateError('實驗版 Python 槽位與保存的丹方不一致；不覆蓋原始計畫。')
         return saved
 
-    fixed, chapters = split_source(brief)
+    # Explicit Markdown chapter timestamps outrank text-count allocation.
+    # Preserve the proven legacy allocator for non-timecoded source scripts.
+    timed = parse_timed_source(brief)
+    fixed, chapters = timed if timed is not None else split_source(brief)
     fixed = normalize_mv_prompt(fixed, count) if fixed else ''
-    short_tail = bool(contract.get('short_tail_seconds', 0)) and len(segments)>1
+    short_tail = (timed is None and bool(contract.get('short_tail_seconds', 0))
+                  and len(segments)>1)
     usable = len(segments)-int(short_tail)
-    counts = span_counts(chapters, usable)
+    counts = span_counts(chapters, usable) if timed is None else None
     allocated = []
     previous = ''
-    if counts is not None:
+    if timed is not None:
+        allocated = allocate_timed_chapters(chapters, segments, commission)
+    elif counts is not None:
         for chapter, slots in zip(chapters, counts):
             for j in range(slots):
                 event, previous = commission(chapter, j, slots, previous)
@@ -204,6 +211,7 @@ def ensure_python_slot_plan(req, segments, originals, work):
     plan = {
         'version': 6,
         'engine': 'python_owned_slots_v1',
+        'source_timing': 'explicit_markdown' if timed is not None else 'legacy_ordered',
         'shared_setup': fixed,
         'segments': rows,
         'visual_verified': False,
