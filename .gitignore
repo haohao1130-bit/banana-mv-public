@@ -20,3 +20,6 @@ output/
 *.pt
 *.pth
 model_download_receipt.json
+
+# Runtime-fetched local H3 prompt guide (not a source-controlled asset)
+guides/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md
