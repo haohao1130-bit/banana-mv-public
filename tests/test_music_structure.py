@@ -1,8 +1,15 @@
+import hashlib
+import io
 import json
+import ssl
+import sys
 import tempfile
 import unittest
+import urllib.error
+from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from banana_mv.music_structure import validate_result,local_structure,load_structure,direction,REVISION,MODEL,VERSION
 from banana_mv.audio_analysis import source_hash,audio_guidance
 
@@ -48,6 +55,73 @@ class StructureTests(unittest.TestCase):
                              'quiet_intervals_s':[],'music_structure':cue})
         for word in ('chorus','downbeats','do not cut on every beat'):
             self.assertIn(word,text)
+
+    def test_demucs_fallback_is_only_for_expired_certificates(self):
+        from banana_mv import music_structure as m
+        expired = urllib.error.URLError(
+            ssl.SSLCertVerificationError(1, 'certificate verify failed: certificate has expired'))
+        self.assertTrue(m._expired_download_certificate(expired))
+        self.assertFalse(m._expired_download_certificate(urllib.error.URLError('connection refused')))
+        self.assertFalse(m._expired_download_certificate(
+            urllib.error.URLError(ssl.SSLCertVerificationError(1, 'self-signed certificate'))))
+
+    def test_demucs_mirror_restores_verified_checkpoint_without_redownload(self):
+        from banana_mv import music_structure as m
+        data = b'a known, safe test checkpoint'
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / m.DEMUCS_CHECKPOINT_NAME
+            with patch.object(m, '_demucs_checkpoint_target', return_value=target), \\
+                 patch.object(m, 'DEMUCS_CHECKPOINT_SHA256', hashlib.sha256(data).hexdigest()), \\
+                 patch.object(m.urllib.request, 'urlopen', return_value=io.BytesIO(data)) as download:
+                self.assertEqual(m._restore_demucs_checkpoint(), target)
+                self.assertEqual(target.read_bytes(), data)
+                self.assertEqual(m._restore_demucs_checkpoint(), target)
+            download.assert_called_once_with(m.DEMUCS_MIRROR_URL, timeout=60)
+            self.assertEqual(list(Path(tmp).glob('*.tmp')), [])
+
+    def test_demucs_mirror_never_keeps_corrupt_download(self):
+        from banana_mv import music_structure as m
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / m.DEMUCS_CHECKPOINT_NAME
+            with patch.object(m, '_demucs_checkpoint_target', return_value=target), \\
+                 patch.object(m, 'DEMUCS_CHECKPOINT_SHA256', '0' * 64), \\
+                 patch.object(m.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong')):
+                with self.assertRaisesRegex(ValueError, 'SHA-256'):
+                    m._restore_demucs_checkpoint()
+            self.assertFalse(target.exists())
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_run_model_retries_only_after_expired_source_certificate(self):
+        from banana_mv import music_structure as m
+        @dataclass
+        class Output:
+            bpm: float
+            beats: list
+            downbeats: list
+            segments: list
+        failed = urllib.error.URLError(
+            ssl.SSLCertVerificationError(1, 'certificate verify failed: certificate has expired'))
+        result = Output(120, [0.5], [0.5], [{'start': 0, 'end': 1, 'label': 'verse'}])
+        analyze = Mock(side_effect=[failed, result])
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'result.json'
+            modules = {'torch': SimpleNamespace(set_num_threads=Mock()),
+                       'allin1_infer': SimpleNamespace(analyze=analyze)}
+            with patch.dict(sys.modules, modules), \\
+                 patch.object(m, '_restore_demucs_checkpoint') as restore:
+                m.run_model('track.wav', output, tmp)
+            self.assertEqual(json.loads(output.read_text())['bpm'], 120)
+            self.assertEqual(analyze.call_count, 2)
+            restore.assert_called_once()
+
+            analyze = Mock(side_effect=urllib.error.URLError('connection refused'))
+            modules['allin1_infer'] = SimpleNamespace(analyze=analyze)
+            with patch.dict(sys.modules, modules), \\
+                 patch.object(m, '_restore_demucs_checkpoint') as restore:
+                with self.assertRaises(urllib.error.URLError):
+                    m.run_model('track.wav', output, tmp)
+            analyze.assert_called_once()
+            restore.assert_not_called()
 
     def test_worker_routes_structure_before_planning(self):
         from banana_mv import server
