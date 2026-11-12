@@ -140,7 +140,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   const beforeChain=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});assert.equal(posts.length,beforeChain);assert.deepEqual(uploads,[]);
   els['remove-image-9'].onclick();req=await submit();assert.equal(req.image_ids.length,8);
   assert.equal(req.image_ids[6],'slot7.png');assert.equal(req.image_ids[7],'slot8.png');
-  els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'].disabled,false);
+  els.mode.value='chain5';els.mode.events.change();assert.equal(els['image-9'].disabled,true);
+els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'].disabled,false);
   // Clearing slot 1 also keeps every other binding in place.
   els['remove-image-1'].onclick();const beforeMissingFirst=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});
   assert.equal(posts.length,beforeMissingFirst);assert.equal(els['image-name-2'].textContent,'actor2.png');
