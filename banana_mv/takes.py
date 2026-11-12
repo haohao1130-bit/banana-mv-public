@@ -191,13 +191,14 @@ def retake(job_id,indices,instructions=None):
             if not app.valid_part(take_source(job,i),seg,job['size']):raise ValueError('選取段落缺少有效毛片，請先續跑完成。')
             saved=app.job_dir(job_id)/f'{i:02d}_prompt.txt'
             if not (seg.get('prompt') or saved.is_file()):raise ValueError('缺少原段落提示詞，無法保留劇本重拍。')
-            if job['request']['mode']=='chain' and i>0:take_source(job,i-1)
+            if app.is_continuation(job['request']['mode']) and i>0:take_source(job,i-1)
         originals,song,drive=app.project_inputs(job,cfg)
         app.restore_render_settings(job)
         first=segment(job,indices[0])
         graph=app.build_workflow(job['images_comfy'],'preflight.wav',*job['size'],first['model_frames'],'',
                                  job['seed'],**app.graph_options(job['request'],first['seconds'],first))
         app.preflight(cfg,graph)
+        app.preflight_five_frame(cfg,job['request'],job['images_comfy'],job['size'],first,job['seed'])
         old_status=job['status'];batch=[]
         for i in indices:
             archive_original(job,i);seg=segment(job,i)
@@ -277,12 +278,28 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             prompt=saved.read_text(encoding='utf-8') if saved.is_file() else (seg.get('prompt') or (work/f'{i:02d}_prompt.txt').read_text(encoding='utf-8'))
             take['status']='generating';job['retake']['current']=i;app.write_state(job)
             name=f'banana_retake_{job["id"]}_{take["id"]}.wav';inp=Path(cfg['comfy_input_dir'])
-            temporary.append(inp/name);app.audio_window(drive,inp/name,seg['start'],seg['model_frames']/app.FPS)
-            first=None
-            if job['request']['mode']=='chain' and i>0:
-                previous=choices.get(i-1,job.get('pending_takes',{}).get(str(i-1),'current'));frame=output('opening.png')
-                app.last_frame(take_source(job,i-1,previous),frame)
-                first=f'banana_retake_{take["id"]}.png';temporary.append(inp/first);shutil.copyfile(frame,inp/first)
+            overlap=5 if job['request']['mode']=='chain5' and i>0 else 0
+            render_frames=(app.align_frames(max(124,seg['frames']+overlap))
+                           if overlap else seg['model_frames'])
+            temporary.append(inp/name)
+            app.audio_window(drive,inp/name,seg['start']-overlap/app.FPS,render_frames/app.FPS)
+            first=None;guide_files=[]
+            if app.is_continuation(job['request']['mode']) and i>0:
+                previous=choices.get(i-1,job.get('pending_takes',{}).get(str(i-1),'current'))
+                source=take_source(job,i-1,previous)
+                frame=output('opening.png')
+                app.last_frame(source,frame)
+                guide_paths=app.last_frames(source,output('last5_%02d.png')) if overlap else []
+                anchor=guide_paths[0] if overlap else frame
+                first=f'banana_retake_{take["id"]}.png'
+                temporary.append(inp/first);shutil.copyfile(anchor,inp/first)
+                if overlap:
+                    guide_files=[first]
+                    for number,image_path in enumerate(guide_paths[1:],1):
+                        filename=f'banana_retake_{take["id"]}_guide_{number}.png'
+                        temporary.append(inp/filename)
+                        shutil.copyfile(image_path,inp/filename)
+                        guide_files.append(filename)
                 take['previous_take']=previous if previous!='current' else segment(job,i-1).get('selected_take','original')
             if take.get('correction'):
                 take['status']='rewriting';app.write_state(job)
@@ -290,14 +307,18 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 prompt=repair_prompt(cfg,job,seg,prompt,take['correction'],originals,frame if first else None,dest,prefix=f'{i:02d}_v{take["version"]}_')
             (output('prompt.txt')).write_text(prompt,encoding='utf-8')
             take['status']='generating';app.write_state(job)
-            graph=app.build_workflow(job['images_comfy'],name,*job['size'],seg['model_frames'],prompt,take['seed'],first,
+            graph=app.build_workflow(job['images_comfy'],name,*job['size'],render_frames,prompt,take['seed'],first,
+                                     guide_frames=guide_files or None,
                                      **app.graph_options(job['request'],seg['seconds'],seg))
             graph['16']['inputs']['filename_prefix']=f'BananaMV/{job["id"]}/{i:02d}_v{take["version"]}'
             app.preflight(cfg,graph);(output('workflow.json')).write_text(json.dumps(graph,ensure_ascii=False,indent=2))
             take['prompt_id']=app.backend.queue_prompt(cfg,graph);app.write_state(job)
             entry=app.wait_generation(cfg,take['prompt_id'],job)
             app.backend.comfy_download(cfg,app.video_info(entry),output('raw.mp4'))
-            app.trim_video(output('raw.mp4'),output('part.mp4'),seg['frames'])
+            if overlap:
+                app.trim_video(output('raw.mp4'),output('part.mp4'),seg['frames'],skip_frames=overlap)
+            else:
+                app.trim_video(output('raw.mp4'),output('part.mp4'),seg['frames'])
             if not app.valid_part(output('part.mp4'),seg,job['size']):raise ValueError('回爐毛片影格或尺寸不符。')
             take['status']='ready';choices[i]=take['id'];job['retake']['completed']=len(choices);app.write_state(job)
         if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
