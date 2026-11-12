@@ -18,10 +18,13 @@ class Element{
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.story_plan.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
 const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;const approvals=[];let recipeOpened=false;
+let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
+const intervals=[];
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
-  setTimeout:()=>0,clearTimeout:()=>{},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
+  setTimeout:()=>0,clearTimeout:()=>{},setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
+    if(url==='api/mv/restart-capability')return restartState;
     if(url==='api/upload'){uploads.push(options.body.name);return {id:options.body.name};}
     if(url==='api/mv/start'){const body=JSON.parse(options.body);posts.push(body);return {id:body.plan_review?'recipe123':'abcd'};}
     if(url==='api/mv/open-furnace'){approvals.push(JSON.parse(options.body));recipeOpened=true;return {id:'recipe123',status:'running'};}
@@ -43,6 +46,25 @@ vm.runInContext(fs.readFileSync('banana_mv/web/clip_review.js','utf8'),context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
+  // A missing V4 supervisor must never silently hide the restart control.
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].hidden,false);
+  assert.equal(els['restart-5070'].disabled,true);
+  assert(els['restart-5070'].textContent.includes('需 V4 管家'));
+  assert(intervals.some(({ms})=>ms===5000),'supervisor capability is refreshed periodically');
+  restartState={available:true,busy:false,reason:''};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].disabled,false);
+  assert.equal(els['restart-5070'].textContent,'↻ 重啟丹爐');
+  restartState={available:true,busy:true,reason:'目前有任務正在執行'};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].disabled,true);
+  assert(els['restart-5070'].textContent.includes('任務中'));
+  restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].hidden,false);
+  assert.equal(els['restart-5070'].disabled,true);
+
   vm.runInContext("renderProgress({status:'planning_state',segments:[{},{},{}]})",context);assert(els['activity-text'].textContent.includes('狀態'));
   vm.runInContext("renderOutputLocation({output_video:'/content/drive/MyDrive/BananaMV/videos/test.mp4'})",context);assert.equal(els['output-location'].hidden,false);assert(els['output-location'].textContent.includes('videos/test.mp4'));
   vm.runInContext("renderOutputLocation({export_error:'另存失敗，仍可下載'})",context);assert(els['output-location'].textContent.includes('仍可下載'));
