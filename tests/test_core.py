@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from banana_mv.core import (assemble, audio_window, build_workflow, command, dimensions,
-                            duration, fallback_prompt, last_frame, output_dimensions, probe, reference_images,
-                            segments, trim_video)
+from banana_mv.core import (align_frames, assemble, audio_window, build_workflow, command, dimensions,
+                            duration, fallback_prompt, last_frame, last_frames, output_dimensions,
+                            probe, reference_images, segments, trim_video)
 
 
 class TimelineTests(unittest.TestCase):
@@ -179,6 +179,30 @@ class MultiReferenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_workflow(files+['ninth.png'],'slice.wav',736,416,362,'',42,'tail.png')
 
+    def test_five_frame_guide_anchors_ordered_motion_without_changing_one_frame_mode(self):
+        base = build_workflow('ref.png','slice.wav',736,416,124,'',42,'tail.png')
+        self.assertNotIn('guide_last5', base)
+        guide = [f'last5_{i:02d}.png' for i in range(1,6)]
+        graph = build_workflow('ref.png','slice.wav',736,416,141,'',42,guide[0],
+                               guide_frames=guide)
+        self.assertEqual(graph['7']['inputs']['first_frame'], ['17',0])
+        self.assertEqual(graph['17']['inputs']['image'], guide[0])
+        self.assertEqual(graph['9']['inputs']['conditioning'], ['guide_last5',0])
+        self.assertEqual(graph['guide_last5']['class_type'], 'MiniMaxH3AddGuide')
+        self.assertEqual(graph['guide_last5']['inputs']['latent'], ['7',1])
+        self.assertEqual(graph['guide_last5']['inputs']['vae'], ['3',0])
+        self.assertEqual(graph['guide_last5']['inputs']['frame_idx'], 0)
+        for i in range(1,5):
+            self.assertEqual(graph[f'guide_load_{i}']['inputs']['image'], guide[i])
+            self.assertEqual(graph[f'guide_batch_{i}']['class_type'], 'ImageBatch')
+        self.assertEqual(graph['guide_last5']['inputs']['image'], ['guide_batch_4',0])
+        self.assertEqual(graph['15']['inputs']['audio'],['7',2])
+        self.assertEqual(align_frames(max(124, 120+5)),141)
+        with self.assertRaises(ValueError):
+            build_workflow('ref.png','slice.wav',736,416,141,'',42,guide[0],guide_frames=guide[:4])
+        with self.assertRaises(ValueError):
+            build_workflow('ref.png','slice.wav',736,416,141,'',42,'not_first.png',guide_frames=guide)
+
     def test_uploaded_mentions_map_after_continuation_keyframe(self):
         req='@圖片1 唱歌，@圖片2 場景，@Image3 服裝'
         independent=fallback_prompt(req,image_count=3)
@@ -227,6 +251,17 @@ class MediaTests(unittest.TestCase):
             trim_video(raw,p/'b.mp4',6)
             last_frame(p/'b.mp4',p/'tail.png')
             self.assertGreater((p/'tail.png').stat().st_size,0)
+            tail_five = last_frames(p/'b.mp4', p/'last5_%02d.png')
+            self.assertEqual(len(tail_five), 5)
+            self.assertTrue(all(path.stat().st_size > 0 for path in tail_five))
+            from PIL import Image
+            with Image.open(tail_five[-1]) as fifth, Image.open(p/'tail.png') as latest:
+                self.assertEqual(fifth.tobytes(), latest.tobytes())
+            trim_video(raw,p/'trim_overlap.mp4',24,skip_frames=5)
+            self.assertEqual(int(next(x for x in probe(p/'trim_overlap.mp4')['streams']
+                                      if x['codec_type']=='video')['nb_frames']),24)
+            with self.assertRaises(ValueError):
+                last_frames(p/'b.mp4',p/'invalid_%02d.png',count=4)
             assemble([p/'a.mp4',p/'b.mp4'],song,p/'final.mp4',1.25)
             info=probe(p/'final.mp4')
             vid=next(s for s in info['streams'] if s['codec_type']=='video')
