@@ -30,8 +30,10 @@ SECTION_SETUP = frozenset(('角色設定', '人物設定', '人物介紹', '角�
                            '角色綁定', 'MV 主題', '主題', '風格', '世界觀', '場景設定',
                            '演唱與劇情安排', '演唱與攝影', '演唱安排', '劇情連續性',
                            '特殊要求', '攝影與舞蹈', '導演自由發揮', '全曲執行原則',
-                           '全曲固定原則', 'GLOBAL RULES'))
+                           '全曲固定原則', 'GLOBAL RULES', '導演執行重點', '執行重點'))
 MARKDOWN_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+')
+ONLY_CLOSING_MARKS = re.compile(r'^[」』）)】\]]+$')
+ONLY_PUNCTUATION = re.compile(r'^[、，,。．；;：:！？!?…—-]+$')
 
 
 def _plain_source_line(original):
@@ -55,6 +57,17 @@ def _source_section(line):
     if title in SECTION_SETUP:
         return 'setup', title
     return None, title
+
+
+def _append_story_actions(actions, line):
+    """Preserve closing quotes without making punctuation a filmable event."""
+    for piece in SENTENCES.split(line):
+        action = piece.strip()
+        if ONLY_CLOSING_MARKS.fullmatch(action):
+            if actions:
+                actions[-1] += action
+        elif action and not ONLY_PUNCTUATION.fullmatch(action):
+            actions.append(action)
 
 
 def _sectioned_source(prompt):
@@ -102,7 +115,7 @@ def _sectioned_source(prompt):
             if current is None:
                 current = {'title': 'User story', 'actions': []}
                 chapters.append(current)
-            current['actions'].extend(x.strip() for x in SENTENCES.split(line) if x.strip())
+            _append_story_actions(current['actions'], line)
         else:
             fixed.append(line)
     chapters = [chapter for chapter in chapters if chapter['actions']]
@@ -280,7 +293,8 @@ def split_source(prompt):
         line = original.strip()
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
             continue
-        if GLOBAL_RULES.fullmatch(line):
+        if (GLOBAL_RULES.fullmatch(line) or
+                _source_section(_plain_source_line(line))[1] in ('導演執行重點', '執行重點')):
             in_rules = True
             continue
         match = CHAPTER.match(line)
@@ -293,7 +307,7 @@ def split_source(prompt):
         elif current is None:
             baseline.append(line)
         else:
-            current['actions'].extend(x.strip() for x in SENTENCES.split(line) if x.strip())
+            _append_story_actions(current['actions'], line)
     if chapters:
         fixed = '\n'.join(baseline + rules)
     else:
@@ -302,7 +316,7 @@ def split_source(prompt):
             if re.match(r'^(?:@圖片\d+|<Picture \d+>|角色綁定\s*$)', line):
                 fixed_lines.append(line)
             else:
-                loose_actions.extend(x.strip() for x in SENTENCES.split(line) if x.strip())
+                _append_story_actions(loose_actions, line)
         fixed = '\n'.join(fixed_lines + rules)
         chapters = [{'title': 'User story', 'actions': loose_actions}]
     chapters = [c for c in chapters if c['actions']]
