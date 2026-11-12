@@ -90,6 +90,76 @@ class ShootPlanTests(unittest.TestCase):
             self.assertEqual(labels,['<Picture 1>:','<Picture 2>:','<Picture 3>:'])
             self.assertIn('<Picture 1>',task['first_frame'])
 
+    def test_chain5_continuation_is_local_to_five_frame_mode_and_tail(self):
+        # The single-frame and independent writer inputs remain byte-for-byte
+        # unchanged; chain5 never duplicates the Python Slot event handoff.
+        cases=[('chain5',True),('chain5',False),
+               ('chain',True),('independent',False)]
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,_=self.fixture(root)
+            event=('ALREADY ESTABLISHED; do not restage: FIRST_STRIKE_DONE.\n'
+                   'Current interval actions in original order:\n'
+                   '- FOLLOW_THROUGH_COUNTER.')
+            row={'index':1,'mode':'action','event':event,'handoff_version':1}
+            for mode,has_tail in cases:
+                with self.subTest(mode=mode,has_tail=has_tail):
+                    _,_,req=self.fixture(root,mode)
+                    seg=dict(timeline()[1],director_plan=copy.deepcopy(row),
+                             fixed_reference_settings='The same two fighters remain in the arena.')
+                    writer=Mock(return_value=native_prompt(1,int(has_tail)))
+                    with patch.object(server.backend,'rewrite_local',writer):
+                        server.local_prompt(cfg,req,seg,images,images[0] if has_tail else None)
+                    self.assertEqual(writer.call_count,1)
+                    text=writer.call_args.args[2][0][1]
+                    task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
+                    expected=int(mode=='chain5' and has_tail)
+                    self.assertEqual(text.count('CHAIN5 CONTINUATION:'),expected)
+                    self.assertEqual(text.count('FIRST_STRIKE_DONE'),1)
+                    self.assertEqual(text.count('FOLLOW_THROUGH_COUNTER'),1)
+                    self.assertEqual(seg['director_plan'],row)
+                    self.assertNotIn('CURRENT_ACTOR_STATE',text)
+                    if expected:
+                        self.assertIn('F-4',task['first_frame'])
+                        self.assertIn('not its final frame',task['first_frame'])
+                        self.assertIn('Keep later cinematography flexible.',text)
+                    elif has_tail:
+                        self.assertEqual(task['first_frame'],
+                            '<Picture 1> is the actual previous last frame, not another actor.')
+                    else:
+                        self.assertNotIn('first_frame',task)
+
+    def test_chain5_continuation_stays_single_with_wardrobe_and_retry(self):
+        # Retry messages extend the existing request instead of rebuilding or
+        # stacking continuity notes; wardrobe remains owned by Python Slot.
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root,'chain5')
+            req['rewrite_retries']=1
+            event=('CURRENT_ACTOR_STATE (at clip start):\n'
+                   '- Torso: jacket already removed.\n'
+                   'EXPECTED_ACTOR_STATE_AFTER_THIS_CLIP (planned consequence):\n'
+                   '- Torso: jacket already removed.\n'
+                   'ALREADY ESTABLISHED; do not restage: jacket removal completed.\n'
+                   'Current interval actions in original order:\n'
+                   '- The fighters exchange a new counter.')
+            row={'index':1,'mode':'action','event':event,'handoff_version':1}
+            seg=dict(timeline()[1],director_plan=copy.deepcopy(row),
+                     fixed_reference_settings='Opening costume is historical; current state takes priority.')
+            writer=Mock(side_effect=['<Picture 99> invalid',native_prompt(1,1)])
+            with patch.object(server.backend,'rewrite_local',writer):
+                result=server.local_prompt(cfg,req,seg,images,images[0])
+            self.assertEqual(result,native_prompt(1,1))
+            self.assertEqual(writer.call_count,2)
+            for call in writer.call_args_list:
+                inputs=call.args[2]
+                self.assertEqual(sum(value.count('CHAIN5 CONTINUATION:')
+                                     for kind,value in inputs if kind=='text'),1)
+                text=inputs[0][1]
+                self.assertEqual(text.count('CURRENT_ACTOR_STATE'),1)
+                self.assertEqual(text.count('EXPECTED_ACTOR_STATE_AFTER_THIS_CLIP'),1)
+                self.assertIn('jacket removal completed',text)
+                self.assertIn('The fighters exchange a new counter.',text)
+            self.assertEqual(seg['director_plan'],row)
+
     def test_native_enhancement_keeps_parallel_script_and_authored_camera_prose(self):
         # Simulated model delivery tests routing/preservation, not 9B quality.
         from banana_mv.shoot_plan import NATIVE_ENHANCER_SYSTEM, DYNAMIC_EDITING
