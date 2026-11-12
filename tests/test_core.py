@@ -217,6 +217,48 @@ class MultiReferenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):reference_images(value)
 
 
+class FrameExtractionContractTests(unittest.TestCase):
+    def test_chain5_avoids_unsupported_ffmpeg_sync_options(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix='banana-chain5-') as temp:
+            pattern = Path(temp) / 'tail_%02d.png'
+            expected = [Path(str(pattern) % i) for i in range(1, 6)]
+            for path in expected:
+                path.write_bytes(b'stale')
+            recorded = []
+            def fake_extract(args):
+                recorded.append(args)
+                self.assertTrue(all(not path.exists() for path in expected))
+                for i, path in enumerate(expected):
+                    path.write_bytes(('fresh%d' % i).encode())
+            with patch('banana_mv.core.probe', return_value={'streams': [{'codec_type': 'video', 'nb_frames': 6}]}):
+                with patch('banana_mv.core.command', side_effect=fake_extract):
+                    result = last_frames('dummy.mp4', pattern)
+            self.assertEqual(result, expected)
+            self.assertEqual(len(recorded), 1)
+            self.assertNotIn('-vsync', recorded[0])
+            self.assertNotIn('-fps_mode', recorded[0])
+            self.assertIn('setpts=N/(24*TB)', recorded[0][recorded[0].index('-vf')+1])
+            self.assertEqual([p.read_bytes() for p in result],
+                             [('fresh%d' % i).encode() for i in range(5)])
+
+    def test_chain5_incomplete_extraction_cannot_reuse_old_png(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix='banana-chain5-stale-') as temp:
+            pattern = Path(temp) / 'tail_%02d.png'
+            expected = [Path(str(pattern) % i) for i in range(1, 6)]
+            for path in expected:
+                path.write_bytes(b'stale')
+            def incomplete(_args):
+                for path in expected[:4]:
+                    path.write_bytes(b'new')
+            with patch('banana_mv.core.probe', return_value={'streams': [{'codec_type': 'video', 'nb_frames': 120}]}):
+                with patch('banana_mv.core.command', side_effect=incomplete):
+                    with self.assertRaisesRegex(RuntimeError, '抽取不完整'):
+                        last_frames('dummy.mp4', pattern)
+            self.assertFalse(expected[-1].exists())
+
+
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'ffmpeg required')
 class MediaTests(unittest.TestCase):
     def test_exact_720p_and_480p_crop_from_native_padding(self):
