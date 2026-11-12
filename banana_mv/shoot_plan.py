@@ -414,15 +414,29 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, row['event'])
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
-    if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
+    if tail:
+        if req.get('mode') == 'chain5':
+            context['first_frame'] = (
+                '<Picture 1> is the earliest of the five overlapping tail frames (F-4) '
+                'from the previous clip, not its final frame and not another actor.'
+            )
+        else:
+            context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     system=NATIVE_ENHANCER_SYSTEM+guide
+    continuation_note = (
+        'CHAIN5 CONTINUATION: H3 receives a five-frame overlap preceding this clip. '
+        'Continue its established action and physical consequences; advance the current '
+        'event without replaying completed actions. Keep later cinematography flexible.\n'
+        if tail and req.get('mode') == 'chain5' else ''
+    )
     text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
           "Inspect the reference images labeled <Picture N> and use them according to the user's instructions.\n"
           "Choose shots that best express the original intent. "
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
           "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
-          "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
+          + continuation_note
+          + "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
 When audio_evidence.music_structure is supplied, use its predicted local section
