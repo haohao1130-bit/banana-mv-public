@@ -70,8 +70,8 @@ class StructureTests(unittest.TestCase):
         data = b'a known, safe test checkpoint'
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / m.DEMUCS_CHECKPOINT_NAME
-            with patch.object(m, '_demucs_checkpoint_target', return_value=target), \\
-                 patch.object(m, 'DEMUCS_CHECKPOINT_SHA256', hashlib.sha256(data).hexdigest()), \\
+            with patch.object(m, '_demucs_checkpoint_target', return_value=target), \
+                 patch.object(m, 'DEMUCS_CHECKPOINT_SHA256', hashlib.sha256(data).hexdigest()), \
                  patch.object(m.urllib.request, 'urlopen', return_value=io.BytesIO(data)) as download:
                 self.assertEqual(m._restore_demucs_checkpoint(), target)
                 self.assertEqual(target.read_bytes(), data)
@@ -83,8 +83,8 @@ class StructureTests(unittest.TestCase):
         from banana_mv import music_structure as m
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / m.DEMUCS_CHECKPOINT_NAME
-            with patch.object(m, '_demucs_checkpoint_target', return_value=target), \\
-                 patch.object(m, 'DEMUCS_CHECKPOINT_SHA256', '0' * 64), \\
+            with patch.object(m, '_demucs_checkpoint_target', return_value=target), \
+                 patch.object(m, 'DEMUCS_CHECKPOINT_SHA256', '0' * 64), \
                  patch.object(m.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong')):
                 with self.assertRaisesRegex(ValueError, 'SHA-256'):
                     m._restore_demucs_checkpoint()
@@ -107,7 +107,7 @@ class StructureTests(unittest.TestCase):
             output = Path(tmp) / 'result.json'
             modules = {'torch': SimpleNamespace(set_num_threads=Mock()),
                        'allin1_infer': SimpleNamespace(analyze=analyze)}
-            with patch.dict(sys.modules, modules), \\
+            with patch.dict(sys.modules, modules), \
                  patch.object(m, '_restore_demucs_checkpoint') as restore:
                 m.run_model('track.wav', output, tmp)
             self.assertEqual(json.loads(output.read_text())['bpm'], 120)
@@ -116,7 +116,7 @@ class StructureTests(unittest.TestCase):
 
             analyze = Mock(side_effect=urllib.error.URLError('connection refused'))
             modules['allin1_infer'] = SimpleNamespace(analyze=analyze)
-            with patch.dict(sys.modules, modules), \\
+            with patch.dict(sys.modules, modules), \
                  patch.object(m, '_restore_demucs_checkpoint') as restore:
                 with self.assertRaises(urllib.error.URLError):
                     m.run_model('track.wav', output, tmp)
