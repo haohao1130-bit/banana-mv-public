@@ -26,7 +26,7 @@ function showClipVersion(row){
 function renderClipPreviews(job){
   if(clipView.job!==job.id){clipView.job=job.id;clipView.rows.clear();clipView.handled=null;$('clip-list').replaceChildren();}
   clipView.jobData=job;
-  $('clip-chain-note').hidden=job.request?.mode!=='chain';
+  $('clip-chain-note').hidden=!['chain','chain5'].includes(job.request?.mode);
   for(let i=0;i<(job.segments||[]).length;i++){
     const segment=job.segments[i];if(!segment.preview)continue;
     let row=clipView.rows.get(i);
