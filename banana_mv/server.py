@@ -459,7 +459,7 @@ def worker(job, cfg, original, song, drive):
                     job['scene_state_summary']['committed_clips']=len(ledger['commits'])
                 parts.append(part)
                 if is_continuation(job['request']['mode']):
-                    if job['request']['mode'] == 'chain5':
+                    if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
                         tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
                         shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
                         tail = tail_frames[0]
@@ -542,7 +542,7 @@ def worker(job, cfg, original, song, drive):
             trim_video(raw,part,seg['frames'],skip_frames=overlap)
             parts.append(part)
             if is_continuation(job['request']['mode']):
-                if job['request']['mode'] == 'chain5':
+                if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
                     tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
                     shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
                     tail = tail_frames[0]
