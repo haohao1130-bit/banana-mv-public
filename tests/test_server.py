@@ -25,8 +25,8 @@ class VersionInfoTests(unittest.TestCase):
                              {'branch': 'unknown', 'commit': 'unknown'})
         with patch.object(app.Path, 'exists', return_value=True), patch.object(
                 app.subprocess, 'run', side_effect=[
-                    Mock(stdout='experiment/rtx5070-480p-local\\n'),
-                    Mock(stdout='123abc789\\n')]):
+                    Mock(stdout='experiment/rtx5070-480p-local  '),
+                    Mock(stdout='123abc789  ')]):
             self.assertEqual(app.detect_build_version(),
                              {'branch': 'experiment/rtx5070-480p-local',
                               'commit': '123abc789'})
