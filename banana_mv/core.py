@@ -115,9 +115,12 @@ def audio_window(source, dest, start, seconds):
              '-c:a', 'pcm_s16le', dest])
 
 
-def trim_video(source, dest, frame_count):
+def trim_video(source, dest, frame_count, *, skip_frames=0):
+    """Trim exact delivered frames; skip anchored overlap only in five-frame mode."""
+    if frame_count < 1 or skip_frames < 0:
+        raise ValueError('影格裁切參數無效。')
     command(['ffmpeg', '-y', '-v', 'error', '-i', source, '-an', '-vf',
-             f'fps={FPS},trim=end_frame={frame_count},setpts=PTS-STARTPTS',
+             f'fps={FPS},trim=start_frame={skip_frames}:end_frame={skip_frames+frame_count},setpts=PTS-STARTPTS',
              '-frames:v', str(frame_count), '-c:v', 'libx264', '-threads', '1',
              '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', dest])
     video = next(s for s in probe(dest)['streams'] if s['codec_type']=='video')
@@ -129,6 +132,29 @@ def last_frame(source, dest):
     count = int(next(s for s in probe(source)['streams'] if s['codec_type']=='video')['nb_frames'])
     command(['ffmpeg', '-y', '-v', 'error', '-i', source, '-vf', f'select=eq(n\\,{count-1})',
              '-frames:v', '1', '-update', '1', dest])
+
+
+def last_frames(source, dest_pattern, count=5):
+    """Export chronological tail frames to an ffmpeg %%02d PNG pattern."""
+    frames = int(next(s for s in probe(source)['streams'] if s['codec_type']=='video')['nb_frames'])
+    if count != 5 or frames < count:
+        raise ValueError('末五幀接續需要至少五個完整影格。')
+    pattern = str(dest_pattern)
+    if '%02d' not in pattern:
+        raise ValueError('末五幀輸出檔名必須包含 %02d。')
+    # Normalize timestamps of the consecutive tail frames in the filter.
+    # Avoid -vsync (unsupported by some Windows FFmpeg builds) and -fps_mode
+    # (not recognized by older builds). Contiguous 24fps PTS yield one PNG per
+    # decoded frame without any CLI sync flags.
+    paths = [Path(pattern % n) for n in range(1, count+1)]
+    for path in paths:
+        path.unlink(missing_ok=True)  # Never accept leftovers from a failed extraction.
+    command(['ffmpeg', '-y', '-v', 'error', '-i', source, '-vf',
+             f'select=gte(n\\,{frames-count}),setpts=N/({FPS}*TB)',
+             '-frames:v', str(count), pattern])
+    if any(not p.is_file() or p.stat().st_size == 0 for p in paths):
+        raise RuntimeError('最後五幀抽取不完整，停止接續，避免傳入錯誤動作。')
+    return paths
 
 
 def assemble(parts, song, dest, seconds, output_size=None, effects=None):
@@ -247,7 +273,7 @@ def fallback_prompt(prompt, continuation=False, lyrics='', image_count=1, scene_
 def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    first_frame=None, steps=8, *, acceleration=True, motion_lora=True,
                    director_mode='performance', intensity='high',
-                   kitchen_attention=None, sparse_attention=None):
+                   kitchen_attention=None, sparse_attention=None, guide_frames=None):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
     if intensity not in ('normal', 'high', 'extreme'):
         raise ValueError('未知動作強度')
@@ -256,6 +282,11 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
     sparse_attention = acceleration if sparse_attention is None else sparse_attention
     if not isinstance(kitchen_attention, bool) or not isinstance(sparse_attention, bool):
         raise ValueError('注意力開關必須為布林值。')
+    if guide_frames is not None:
+        if not first_frame or len(guide_frames) != 5 or any(not isinstance(f, str) or not f for f in guide_frames):
+            raise ValueError('末五幀引導需要五張依時間排序的 PNG 與首幀。')
+        if guide_frames[0] != first_frame:
+            raise ValueError('五幀引導起點必須與接續首幀相同。')
     images = reference_images(image, bool(first_frame))
     def node(kind, **inputs):
         return {'class_type': kind, 'inputs': inputs}
@@ -292,6 +323,19 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
     if first_frame:
         w['17'] = node('LoadImage', image=first_frame)
         w['7']['inputs']['first_frame'] = ['17',0]
+    if guide_frames is not None:
+        # MiniMaxH3AddGuide anchors a single chronological IMAGE batch at frame zero.
+        # Ordinary Ref2VA/one-frame workflows keep their original graph untouched.
+        previous = ['17',0]
+        for index, filename in enumerate(guide_frames[1:], 1):
+            load_key = f'guide_load_{index}'
+            batch_key = f'guide_batch_{index}'
+            w[load_key] = node('LoadImage', image=filename)
+            w[batch_key] = node('ImageBatch', image1=previous, image2=[load_key,0])
+            previous = [batch_key,0]
+        w['guide_last5'] = node('MiniMaxH3AddGuide', positive=['7',0], latent=['7',1],
+                                vae=['3',0], image=previous, frame_idx=0)
+        w['9']['inputs']['conditioning'] = ['guide_last5',0]
     model = ['1',0]
     if motion_lora:
         multiplier = {'normal': 0.6, 'high': 1.0, 'extreme': 1.3}[intensity]
