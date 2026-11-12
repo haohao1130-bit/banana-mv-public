@@ -419,6 +419,100 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertEqual(_fixed_reference_with_python_priority(fixed, '沒有狀態紀錄'),
                          fixed)
 
+    def test_plain_numbered_direction_notes_stay_out_of_final_film_slots(self):
+        # Regression: 6｜導演執行重點 after a plain-text fifth act is setup,
+        # not a sixth filmable phase or a fake last clip event.
+        from banana_mv.python_slots import commission
+        for heading in ('6｜導演執行重點', '6｜執行重點', '導演執行重點'):
+            with self.subTest(heading=heading):
+                brief = (
+                    '1｜角色設定\n'
+                    '@圖片1：小語。\n'
+                    '5｜完整 MV 分鏡與武打設計\n'
+                    '第一幕｜十人入侵\n'
+                    '惡人走進神社。\n'
+                    '第二幕｜交手\n'
+                    '蕉大師攤手化解攻擊。\n'
+                    '第三幕｜反擊\n'
+                    '敵人陸續倒地。\n'
+                    '第四幕｜首領登場\n'
+                    '蕉大師擊退首領。\n'
+                    '第五幕｜十惡人連滾帶爬逃離神社\n'
+                    '十人終於翻身起來。\n'
+                    '十人互相攙扶逃出鳥居。\n'
+                    + heading + '\n'
+                    '戰鬥進度\n'
+                    '依照 1 → 3 → 5 → 6 → 8 → 9 → 10 人順序累積。\n'
+                    '攝影設計\n'
+                    '以側面中景展示攻防。\n'
+                )
+                fixed, chapters = split_source(brief)
+                self.assertEqual(len(chapters), 5)
+                self.assertIn('戰鬥進度', fixed)
+                self.assertIn('攝影設計', fixed)
+                self.assertTrue(any('逃出鳥居' in x for x in chapters[-1]['actions']))
+                filmable = '\n'.join(a for c in chapters for a in c['actions'])
+                self.assertNotIn('戰鬥進度', filmable)
+                self.assertNotIn('攝影設計', filmable)
+                self.assertNotIn('依照 1 →', filmable)
+                final, _ = commission(chapters[-1], 1, 2, '')
+                self.assertIn('逃出鳥居', final)
+                self.assertNotIn('戰鬥進度', final)
+                segs = [{'index':i,'start':i*5.0,'seconds':5.0,
+                         'song_seconds':95.0,'segment_count':19}
+                        for i in range(19)]
+                with tempfile.TemporaryDirectory() as d:
+                    req=dict(request(), prompt=brief)
+                    plan=ensure_python_slot_plan(req, segs, [Path(d)/'ref.png'], d)
+                all_events='\n'.join(x['event'] for x in plan['segments'])
+                self.assertNotIn('戰鬥進度', all_events)
+                self.assertNotIn('攝影設計', all_events)
+                self.assertIn('逃出鳥居', all_events)
+                self.assertIn('戰鬥進度', plan['shared_setup'])
+
+    def test_markdown_direction_notes_leave_story_without_new_actions(self):
+        brief=(
+            '## 3｜故事內容\n'
+            '### 第一段｜開場\n'
+            '小語開始演唱。\n'
+            '### 第二段｜謝幕\n'
+            '小語鞠躬謝幕。\n'
+            '## 6｜導演執行重點\n'
+            '攝影設計\n'
+            '高角度拍攝整體舞台。\n'
+        )
+        fixed, chapters=split_source(brief)
+        self.assertEqual(len(chapters),2)
+        self.assertIn('攝影設計',fixed)
+        self.assertNotIn('攝影設計','\n'.join(str(c['actions']) for c in chapters))
+
+    def test_quote_only_line_does_not_become_previous_event(self):
+        from banana_mv.python_slots import commission
+        brief=(
+            '第一幕｜副歌\n'
+            '小語爆發性嘶吼：\n'
+            '「我要打十個！\n'
+            '」\n'
+            '紅白燈光與鼓點同時爆發。\n'
+            '第二幕｜神社\n'
+            '蕉大師擋下來拳。\n'
+        )
+        _,chapters=split_source(brief)
+        self.assertEqual(chapters[0]['actions'],
+                         ['小語爆發性嘶吼：','「我要打十個！」','紅白燈光與鼓點同時爆發。'])
+        previous=''
+        events=[]
+        for i in range(3):
+            event,previous=commission(chapters[0],i,3,previous)
+            events.append(event)
+        self.assertIn('ALREADY ESTABLISHED; do not restage or repeat: 「我要打十個！」',
+                      events[2])
+        self.assertNotIn('ALREADY ESTABLISHED; do not restage or repeat: 」',
+                         '\n'.join(events))
+        self.assertEqual(previous,'紅白燈光與鼓點同時爆發。')
+        _,inline=split_source('第一幕｜副歌\n「我要打十個！」\n')
+        self.assertEqual(inline[0]['actions'],['「我要打十個！」'])
+
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
         nb=json.loads((root/'BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb').read_text(encoding='utf-8'))
