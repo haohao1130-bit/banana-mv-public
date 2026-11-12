@@ -142,10 +142,16 @@ def last_frames(source, dest_pattern, count=5):
     pattern = str(dest_pattern)
     if '%02d' not in pattern:
         raise ValueError('末五幀輸出檔名必須包含 %02d。')
-    command(['ffmpeg', '-y', '-v', 'error', '-i', source, '-vf',
-             f'select=gte(n\\,{frames-count})', '-vsync', '0',
-             '-frames:v', str(count), pattern])
+    # Normalize timestamps of the consecutive tail frames in the filter.
+    # Avoid -vsync (unsupported by some Windows FFmpeg builds) and -fps_mode
+    # (not recognized by older builds). Contiguous 24fps PTS yield one PNG per
+    # decoded frame without any CLI sync flags.
     paths = [Path(pattern % n) for n in range(1, count+1)]
+    for path in paths:
+        path.unlink(missing_ok=True)  # Never accept leftovers from a failed extraction.
+    command(['ffmpeg', '-y', '-v', 'error', '-i', source, '-vf',
+             f'select=gte(n\\,{frames-count}),setpts=N/({FPS}*TB)',
+             '-frames:v', str(count), pattern])
     if any(not p.is_file() or p.stat().st_size == 0 for p in paths):
         raise RuntimeError('最後五幀抽取不完整，停止接續，避免傳入錯誤動作。')
     return paths
