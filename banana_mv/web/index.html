@@ -30,7 +30,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 .build-info{font-size:11px;line-height:1.2;color:#b4b0a2;font-variant-numeric:tabular-nums;max-width:min(250px,68vw);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:480px){.header-help{margin-left:auto}#open-help{margin-left:0}}
 </style>
-<header><div class="brand"><span class="brand-logo" role="img" aria-label="香蕉">🍌</span><div><small class="brand-name">Banana</small><h1>大乘蕉宗MV製作所</h1></div></div><button id="restart-5070" type="button" class="secondary" hidden title="只在本機 V4 管家運行且沒有任務時啟用">↻ 重啟丹爐</button><div class="header-help"><span id="build-info" class="build-info" aria-label="目前程式版本" title="從本機 Git 讀取">版本讀取中…</span><button id="open-help" type="button" class="secondary" aria-haspopup="dialog" aria-controls="help-dialog">📖 操作說明</button></div></header>
+<header><div class="brand"><span class="brand-logo" role="img" aria-label="香蕉">🍌</span><div><small class="brand-name">Banana</small><h1>大乘蕉宗MV製作所</h1></div></div><button id="restart-5070" type="button" class="secondary" disabled title="正在確認本機 V4 管家狀態">↻ 重啟丹爐（檢查中）</button><div class="header-help"><span id="build-info" class="build-info" aria-label="目前程式版本" title="從本機 Git 讀取">版本讀取中…</span><button id="open-help" type="button" class="secondary" aria-haspopup="dialog" aria-controls="help-dialog">📖 操作說明</button></div></header>
 <main><section class="card"><h2>參考圖就位，歌曲開唱。</h2><span class="tag">大乘蕉宗 · 公開煉丹房</span>
 <form id="form"><label for="project-name">專案名稱（選填）</label><input id="project-name" type="text" maxlength="120" placeholder="留空使用歌曲檔名"><h3>參考圖片｜依控制詞編號逐格選取</h3><p class="muted">每格只選一張。把角色、道具或場景放進對應的 @圖片N 欄位；更換或清除一格，不會移動其他圖片。</p><div id="reference-slots" class="reference-slots"><div class="reference-slot" id="reference-slot-1"><label for="image">圖片1 · @圖片1（必填）</label><input id="image" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-1"></div><p id="image-name-1" class="muted">尚未選圖</p><button id="remove-image-1" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-2"><label for="image-2">圖片2 · @圖片2（選填）</label><input id="image-2" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-2"></div><p id="image-name-2" class="muted">尚未選圖</p><button id="remove-image-2" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-3"><label for="image-3">圖片3 · @圖片3（選填）</label><input id="image-3" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-3"></div><p id="image-name-3" class="muted">尚未選圖</p><button id="remove-image-3" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-4"><label for="image-4">圖片4 · @圖片4（選填）</label><input id="image-4" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-4"></div><p id="image-name-4" class="muted">尚未選圖</p><button id="remove-image-4" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-5"><label for="image-5">圖片5 · @圖片5（選填）</label><input id="image-5" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-5"></div><p id="image-name-5" class="muted">尚未選圖</p><button id="remove-image-5" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-6"><label for="image-6">圖片6 · @圖片6（選填）</label><input id="image-6" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-6"></div><p id="image-name-6" class="muted">尚未選圖</p><button id="remove-image-6" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-7"><label for="image-7">圖片7 · @圖片7（選填）</label><input id="image-7" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-7"></div><p id="image-name-7" class="muted">尚未選圖</p><button id="remove-image-7" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-8"><label for="image-8">圖片8 · @圖片8（選填）</label><input id="image-8" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-8"></div><p id="image-name-8" class="muted">尚未選圖</p><button id="remove-image-8" type="button" class="secondary" hidden>清除此格</button></div><div class="reference-slot" id="reference-slot-9"><label for="image-9">圖片9 · @圖片9（選填）</label><input id="image-9" type="file" accept="image/png,image/jpeg,image/webp"><div id="image-preview-9"></div><p id="image-name-9" class="muted">尚未選圖</p><button id="remove-image-9" type="button" class="secondary" hidden>清除此格</button></div></div><p id="reference-help" class="muted" aria-live="polite"></p>
 <label>原歌曲（最多 5 分鐘）</label><input id="song" type="file" accept="audio/*" required>
@@ -225,18 +225,28 @@ async function updateBuildInfo(){
 }
 async function upload(file){return api('api/upload',{method:'POST',headers:{'X-Filename':encodeURIComponent(file.name)},body:file});}
 function message(s){$('status').textContent=s;}
+let restartInProgress=false;
 async function updateRestartControl(){
+ if(restartInProgress)return;
  const button=$('restart-5070');
  try{
   const state=await api('api/mv/restart-capability',{cache:'no-store'});
-  button.hidden=!state.available;
-  button.disabled=!!state.busy;
+  button.hidden=false;
+  button.disabled=!state.available||!!state.busy;
+  button.textContent=!state.available?'↻ 重啟丹爐（需 V4 管家）':state.busy?'↻ 重啟丹爐（任務中）':'↻ 重啟丹爐';
   button.title=state.reason||'停止並重啟 5070 專屬服務；共用的 ComfyUI 不會被誤關';
- }catch(_){button.hidden=true;}
+ }catch(_){
+  button.hidden=false;
+  button.disabled=true;
+  button.textContent='↻ 重啟丹爐（狀態未知）';
+  button.title='無法讀取本機管家狀態，請確認 5070 服務後手動重新啟動。';
+ }
 }
 $('restart-5070').onclick=async()=>{
  const button=$('restart-5070');
+ if(button.disabled||restartInProgress)return;
  if(!window.confirm('確定要完整重新啟動 BANANAMV 5070？\n\n只有在沒有生成任務時才會執行。由 V4 管家啟動的 ComfyUI 也會重啟；若 ComfyUI 原本是別的程式啟動，則保留它。'))return;
+ restartInProgress=true;
  button.disabled=true;button.textContent='正在重啟…';
  try{
   const result=await api('api/mv/restart',{method:'POST',headers:{'Content-Type':'application/json','X-Banana-Control':'5070-restart'},body:JSON.stringify({confirm:'restart-5070'})});
@@ -255,10 +265,12 @@ $('restart-5070').onclick=async()=>{
   }
   message('重啟未在網頁等待期限內完成。請確認 5070 管家視窗是否仍在執行。');
  }catch(error){message(error.message);}
- button.disabled=false;button.textContent='↻ 重啟丹爐';
+ restartInProgress=false;
+ button.textContent='↻ 重啟丹爐';
  await updateRestartControl();
 };
 void updateRestartControl();
+setInterval(()=>{void updateRestartControl();},5000);
 void updateBuildInfo();
 function setFurnace(state,detail){const titles={idle:'爐火待命',planning:'投藥煉方',working:'開爐煉影',assembling:'凝影成丹',done:'本爐丹成',error:'本爐火候有異',paused:'暫時封爐',reconnecting:'靈氣暫斷'};$('furnace').setAttribute('data-state',state);$('furnace-title').textContent=titles[state]||titles.idle;$('furnace-detail').textContent=detail||'藥材與靈氣就位，即可開爐。';}
 function renderFurnace(j){const status=j.status,segments=j.segments||[];if(status==='plan_ready')return setFurnace('paused','丹方已備妥，確認後才開爐。');if(status==='done')return setFurnace('done','蕉彌與蕉大師收功，可以取丹下載 MV。');if(status==='error')return setFurnace('error','請查看下方錯誤與可續跑段落。');if(['cancelled','interrupted'].includes(status))return setFurnace('paused','請查看已完成段落，可續跑此專案。');if(status==='retaking')return setFurnace('working','所選丹藥正在回爐，其餘丹藥保留原樣。');if(status==='assembling')return setFurnace('assembling','蕉大師收攏丹火，正在合成片段與原曲。');if(status==='translating_review')return setFurnace('planning','正在翻譯丹方供審閱，英文拍攝原稿保持不變。');if(status==='analyzing_audio')return setFurnace('planning','蕉彌投下音樂藥材，分析強弱與停頓。');if(['planning_story','planning_state'].includes(status)||segments.some(s=>s.status==='rewriting'))return setFurnace('planning','蕉彌投藥配方，導演安排故事與鏡頭。');if(segments.some(s=>s.status==='generating'))return setFurnace('working','蕉大師打太極催火，正在生成影片。');return setFurnace('planning','正在備料，準備下一段煉製。');}
