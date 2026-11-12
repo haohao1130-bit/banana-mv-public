@@ -4,6 +4,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -46,6 +47,27 @@ RESTART_LOCK = threading.Lock()
 SERVER_INSTANCE = uuid.uuid4().hex
 RESTART_REQUEST = backend.DATA / 'restart-request.json'
 RESTART_HEARTBEAT = backend.DATA / 'restart-controller.heartbeat'
+
+
+def detect_build_version():
+    """Report the running checkout at server startup; never invent a release number."""
+    root = Path(__file__).resolve().parents[1]
+    if not (root / '.git').exists():
+        return {'branch': 'unknown', 'commit': 'unknown'}
+
+    def git(*args):
+        try:
+            result = subprocess.run(['git', *args], cwd=root, check=True,
+                                    capture_output=True, text=True, timeout=2)
+            return result.stdout.strip() or 'unknown'
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return 'unknown'
+
+    return {'branch': git('symbolic-ref', '--quiet', '--short', 'HEAD'),
+            'commit': git('rev-parse', '--short=9', 'HEAD')}
+
+
+SERVER_BUILD = detect_build_version()
 
 
 def restart_capability():
@@ -1001,7 +1023,8 @@ class Handler(WebHandler):
         if url.path=='/clip_review.js':
             return self.send_file(WEB/'clip_review.js')
         if url.path=='/api/health':
-            return self.send_json({'service':'banana-mv','standalone':True,'instance':SERVER_INSTANCE})
+            return self.send_json({'service':'banana-mv','standalone':True,'instance':SERVER_INSTANCE,
+                                   'version':SERVER_BUILD})
         if url.path=='/api/mv/restart-capability':
             return self.send_json(restart_capability())
         if url.path=='/api/config':
