@@ -13,9 +13,28 @@ import time
 import unittest
 import urllib.request
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from banana_mv.core import command
+
+class VersionInfoTests(unittest.TestCase):
+    def test_version_detects_checkout_or_reports_unknown(self):
+        from banana_mv import server as app
+        with patch.object(app.Path, 'exists', return_value=False):
+            self.assertEqual(app.detect_build_version(),
+                             {'branch': 'unknown', 'commit': 'unknown'})
+        with patch.object(app.Path, 'exists', return_value=True), patch.object(
+                app.subprocess, 'run', side_effect=[
+                    Mock(stdout='experiment/rtx5070-480p-local\\n'),
+                    Mock(stdout='123abc789\\n')]):
+            self.assertEqual(app.detect_build_version(),
+                             {'branch': 'experiment/rtx5070-480p-local',
+                              'commit': '123abc789'})
+        with patch.object(app.Path, 'exists', return_value=True), patch.object(
+                app.subprocess, 'run', side_effect=FileNotFoundError):
+            self.assertEqual(app.detect_build_version(),
+                             {'branch': 'unknown', 'commit': 'unknown'})
+
 
 class ServerIntegration(unittest.TestCase):
     def test_three_modes_over_http_with_mock_gpu(self):
@@ -116,7 +135,11 @@ class ServerIntegration(unittest.TestCase):
                     with urllib.request.urlopen(base+'/') as r:
                         self.assertIn('大乘蕉宗MV製作所'.encode(),r.read())
                         self.assertIn(b'value="chain5"',app.WEB.joinpath('index.html').read_bytes())
-                    with urllib.request.urlopen(base+'/api/health') as r:self.assertTrue(json.load(r)['standalone'])
+                        self.assertIn(b'id="build-info"',app.WEB.joinpath('index.html').read_bytes())
+                    with urllib.request.urlopen(base+'/api/health') as r:
+                        health=json.load(r)
+                        self.assertTrue(health['standalone'])
+                        self.assertEqual(health['version'],app.SERVER_BUILD)
                     with self.assertRaises(urllib.error.HTTPError) as err:
                         urllib.request.urlopen(base+'/toybox')
                     self.assertEqual(err.exception.code,404)
