@@ -42,6 +42,63 @@ RUNS.mkdir(parents=True, exist_ok=True)
 GPU_LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 CANCEL = set()
+RESTART_LOCK = threading.Lock()
+SERVER_INSTANCE = uuid.uuid4().hex
+RESTART_REQUEST = backend.DATA / 'restart-request.json'
+RESTART_HEARTBEAT = backend.DATA / 'restart-controller.heartbeat'
+
+
+def restart_capability():
+    """The button is live only while the external desktop supervisor is alive."""
+    enabled = (backend.PORT == 8193 and
+               os.environ.get('BANANA_SUPERVISED_RESTART') == '1')
+    if enabled:
+        try:
+            enabled = time.time() - RESTART_HEARTBEAT.stat().st_mtime < 12
+        except OSError:
+            enabled = False
+    return {'available': enabled, 'busy': GPU_LOCK.locked(),
+            'reason': ('5070 桌面管家尚未啟動，請使用 V4 桌面捷徑。' if not enabled
+                       else '目前有任務正在執行，請等完成再重啟。' if GPU_LOCK.locked() else '')}
+
+
+def request_desktop_restart(handler, payload):
+    """Request, never execute, a privileged restart; Windows supervisor owns processes."""
+    if handler.headers.get('X-Banana-Control') != '5070-restart':
+        raise ValueError('缺少本機控制確認標頭。')
+    if handler.headers.get('Content-Type','').split(';',1)[0].strip().lower() != 'application/json':
+        raise ValueError('請使用 JSON 傳送重新啟動要求。')
+    origin = handler.headers.get('Origin', '')
+    if not origin or urllib.parse.urlparse(origin).scheme not in ('http','https'):
+        raise ValueError('重新啟動只能由 BANANAMV 網頁發起。')
+    if handler.headers.get('Sec-Fetch-Site', 'same-origin') not in ('same-origin', 'none'):
+        raise ValueError('跨網站請求不能控制重新啟動。')
+    origin_host = urllib.parse.urlparse(origin).netloc.casefold()
+    request_host = handler.headers.get('Host', '').casefold()
+    forwarded_host = handler.headers.get('X-Forwarded-Host', '').casefold()
+    # Tailscale Serve may forward the original Host or supply X-Forwarded-Host.
+    if origin_host not in (request_host, forwarded_host):
+        raise ValueError('來源網址不符合目前的 5070 前端。')
+    if payload.get('confirm') != 'restart-5070':
+        raise ValueError('尚未確認重新啟動。')
+    with RESTART_LOCK:
+        state = restart_capability()
+        if not state['available'] or state['busy']:
+            raise ValueError(state['reason'])
+        try:
+            queue = backend.comfy(backend.load_config(), '/queue')
+        except Exception:
+            queue = None  # Unreachable ComfyUI can be repaired by its owning supervisor.
+        if isinstance(queue, dict) and (queue.get('queue_running') or queue.get('queue_pending')):
+            raise ValueError('ComfyUI 還有正在執行或等待的工作，請先完成再重新啟動。')
+        if RESTART_REQUEST.exists():
+            raise ValueError('重新啟動要求已送出，請勿重複點擊。')
+        RESTART_REQUEST.parent.mkdir(parents=True, exist_ok=True)
+        tmp = RESTART_REQUEST.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'version':1,'issued_at':time.time(),
+                                  'instance':SERVER_INSTANCE}),encoding='utf-8')
+        tmp.replace(RESTART_REQUEST)
+    return {'ok':True,'restarting':True,'instance':SERVER_INSTANCE}
 
 
 def is_continuation(mode):
@@ -944,7 +1001,9 @@ class Handler(WebHandler):
         if url.path=='/clip_review.js':
             return self.send_file(WEB/'clip_review.js')
         if url.path=='/api/health':
-            return self.send_json({'service':'banana-mv','standalone':True})
+            return self.send_json({'service':'banana-mv','standalone':True,'instance':SERVER_INSTANCE})
+        if url.path=='/api/mv/restart-capability':
+            return self.send_json(restart_capability())
         if url.path=='/api/config':
             return self.send_json({'config':{'comfy_url':backend.load_config()['comfy_url']}})
         if url.path=='/api/mv/reference':
@@ -989,6 +1048,9 @@ class Handler(WebHandler):
     def do_POST(self):
         path=urllib.parse.urlparse(self.path).path
         try:
+            if path=='/api/mv/restart':
+                result = request_desktop_restart(self, self.body_json())
+                return self.send_json(result, 202)
             if path=='/api/upload':
                 if not GPU_LOCK.acquire(blocking=False):
                     raise ValueError('MV 執行中，請完成後再上傳素材。')
