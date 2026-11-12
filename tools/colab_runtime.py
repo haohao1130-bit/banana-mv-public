@@ -214,12 +214,15 @@ def show_shutdown_control(ns):
     display(button, output)
 
 
-def launch(ns, save_to_drive=True):
-    data = Path('/content/banana_mv_data')
+def launch(ns, save_to_drive=True, drive_folder='BananaMV'):
+    if drive_folder not in ('BananaMV', 'BananaMVClassicPythonSlot'):
+        raise ValueError('資料資料夾名稱未經核准。')
+    data = Path('/content/banana_mv_python_slot_data' if drive_folder == 'BananaMVClassicPythonSlot'
+                else '/content/banana_mv_data')
     if save_to_drive:
         from google.colab import drive
         drive.mount('/content/drive')
-        data = Path('/content/drive/MyDrive/BananaMV')
+        data = Path('/content/drive/MyDrive') / drive_folder
     data.mkdir(parents=True, exist_ok=True)
     cfg_path = data/'config.json'
     cfg = json.loads(cfg_path.read_text(encoding='utf-8')) if cfg_path.is_file() else {}

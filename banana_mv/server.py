@@ -16,9 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 if __name__=='__main__':
     sys.modules['banana_mv.server']=sys.modules[__name__]
 from banana_mv.director import director_prompt
-from banana_mv.core import (FPS, assemble, audio_window, build_workflow, dimensions,
-                            duration, enforce_face_identity, fallback_prompt, last_frame, output_dimensions,
-                            reference_images, segments, trim_video, probe, source_audio_duration)
+from banana_mv.core import (FPS, align_frames, assemble, audio_window, build_workflow, dimensions,
+                            duration, enforce_face_identity, fallback_prompt, last_frame, last_frames,
+                            output_dimensions, reference_images, segments, trim_video, probe,
+                            source_audio_duration)
 
 from banana_mv import services as backend
 from banana_mv.http_server import WebHandler
@@ -41,6 +42,8 @@ RUNS.mkdir(parents=True, exist_ok=True)
 GPU_LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 CANCEL = set()
+def is_continuation(mode):
+    return mode in ('chain', 'chain5')
 
 
 def write_state(job):
@@ -96,9 +99,20 @@ def graph_options(req, seconds, segment=None):
             'director_mode': mode, 'intensity': req.get('intensity', 'high')}
 
 
+def preflight_five_frame(cfg, req, images, size, seg, seed):
+    """Fail before filming if the selected H3 five-frame guide nodes are absent."""
+    if req.get('mode') != 'chain5':
+        return
+    guide = ['__banana_last5_preflight.png'] * 5
+    graph = build_workflow(images, 'preflight.wav', *size,
+        align_frames(max(124, seg['frames'] + 5)), '', seed,
+        guide[0], guide_frames=guide, **graph_options(req, seg['seconds'], seg))
+    preflight(cfg, graph)
+
+
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
-    if req.get('director_schema')==5 and req.get('rewrite',True):
+    if req.get('director_schema') in (5,6) and req.get('rewrite',True):
         from banana_mv.shoot_plan import write_shoot_prompt
         originals=original if isinstance(original,list) else [original]
         return write_shoot_prompt(cfg,req,segment,originals,tail,backend.rewrite_local,progress)
@@ -317,7 +331,7 @@ def export_finished_video(job,source):
 def worker(job, cfg, original, song, drive):
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
-    parts, tail = [], None
+    parts, tail, tail_frames = [], None, []
     def rewrite_progress(info):
         job['rewrite_attempt']=info;write_state(job)
     try:
@@ -348,9 +362,9 @@ def worker(job, cfg, original, song, drive):
                                                    'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
         needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
-                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5))
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6))
                       and job['request'].get('rewrite', True)
-                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5))
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6))
                       and any(not (s.get('status') == 'done' and valid_part(adopted_part(job,s), s, job['size']))
                               and not (job.get('resuming') and ((work/f'{s["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{s["index"]:02d}_prompt.txt').is_file())
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -358,10 +372,14 @@ def worker(job, cfg, original, song, drive):
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             job['status']='planning_story'; write_state(job)
-            plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
+            if job['request'].get('director_schema')==6:
+                from banana_mv.python_slots import ensure_python_slot_plan
+                plan = ensure_python_slot_plan(job['request'], job['segments'], original, work)
+            else:
+                plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
-                if plan['version']==5:
+                if plan['version'] in (5,6):
                     seg.pop('shoot_setup',None)
                     seg['fixed_reference_settings']=plan.get('shared_setup','')
                     seg['direction_ending_contract']=plan['ending_contract']
@@ -438,17 +456,34 @@ def worker(job, cfg, original, song, drive):
                     seg['scene_state_debug']=record
                     job['scene_state_summary']['committed_clips']=len(ledger['commits'])
                 parts.append(part)
-                if job['request']['mode']=='chain':
-                    tail = work/f'{i:02d}_last.png'
-                    last_frame(part,tail)
+                if is_continuation(job['request']['mode']):
+                    if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
+                        tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
+                        shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
+                        tail = tail_frames[0]
+                    else:
+                        tail = work/f'{i:02d}_last.png'
+                        last_frame(part,tail)
                 continue
             seg['status']='preparing'; job['current']=i+1; write_state(job)
             name = f'banana_{job["id"]}_{i}.wav'
-            audio_window(drive,inp/name,seg['start'],seg['model_frames']/FPS)
+            overlap = 5 if job['request']['mode'] == 'chain5' and tail_frames else 0
+            render_frames = (align_frames(max(124, seg['frames']+overlap))
+                             if overlap else seg['model_frames'])
+            audio_window(drive, inp/name, seg['start']-overlap/FPS, render_frames/FPS)
             first = None
+            guide_files = []
             if tail:
                 first = f'banana_{job["id"]}_{i}.png'
                 (inp/first).write_bytes(tail.read_bytes())
+                if overlap:
+                    guide_files = [first]
+                    for number, image_path in enumerate(tail_frames[1:], 1):
+                        filename = f'banana_{job["id"]}_{i}_guide_{number}.png'
+                        (inp/filename).write_bytes(image_path.read_bytes())
+                        guide_files.append(filename)
+            if overlap:
+                seg['handoff_overlap_frames'] = overlap
             seg['status']='preparing' if job['request'].get('director_schema')==4 else 'rewriting'; write_state(job)
             saved = takes.existing_file(job,i,seg.get('selected_take','original'),'prompt.txt')
             state_replanned=False
@@ -479,8 +514,9 @@ def worker(job, cfg, original, song, drive):
                 seg.pop('prompt_id',None)
                 seg.pop('scene_state_prompt_sha256',None)
                 seg.pop('refresh_prompt',None) # the new prompt/state pair is now durable
-            wf = build_workflow(job['images_comfy'],name,*job['size'],seg['model_frames'],prompt,
+            wf = build_workflow(job['images_comfy'],name,*job['size'],render_frames,prompt,
                                 seg.get('render_seed',(job['seed']+i) % (2**48)),first,
+                                guide_frames=guide_files or None,
                                 **graph_options(job['request'],seg['seconds'],seg))
             wf['16']['inputs']['filename_prefix']=f'BananaMV/{job["id"]}/{i:02d}_v1'
             preflight(cfg,wf)
@@ -501,11 +537,19 @@ def worker(job, cfg, original, song, drive):
             raw = work/f'{i:02d}_raw_v1.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
             part = work/f'{i:02d}_part_v1.mp4'
-            trim_video(raw,part,seg['frames'])
+            if overlap:
+                trim_video(raw,part,seg['frames'],skip_frames=overlap)
+            else:
+                trim_video(raw,part,seg['frames'])
             parts.append(part)
-            if job['request']['mode']=='chain':
-                tail = work/f'{i:02d}_last.png'
-                last_frame(part,tail)
+            if is_continuation(job['request']['mode']):
+                if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
+                    tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
+                    shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
+                    tail = tail_frames[0]
+                else:
+                    tail = work/f'{i:02d}_last.png'
+                    last_frame(part,tail)
             if ledger is not None:
                 if not valid_part(part,seg,job['size']):raise SceneStateError('片段未成功保存，不提交規劃狀態。')
                 commit_clip(work,ledger,seg['scene_state_debug'])
@@ -515,6 +559,8 @@ def worker(job, cfg, original, song, drive):
             (inp/name).unlink(missing_ok=True)
             if first:
                 (inp/first).unlink(missing_ok=True)
+            for filename in guide_files[1:]:
+                (inp/filename).unlink(missing_ok=True)
         if job['id'] in CANCEL:
             job['status']='cancelled'; write_state(job); return
         job['status']='assembling'; write_state(job)
@@ -549,7 +595,7 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=5,story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=6,story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
@@ -582,12 +628,12 @@ def start(req):
         raise ValueError('audio_analysis 必須為布林值。')
     if not isinstance(req['story_plan'], bool):
         raise ValueError('story_plan 必須為布林值。')
-    if req.get('mode') not in ('independent','chain'):
-        raise ValueError('請選獨立版或末幀接續版。')
+    if req.get('mode') not in ('independent','chain','chain5'):
+        raise ValueError('請選獨立、末幀或末五幀接續模式。')
     image_ids = req.get('image_ids')
     if image_ids is None:
         image_ids = [req.get('image_id')]
-    image_ids = reference_images(image_ids, req['mode']=='chain')
+    image_ids = reference_images(image_ids, is_continuation(req['mode']))
     images = [backend.asset(aid) for aid in image_ids]
     music = backend.asset(req.get('song_id'))
     if any(img['kind']!='image' for img in images) or music['kind']!='audio':
@@ -627,6 +673,7 @@ def start(req):
              build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
                             **graph_options(req,plan[0]['seconds'])))
     preflight(cfg,graph)
+    preflight_five_frame(cfg, req, images_comfy, size, plan[0], seed)
     if not GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 工作執行中，請等它完成。')
     try:
@@ -640,7 +687,7 @@ def start(req):
              'output_size':output_size, 'title':str(req.get('project_name') or music['name'])[:120],
              'settings_version':2,
              'image_comfy':images_comfy[0], 'images_comfy':images_comfy,
-             'note':'尚未完成 Colab GPU 實測；末幀接續不攜帶前段動作 latent。'}
+             'note':'尚未完成 Colab GPU 實測；末幀接續不攜帶前段動作 latent；末五幀使用五幀引導與重疊裁切。'}
         save_sources(job,original,song,drive)
         if effects:
             src=backend.LIBRARY/effects['file']
@@ -694,6 +741,7 @@ def open_furnace(job_id,revision):
         seg=job['segments'][0]
         preflight(cfg,build_workflow(job['images_comfy'],'preflight.wav',*job['size'],
                   seg['model_frames'],'',job['seed'],**graph_options(job['request'],seg['seconds'])))
+        preflight_five_frame(cfg, job['request'], job['images_comfy'], job['size'], seg, job['seed'])
         job.update(status='running',plan_approved=revision,resumed=time.time())
         CANCEL.discard(job_id);write_state(job)
         try:
@@ -863,9 +911,9 @@ def resume(job_id,rewrite_retries=None):
             usable=valid_part(part,seg,job['size'])
             if not usable and seg.get('takes'):
                 raise ValueError('採用版毛片遺失或損壞，請恢復該版本或另選現存版本；不覆寫原丹。')
-            if not usable or (missing and job['request']['mode']=='chain'):
+            if not usable or (missing and is_continuation(job['request']['mode'])):
                 seg['status']='waiting'
-                if missing and job['request']['mode']=='chain':
+                if missing and is_continuation(job['request']['mode']):
                     seg.pop('prompt_id',None)
                     seg['refresh_prompt']=True
                 missing=True
@@ -875,6 +923,8 @@ def resume(job_id,rewrite_retries=None):
             graph=build_workflow(job['images_comfy'],'preflight.wav',*job['size'],job['segments'][0]['model_frames'],'',
                                  job['seed'],**graph_options(job['request'],job['segments'][0]['seconds']))
             preflight(cfg,graph)
+            preflight_five_frame(cfg, job['request'], job['images_comfy'], job['size'],
+                                 job['segments'][0], job['seed'])
         job.update(status='running',resuming=True,resumed=time.time())
         job.pop('error',None);job.pop('video',None);CANCEL.discard(job_id)
         write_state(job)

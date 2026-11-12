@@ -13,12 +13,31 @@ import time
 import unittest
 import urllib.request
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from banana_mv.core import command
 
+class VersionInfoTests(unittest.TestCase):
+    def test_version_detects_checkout_or_reports_unknown(self):
+        from banana_mv import server as app
+        with patch.object(app.Path, 'exists', return_value=False):
+            self.assertEqual(app.detect_build_version(),
+                             {'branch': 'unknown', 'commit': 'unknown'})
+        with patch.object(app.Path, 'exists', return_value=True), patch.object(
+                app.subprocess, 'run', side_effect=[
+                    Mock(stdout='experiment/rtx5070-480p-local  '),
+                    Mock(stdout='123abc789  ')]):
+            self.assertEqual(app.detect_build_version(),
+                             {'branch': 'experiment/rtx5070-480p-local',
+                              'commit': '123abc789'})
+        with patch.object(app.Path, 'exists', return_value=True), patch.object(
+                app.subprocess, 'run', side_effect=FileNotFoundError):
+            self.assertEqual(app.detect_build_version(),
+                             {'branch': 'unknown', 'commit': 'unknown'})
+
+
 class ServerIntegration(unittest.TestCase):
-    def test_both_modes_over_http_with_mock_gpu(self):
+    def test_three_modes_over_http_with_mock_gpu(self):
         from PIL import Image
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);inp=root/'input';inp.mkdir()
@@ -76,6 +95,8 @@ class ServerIntegration(unittest.TestCase):
                     info['VAELoader']['input']['required']['vae_name']=[[MODELS['video_vae'],MODELS['audio_vae']]]
                     info['LoraLoaderModelOnly']['input']['required']['lora_name']=[list(MOTION_LORAS.values())]
                     info['ModelAttentionBackend']['input']['required']['attention']=[['pytorch attention','comfy kitchen attention']]
+                    info['ImageBatch']={'input':{'required':{}}}
+                    info['MiniMaxH3AddGuide']={'input':{'required':{}}}
                     return info
                 raise AssertionError(path)
             def queue(config,w):captured.append(w);return str(len(captured))
@@ -111,14 +132,22 @@ class ServerIntegration(unittest.TestCase):
                     with patch.object(app.backend,'comfy',return_value=info):
                         with self.assertRaisesRegex(ValueError,'尚未下載模型'):
                             app.preflight(cfg,graph)
-                    with urllib.request.urlopen(base+'/') as r:self.assertIn('大乘蕉宗MV製作所'.encode(),r.read())
-                    with urllib.request.urlopen(base+'/api/health') as r:self.assertTrue(json.load(r)['standalone'])
+                    with urllib.request.urlopen(base+'/') as r:
+                        self.assertIn('大乘蕉宗MV製作所'.encode(),r.read())
+                        self.assertIn(b'value="chain5"',app.WEB.joinpath('index.html').read_bytes())
+                        self.assertIn(b'id="build-info"',app.WEB.joinpath('index.html').read_bytes())
+                    with urllib.request.urlopen(base+'/api/health') as r:
+                        health=json.load(r)
+                        self.assertTrue(health['standalone'])
+                        self.assertEqual(health['version'],app.SERVER_BUILD)
                     with self.assertRaises(urllib.error.HTTPError) as err:
                         urllib.request.urlopen(base+'/toybox')
                     self.assertEqual(err.exception.code,404)
                     image=post('/api/upload',photo.read_bytes(),{'X-Filename':'photo.png'})
                     audio=post('/api/upload',song.read_bytes(),{'X-Filename':'song.wav'})
-                    for mode,count,legacy in [('independent',1,True),('chain',1,True),('independent',3,False),('chain',3,False)]:
+                    for mode,count,legacy in [('independent',1,True),('chain',1,True),
+                                               ('independent',3,False),('chain',3,False),
+                                               ('chain5',1,True),('chain5',3,False)]:
                         captured.clear()
                         req={'image_id':image['id'],'song_id':audio['id'],'mode':mode,
                              'aspect':'16:9','width':1280,'segment_seconds':4,'rewrite':False,'seed':42,
@@ -138,7 +167,7 @@ class ServerIntegration(unittest.TestCase):
                             time.sleep(.1)
                         self.assertEqual(current['status'],'done',current.get('error'))
                         self.assertEqual(current['request']['scene_state_version'],0)
-                        self.assertEqual(current['request']['director_schema'],5)
+                        self.assertEqual(current['request']['director_schema'],6)
                         self.assertFalse((app.job_dir(job['id'])/'scene_state.json').exists())
                         self.assertEqual(current['request']['srt_reference'],req['srt_reference'])
                         self.assertEqual(current['request']['srt_cues'][0]['text'],'時間參考歌詞')
@@ -149,7 +178,13 @@ class ServerIntegration(unittest.TestCase):
                         self.assertEqual((app.job_dir(job['id'])/'audio_analysis.json').is_file(),enabled)
                         self.assertEqual('audio_evidence' in current['segments'][0],enabled)
                         self.assertEqual('AUDIO-RESPONSIVE DIRECTION' in captured[0]['7']['inputs']['prompt'],enabled)
-                        self.assertEqual('first_frame' in captured[1]['7']['inputs'],mode=='chain')
+                        self.assertEqual('first_frame' in captured[1]['7']['inputs'],mode in ('chain','chain5'))
+                        self.assertEqual('guide_last5' in captured[1],mode=='chain5')
+                        self.assertNotIn('guide_last5',captured[0])
+                        if mode=='chain5':
+                            self.assertEqual(captured[1]['guide_last5']['inputs']['frame_idx'],0)
+                            self.assertEqual(captured[1]['7']['inputs']['length'],124)
+                            self.assertEqual(current['segments'][1]['handoff_overlap_frames'],5)
                         for graph in captured:
                             self.assertIn('attention_backend',graph)
                             self.assertEqual('sparse_attention' in graph,mode=='chain')
@@ -157,7 +192,7 @@ class ServerIntegration(unittest.TestCase):
                             self.assertFalse(graph['7']['inputs']['prompt'].startswith('r34l1sm, '))
                             self.assertEqual(len([k for k in graph['7']['inputs'] if k.startswith('ref_images.')]),count)
                         if not legacy:
-                            offset=1 if mode=='chain' else 0
+                            offset=1 if mode in ('chain','chain5') else 0
                             self.assertIn(f'<Picture {2+offset}> 角度',captured[1]['7']['inputs']['prompt'])
                         with urllib.request.urlopen(base+current['video']) as r:self.assertGreater(len(r.read()),1000)
                         request=urllib.request.Request(base+current['video'],headers={'Range':'bytes=0-31'})
@@ -206,7 +241,7 @@ class ServerIntegration(unittest.TestCase):
                                 time.sleep(.01)
                             with urllib.request.urlopen(base+'/api/mv/projects') as response:
                                 listing=json.load(response)
-                            self.assertEqual(len(listing),4)
+                            self.assertEqual(len(listing),6)
                             self.assertEqual(next(r for r in listing if r['id']==job_id)['completed'],2)
                             with urllib.request.urlopen(base+'/api/mv/reference?id='+job_id+'&image=0') as response:
                                 self.assertGreater(len(response.read()),0)

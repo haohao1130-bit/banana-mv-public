@@ -18,6 +18,7 @@ jobs:
       - run: python -m unittest discover -s tests
       - run: node tests/check_ui.cjs
       - run: python tools/build_notebook.py && git diff --exit-code Banana_MV_Public.ipynb BANANAMV_CLASSIC_PUBLIC.ipynb
+      - run: python tools/build_python_slot_notebook.py && git diff --exit-code BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb
 
   windows-launchers:
     runs-on: windows-latest
