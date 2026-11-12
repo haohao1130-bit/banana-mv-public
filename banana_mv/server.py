@@ -539,7 +539,10 @@ def worker(job, cfg, original, song, drive):
             raw = work/f'{i:02d}_raw_v1.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
             part = work/f'{i:02d}_part_v1.mp4'
-            trim_video(raw,part,seg['frames'],skip_frames=overlap)
+            if overlap:
+                trim_video(raw,part,seg['frames'],skip_frames=overlap)
+            else:
+                trim_video(raw,part,seg['frames'])
             parts.append(part)
             if is_continuation(job['request']['mode']):
                 if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
