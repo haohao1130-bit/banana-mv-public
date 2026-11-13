@@ -1017,6 +1017,10 @@ def resume(job_id,rewrite_retries=None):
 
 class Handler(WebHandler):
     def do_GET(self):
+        if self.path == '/api/5070/switch':
+            from banana_mv.room_switch import launcher
+            return self.send_json({'available': bool(launcher('film', backend.PORT)),
+                                   'busy': GPU_LOCK.locked()})
         url = urllib.parse.urlparse(self.path)
         if url.path in ('/','/mv'):
             return self.send_file(WEB/'index.html')
@@ -1069,6 +1073,9 @@ class Handler(WebHandler):
         return self.send_error(404)
 
     def do_POST(self):
+        if self.path == '/api/5070/switch':
+            from banana_mv.room_switch import switch
+            return switch(self, 'film', backend, GPU_LOCK)
         path=urllib.parse.urlparse(self.path).path
         try:
             if path=='/api/mv/restart':
