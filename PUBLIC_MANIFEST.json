@@ -51,6 +51,10 @@
       "sha256": "397497e785d82621c3ebfaa4a19f8554032e2072749b43376d0783068f231b44"
     },
     {
+      "path": "banana_mv/face_refine.py",
+      "sha256": "a6f37414321b6b99fedba059922f8ac70341f628238b8342505f1db26e84537f"
+    },
+    {
       "path": "banana_mv/h3_prompt.py",
       "sha256": "7fe008b88e1c1deb904b9124f8744318a22482c6ddb52dad2e6bcfb3ede45664"
     },
@@ -88,7 +92,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "d6096e9397915734b3d0bd1ae8778e3ca9ca4fe3dbafecf4faccb3f927ab08a0"
+      "sha256": "cf25dcbff8abfb632f4d17362972243a8dda7fcdadcd97cc0c35af92525a504d"
     },
     {
       "path": "banana_mv/services.py",
@@ -120,7 +124,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "eede2e5af98d990f540551007ae108b309b9188414076aba38bd8bfab4bbdd6e"
+      "sha256": "7022d4cb727044b59bb99fdddf0ba9513dbf8dfda57c37791b4ad2d582482286"
     },
     {
       "path": "docs/clip_review.md",
@@ -139,6 +143,10 @@
       "sha256": "b660a2500647befbc7b0e53096abe707a75e2111fc9a0f2b352178b7b5fb61b8"
     },
     {
+      "path": "docs/windows_classic_local.md",
+      "sha256": "76e17fd31c08dce2b95f0b92475da96b92c09db396846c12ff7fcada76b798ce"
+    },
+    {
       "path": "tests/check_ui.cjs",
       "sha256": "e99928857757077d6720074cbf0465a42880540146b85e89f7d7549fc08eeae0"
     },
@@ -149,6 +157,10 @@
     {
       "path": "tests/test_audio_timing.py",
       "sha256": "39acdb7deb45526b343f1ac70ed2a8ac8bbb4d6361e53ac76d6b10b91e9048e4"
+    },
+    {
+      "path": "tests/test_classic_isolation.py",
+      "sha256": "3c9b8daafe5693c28d07aefd87bd2c710b5de65713fe995c684e350cbc2bb1fb"
     },
     {
       "path": "tests/test_clip_scope.py",
@@ -271,8 +283,20 @@
       "sha256": "557601f561461bac66e5092ddfe2a4e0f1bbdc4a656bc8060ebe5b5cd859b4a4"
     },
     {
+      "path": "tools/create_classic_shortcut.ps1",
+      "sha256": "65c25a376626969011df4ba18c8cfc4063f8b41a31ccf7e86c4e86b9a45c5af1"
+    },
+    {
       "path": "tools/public_clone.py",
       "sha256": "6caceca6994e49e10594effee6aaddf693707eb0a899b8320ff470064593509d"
+    },
+    {
+      "path": "tools/start_classic_local.cmd",
+      "sha256": "4b707cc2f34d3e1b48ccb4acbfad6a40e9163dc2d2277ac47f1882bd823ff32b"
+    },
+    {
+      "path": "tools/start_classic_local.ps1",
+      "sha256": "10977e97f90986ef6145810faac5c781992424603dd9ba68414069122f03c0a9"
     },
     {
       "path": "workflows/chain_api.json",
@@ -281,26 +305,6 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
-    },
-    {
-      "path": "tools/start_classic_local.ps1",
-      "sha256": "10977e97f90986ef6145810faac5c781992424603dd9ba68414069122f03c0a9"
-    },
-    {
-      "path": "tools/start_classic_local.cmd",
-      "sha256": "4b707cc2f34d3e1b48ccb4acbfad6a40e9163dc2d2277ac47f1882bd823ff32b"
-    },
-    {
-      "path": "tools/create_classic_shortcut.ps1",
-      "sha256": "65c25a376626969011df4ba18c8cfc4063f8b41a31ccf7e86c4e86b9a45c5af1"
-    },
-    {
-      "path": "docs/windows_classic_local.md",
-      "sha256": "76e17fd31c08dce2b95f0b92475da96b92c09db396846c12ff7fcada76b798ce"
-    },
-    {
-      "path": "tests/test_classic_isolation.py",
-      "sha256": "3c9b8daafe5693c28d07aefd87bd2c710b5de65713fe995c684e350cbc2bb1fb"
     }
   ]
 }

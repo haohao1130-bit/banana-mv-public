@@ -527,6 +527,13 @@ def worker(job, cfg, original, song, drive):
             export_finished_video(job,work/'final.mp4')
         except OSError as error:
             job['export_error']=f'成品已合成，但另存 videos 資料夾失敗：{error}；仍可由前端下載。'
+        if job['request'].get('face_refine') and job['id'] not in CANCEL:
+            from banana_mv import face_refine
+            try:
+                source = face_refine.template(sys.modules[__name__], cfg)
+                face_refine.candidates(sys.modules[__name__], cfg, job, parts, original, source)
+            except Exception as error:
+                job['face_refine_error'] = str(error)
         job.pop('resuming',None)
         job['status']='done'; job['video']=f'/api/mv/file?id={job["id"]}'; write_state(job)
     except Exception as e:
@@ -595,6 +602,14 @@ def start(req):
     vocal = backend.asset(req.get('vocal_id')) if req.get('vocal_id') else None
     if vocal and vocal['kind']!='audio':
         raise ValueError('人聲必須是音訊檔。')
+    if not isinstance(req.get('face_refine', False), bool):
+        raise ValueError('遠景救臉設定必須為布林值。')
+    if req.get('face_refine'):
+        from banana_mv.face_refine import template
+        reference = req.get('face_refine_reference')
+        if type(reference) is not int or not 1 <= reference <= len(images):
+            raise ValueError('請指定一張已上傳的臉部參考圖。')
+        template(sys.modules[__name__], cfg)
     original = [backend.LIBRARY / img['file'] for img in images]
     song = backend.LIBRARY/music['file']
     drive = backend.LIBRARY/vocal['file'] if vocal else song
