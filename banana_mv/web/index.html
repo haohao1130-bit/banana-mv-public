@@ -232,12 +232,10 @@ async function updateRestartControl(){
  try{
   const state=await api('api/mv/restart-capability',{cache:'no-store'});
   button.hidden=false;
-  $('switch-to-film').hidden = !state.available;
   button.disabled=!state.available||!!state.busy;
   button.textContent=!state.available?'↻ 重啟丹爐（需 V4 管家）':state.busy?'↻ 重啟丹爐（任務中）':'↻ 重啟丹爐';
   button.title=state.reason||'停止並重啟 5070 專屬服務；共用的 ComfyUI 不會被誤關';
  }catch(_){
-  $('switch-to-film').hidden = true;
   button.hidden=false;
   button.disabled=true;
   button.textContent='↻ 重啟丹爐（狀態未知）';
