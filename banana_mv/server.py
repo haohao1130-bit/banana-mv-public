@@ -391,7 +391,7 @@ def video_info(entry):
     raise RuntimeError('生成已完成，但沒有找到影片輸出。')
 
 
-def export_finished_video(job,source,*,refined_version=None):
+def export_finished_video(job,source,*,refined_version=None,upscaled_version=None):
     """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
     folder=backend.DATA/'videos'
     folder.mkdir(parents=True,exist_ok=True)
@@ -399,6 +399,8 @@ def export_finished_video(job,source,*,refined_version=None):
     suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
     if refined_version is not None:
         suffix += f'_face_refine_v{refined_version:03d}'
+    if upscaled_version is not None:
+        suffix += f'_1080p_v{upscaled_version:03d}'
     target=folder/f'{title}_{job["id"]}{suffix}.mp4'
     temp=target.with_name('.'+target.name+'.tmp')
     try:
@@ -406,7 +408,7 @@ def export_finished_video(job,source,*,refined_version=None):
         temp.replace(target)
     finally:
         temp.unlink(missing_ok=True)
-    if refined_version is None:
+    if refined_version is None and upscaled_version is None:
         job['output_video']=str(target)
         job.pop('export_error',None)
     return target
@@ -665,6 +667,9 @@ def worker(job, cfg, original, song, drive):
                     **({'effects': effects_source(job)} if job.get('effects_mix') else {}))
             except Exception as error:
                 job['face_refine_error'] = str(error)
+        if job['request'].get('upscale_1080p'):
+            from banana_mv import nv_upscale
+            nv_upscale.render_version(sys.modules[__name__], cfg, job)
         job.pop('resuming',None)
         job['status']='done'; job['video']=f'/api/mv/file?id={job["id"]}'; write_state(job)
     except Exception as e:
@@ -685,6 +690,8 @@ def worker(job, cfg, original, song, drive):
 
 def start(req):
     cfg = copy.deepcopy(backend.load_config())
+    if not isinstance(req.get('upscale_1080p', False), bool):
+        raise ValueError('1080P 放大設定必須是布林值。')
     if not isinstance(req.get('face_refine', False), bool):
         raise ValueError('遠景救臉設定必須為布林值。')
     if req.get('face_refine'):

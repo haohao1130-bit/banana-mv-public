@@ -4,11 +4,11 @@
   "files": [
     {
       "path": ".github/workflows/checks.yml",
-      "sha256": "3f7ee742c5079058c9301b9184aae956f10033d453b4b78d9194415135b06724"
+      "sha256": "288be1e0b4de2486f7139d289162a80ac72d1c5e560e6504aa144377634c8f72"
     },
     {
       "path": ".gitignore",
-      "sha256": "6e28ce737e3bcc1446f20385cfe6667ec0451808a9f24dcac6bde3822eb54d14"
+      "sha256": "9b38a4cdd0efd2c1288711c448bf52b5bb54b88c6611c5b7902d53eed447e469"
     },
     {
       "path": "Banana_MV_Public.ipynb",
@@ -20,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "8206a7624b08345da24f9bf7c0c4177f23c53a11fb6e8ccd8ef6e44d28da9aca"
+      "sha256": "c0d4203f0c9910a32c7d054257b60c003de7b5e597613adb24b9d518a7be800b"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -40,7 +40,7 @@
     },
     {
       "path": "banana_mv/core.py",
-      "sha256": "c399c0015c7b6521cef99c11ac58ddf1a0842bb7a6554d8013dfaef4ad868da4"
+      "sha256": "b189773ee3a04fbba593f5c7dc5cd7d4956ebdd6ed1e36de6a8ecee06d3e5aa7"
     },
     {
       "path": "banana_mv/direction_contract.py",
@@ -49,6 +49,10 @@
     {
       "path": "banana_mv/director.py",
       "sha256": "397497e785d82621c3ebfaa4a19f8554032e2072749b43376d0783068f231b44"
+    },
+    {
+      "path": "banana_mv/face_refine.py",
+      "sha256": "5b156ea34f5059964a1f77b444e52adac4b29d313b9709e5203e19064d0e17fd"
     },
     {
       "path": "banana_mv/h3_prompt.py",
@@ -72,7 +76,11 @@
     },
     {
       "path": "banana_mv/mv_scope.py",
-      "sha256": "4443e4870c12fc66959704af647ad221b22e1b5b3f21f3d9019f500d20eb6f27"
+      "sha256": "4f058aec660dfea0b685843c68a6f9cb5f6bf6eb5c6633a40daf2cf7df9daec9"
+    },
+    {
+      "path": "banana_mv/nv_upscale.py",
+      "sha256": "855743b2185b6cfd066913dcfc274c5d9de381423c63b128c0f89bce34cfdceb"
     },
     {
       "path": "banana_mv/plan_translation.py",
@@ -88,7 +96,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "f3d1ae51f0a5cb575d559272c6cfdf77e17b08c2b951aa6c43c63758f4e1f0c6"
+      "sha256": "8b6f6b3dc025724b3090dedcec7a7d2851aa22ff06154fa6d7af2f42f531402e"
     },
     {
       "path": "banana_mv/services.py",
@@ -96,7 +104,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "d65f667508588909c22bf6cc55d66767c0ef0ef368da44b1f5872907996fdd1d"
+      "sha256": "96c582ff25d7ce32c94068e4edc917524a086096ee6e80187e5dcf24b68f666a"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -108,11 +116,11 @@
     },
     {
       "path": "banana_mv/story_plan.py",
-      "sha256": "1002a80d75743029c6a44d221b967e3b03ee9c278e172f214af58088d34365ea"
+      "sha256": "2b9eecc7a6468871019c17ba32e1b2b3ed7d2fa49f371ead8897bfa8e7610028"
     },
     {
       "path": "banana_mv/takes.py",
-      "sha256": "365c5c7671c7d4bb066ff0ac37f1998c0b17c241abeeb5bd161d08e79686be71"
+      "sha256": "257b0bbb066651672e165801279521bc5f70e5d16fa38049cdda3ba688109bf2"
     },
     {
       "path": "banana_mv/web/clip_review.js",
@@ -120,7 +128,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "9009909b4122d459e1eb8980238f269ca67e4865e7346e43084d4061f4558934"
+      "sha256": "ef6bb4ec0ffaed390fc4723131b27a3f606d7de644af3dbdfa073f942d9f652a"
     },
     {
       "path": "docs/clip_review.md",
@@ -139,6 +147,10 @@
       "sha256": "b660a2500647befbc7b0e53096abe707a75e2111fc9a0f2b352178b7b5fb61b8"
     },
     {
+      "path": "docs/windows_classic_local.md",
+      "sha256": "229338903e0c30f1372280f22aa6a9aefdc8bfc1f9a7bc68921dfcfac9a0d27d"
+    },
+    {
       "path": "tests/check_ui.cjs",
       "sha256": "94bd1fe7fcf25282af4ead8172bb7b4dc69880f1ad8b13a8f4db740b688d56b7"
     },
@@ -151,6 +163,10 @@
       "sha256": "39acdb7deb45526b343f1ac70ed2a8ac8bbb4d6361e53ac76d6b10b91e9048e4"
     },
     {
+      "path": "tests/test_classic_isolation.py",
+      "sha256": "3c9b8daafe5693c28d07aefd87bd2c710b5de65713fe995c684e350cbc2bb1fb"
+    },
+    {
       "path": "tests/test_clip_scope.py",
       "sha256": "88e843dcaceecdca21371056e7d25a3b6599704ec1b679598a22c4ecf52002e1"
     },
@@ -160,7 +176,7 @@
     },
     {
       "path": "tests/test_core.py",
-      "sha256": "eeff82ef95852d0b9998865b3f8a1619a19cdb1d4bc196b76cf3cdf39abfb281"
+      "sha256": "1adf6c8a4537d5d4bfd327317a7e62ce8736f7640ad7feea35ab2f09dbeeb8a4"
     },
     {
       "path": "tests/test_direct_prompts.py",
@@ -236,7 +252,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "128ec7b10afe13a485ec4fae4e54a7d93221ff9e193d738517a11bef9f826cc4"
+      "sha256": "20e978cb2e995f8e17d088ff069f1c91184ff422dbb1fc058ac1d52b217210f4"
     },
     {
       "path": "tests/test_services.py",
@@ -244,7 +260,7 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "84051e76ce8e566e37d90506ab83010ff18edceb69ef56f5ed5348062371d896"
+      "sha256": "6daf63aa7afb36841bb5e1cdebebdde4cc3d0e30a7ce9229b8786b59d22920c3"
     },
     {
       "path": "tests/test_sound_effects.py",
@@ -264,15 +280,27 @@
     },
     {
       "path": "tools/build_notebook.py",
-      "sha256": "84753ff43029aaabbef4cf6b758d7217221867a992e16ebb901704794d8bf350"
+      "sha256": "76af34cab2a30584908d82d4852254a002b23e161d4804db78c460e3ce3361d7"
     },
     {
       "path": "tools/colab_runtime.py",
-      "sha256": "557601f561461bac66e5092ddfe2a4e0f1bbdc4a656bc8060ebe5b5cd859b4a4"
+      "sha256": "ec02c57dafb54f0c8539a0fdff2c07faac56f9042c722e94b41e47d571aa6e40"
+    },
+    {
+      "path": "tools/create_classic_shortcut.ps1",
+      "sha256": "65c25a376626969011df4ba18c8cfc4063f8b41a31ccf7e86c4e86b9a45c5af1"
     },
     {
       "path": "tools/public_clone.py",
       "sha256": "6caceca6994e49e10594effee6aaddf693707eb0a899b8320ff470064593509d"
+    },
+    {
+      "path": "tools/start_classic_local.cmd",
+      "sha256": "4b707cc2f34d3e1b48ccb4acbfad6a40e9163dc2d2277ac47f1882bd823ff32b"
+    },
+    {
+      "path": "tools/start_classic_local.ps1",
+      "sha256": "7207c5286153b1a33d5669baed8686ba65fc9becf57391be53f18c4c955a3196"
     },
     {
       "path": "workflows/chain_api.json",
@@ -281,30 +309,6 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
-    },
-    {
-      "path": "tools/start_classic_local.ps1",
-      "sha256": "10977e97f90986ef6145810faac5c781992424603dd9ba68414069122f03c0a9"
-    },
-    {
-      "path": "tools/start_classic_local.cmd",
-      "sha256": "4b707cc2f34d3e1b48ccb4acbfad6a40e9163dc2d2277ac47f1882bd823ff32b"
-    },
-    {
-      "path": "tools/create_classic_shortcut.ps1",
-      "sha256": "65c25a376626969011df4ba18c8cfc4063f8b41a31ccf7e86c4e86b9a45c5af1"
-    },
-    {
-      "path": "docs/windows_classic_local.md",
-      "sha256": "76e17fd31c08dce2b95f0b92475da96b92c09db396846c12ff7fcada76b798ce"
-    },
-    {
-      "path": "tests/test_classic_isolation.py",
-      "sha256": "3c9b8daafe5693c28d07aefd87bd2c710b5de65713fe995c684e350cbc2bb1fb"
-    },
-    {
-      "path": "banana_mv/face_refine.py",
-      "sha256": "5b156ea34f5059964a1f77b444e52adac4b29d313b9709e5203e19064d0e17fd"
     }
   ]
 }
