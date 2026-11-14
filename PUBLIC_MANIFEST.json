@@ -80,7 +80,7 @@
     },
     {
       "path": "banana_mv/nv_upscale.py",
-      "sha256": "855743b2185b6cfd066913dcfc274c5d9de381423c63b128c0f89bce34cfdceb"
+      "sha256": "6921b6262bcda6dbe704662a2eac144656f8f625358fd7aadb91d7a8a2df5dc1"
     },
     {
       "path": "banana_mv/plan_translation.py",
@@ -100,7 +100,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "21133a64d7c430e4488c805f9ccd5bd8e6172cbf9625c4d63f23ce703b3db2e9"
+      "sha256": "daf68a36a4a9aac27e10efe4af66f065b32c01dc55551f826d72e5d9a1e7dd7c"
     },
     {
       "path": "banana_mv/services.py",
@@ -136,7 +136,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "4c25dc3cb10a584ea7dde56858fe90a6ba17e23ae8e92bab28f44566c96eb0f2"
+      "sha256": "a8b1280c8b06cc75d015e643413668880c28631c334cbf7b6295f9e751b3d40c"
     },
     {
       "path": "banana_mv/whole_song.py",

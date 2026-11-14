@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 from tempfile import TemporaryDirectory
+from threading import Thread
 
 from banana_mv import core, masters
 
@@ -56,6 +57,66 @@ def encode(tool, source, target, size, cancelled):
     return True
 
 
+def start_finished(app, job_id, version=None):
+    """Queue VSR for an existing immutable master, without entering generation."""
+    if not app.GPU_LOCK.acquire(blocking=False):
+        raise ValueError('目前有任務在跑，完成後再回爐升級。')
+    launched = False
+    try:
+        job = app.read_state(job_id)
+        if job['status'] != 'done' and not (
+                job['status'] == 'interrupted' and job.get('upscale_manual')):
+            raise ValueError('請先完成影片，再回爐升級。')
+        work = app.job_dir(job_id)
+        masters.preserve_current(job, work)
+        if version is None:
+            version = job.get('current_master')
+        if type(version) is not int:
+            raise ValueError('找不到可升級的成片版本。')
+        current = job.get('current_master')
+        row = next((item for item in job['final_versions'] if item['version'] == version), None)
+        if not row or (version != current and not (
+                row['reason'] == 'face_refine' and row.get('source_master') == current)):
+            raise ValueError('請重新開啟成片，再選擇目前母片或修臉版。')
+        source = masters.source(job, work, version)
+        if output_size(*video_size(source)) is None:
+            raise ValueError('來源已達 1080P。')
+        executable()
+        cfg = app.backend.load_config()
+        app.CANCEL.discard(job_id)
+        job.pop('upscale_error', None)
+        job.pop('error', None)
+        job.update(status='upscaling_1080p', upscale_manual=True)
+        app.write_state(job)
+        try:
+            Thread(target=finished_worker, args=(app, cfg, job, row), daemon=True).start()
+        except Exception as error:
+            job.update(status='done', upscale_error=str(error))
+            job.pop('upscale_manual', None)
+            app.write_state(job)
+            raise
+        launched = True
+        return {'id': job_id, 'status': 'upscaling_1080p'}
+    finally:
+        if not launched:
+            app.GPU_LOCK.release()
+
+
+def finished_worker(app, cfg, job, source_row):
+    try:
+        render(app, cfg, job, source_row=source_row)
+    except Exception as error:
+        job['upscale_error'] = str(error)
+    finally:
+        job['status'] = 'done'
+        job.pop('upscale_manual', None)
+        app.CANCEL.discard(job['id'])
+        try:
+            app.write_state(job)
+        finally:
+            app.GPU_LOCK.release()
+
+
 def render_version(app, cfg, job):
     if not job['request'].get('upscale_1080p') or job['id'] in app.CANCEL:
         return
@@ -66,16 +127,17 @@ def render_version(app, cfg, job):
         job['upscale_error'] = str(error)
 
 
-def render(app, cfg, job):
+def render(app, cfg, job, *, source_row=None):
     work = app.job_dir(job['id'])
     current = job['current_master']
     versions = job['final_versions']
-    source_row = next(row for row in versions if row['version'] == current)
-    if job['request'].get('face_refine'):
-        source_row = next((row for row in reversed(versions)
-                           if row['reason'] == 'face_refine' and row.get('source_master') == current), None)
-        if source_row is None:
-            raise ValueError('本次未產生修臉版，已略過 1080P 放大。')
+    if source_row is None:
+        source_row = next(row for row in versions if row['version'] == current)
+        if job['request'].get('face_refine'):
+            source_row = next((row for row in reversed(versions)
+                               if row['reason'] == 'face_refine' and row.get('source_master') == current), None)
+            if source_row is None:
+                raise ValueError('本次未產生修臉版，已略過 1080P 放大。')
 
     source = masters.source(job, work, source_row['version'])
     size = output_size(*video_size(source))

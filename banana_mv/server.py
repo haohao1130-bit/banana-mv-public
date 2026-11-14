@@ -1164,6 +1164,10 @@ class Handler(WebHandler):
             if path=='/api/mv/resume':
                 body=self.body_json()
                 return self.send_json(resume(body['id'],body.get('rewrite_retries')))
+            if path=='/api/mv/upscale':
+                from banana_mv import nv_upscale
+                body=self.body_json()
+                return self.send_json(nv_upscale.start_finished(sys.modules[__name__], body['id'], body.get('version')), 202)
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
