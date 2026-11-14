@@ -40,7 +40,7 @@
     },
     {
       "path": "banana_mv/core.py",
-      "sha256": "c399c0015c7b6521cef99c11ac58ddf1a0842bb7a6554d8013dfaef4ad868da4"
+      "sha256": "f98011866e186738f8ae866a7bcd7373a1b93a7d5088092bf32df03418ef86ca"
     },
     {
       "path": "banana_mv/direction_contract.py",
@@ -124,7 +124,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "39810195bd1f2a860f7461e8b8e2483074f2033d915c09835b99119c2d43fae6"
+      "sha256": "8b91aca5b26ac403f129de9007d5fb017ba77427b62ca2f1758b7690f9b05123"
     },
     {
       "path": "docs/clip_review.md",

@@ -88,6 +88,7 @@ OUTPUT_SIZES = {'16:9': (1280,720), '9:16': (720,1280), '4:5': (720,900), '1:1':
 # Existing width requests identify the preset, so saved 720p projects remain compatible.
 OUTPUT_SIZE_PRESETS = {
     '720p': OUTPUT_SIZES,
+    '1080p': {'16:9': (1920,1080), '9:16': (1080,1920), '4:5': (1080,1350), '1:1': (1080,1080)},
     '480p': {'16:9': (854,480), '9:16': (480,854), '4:5': (480,600), '1:1': (480,480)},
 }
 
@@ -100,7 +101,7 @@ def output_dimensions(aspect, width=None):
     for sizes in OUTPUT_SIZE_PRESETS.values():
         if width == sizes[aspect][0]:
             return sizes[aspect]
-    raise ValueError(f'不支援的橫向寬度；{aspect} 請選擇 720P 或 480P 預設尺寸。')
+    raise ValueError(f'不支援的橫向寬度；{aspect} 請選擇 480P、720P 或 1080P 預設尺寸。')
 
 
 def dimensions(aspect, width=None):
@@ -314,5 +315,3 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
         model = ['sparse_attention',0]
     w['8']['inputs']['model'] = model
     return w
-
-
