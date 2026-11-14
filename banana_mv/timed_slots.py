@@ -19,7 +19,7 @@ AUTHORED_SECTION = re.compile(
     r'故事內容|故事劇情|劇情內容|劇本內容|故事大綱|劇情大綱|故事分段|劇情分段|'
     r'分段劇情|分段腳本|分鏡時間軸|分鏡腳本|分鏡內容|拍攝段落|段落安排|演出內容|'
     r'故事開始|正片內容|精密鏡頭時間軸|鏡頭時間軸|Shared Settings|Common Settings|'
-    r'Shot Timeline|Storyboard|subject_definitions|detailed_description)\s*[：:]?$', re.I
+    r'Shot Timeline|Storyboard|subject_definitions|detailed_description|最終畫面原則)\s*[：:]?$', re.I
 )
 PLAIN_CONTROL = re.compile(
     r'^【?(?:電影導演控制|電影攝影控制|角色表演控制|角色與物件連續性|'
@@ -30,6 +30,9 @@ TIME_SPAN = re.compile(
     r'(?<!\d)(?P<begin>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
     r'\s*[-–—－~～至]\s*'
     r'(?P<end>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
+)
+BRACKET_TIMED_TITLE = re.compile(
+    TIME_SPAN.pattern + r'(?:\s*[｜|]\s*.+)?'
 )
 STORY_NUMBER = re.compile(r'第([一二三四五六七八九十\d]+)段')
 TARGET_RULE = re.compile(
@@ -89,13 +92,14 @@ def parse_timed_source(prompt, *, authored_intervals=False):
         bracket = re.fullmatch(r'【([^】]+)】\s*[：:]?', line) if authored_intervals else None
         if bracket:
             title = bracket[1].strip()
-            if TIME_SPAN.fullmatch(title):
+            timed_title = BRACKET_TIMED_TITLE.fullmatch(title)
+            if timed_title:
                 if current is None or 'bracket_span' in current:
                     bracket_span = True
                     line = '### ' + title
                     heading = HEADING.match(line)
                 else:
-                    line = title
+                    line = TIME_SPAN.match(title).group()
             elif PLAIN_SECTION.fullmatch(title) or AUTHORED_SECTION.fullmatch(title):
                 line = '## ' + title
                 heading = HEADING.match(line)

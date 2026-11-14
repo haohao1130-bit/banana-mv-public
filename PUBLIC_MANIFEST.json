@@ -128,7 +128,7 @@
     },
     {
       "path": "banana_mv/timed_slots.py",
-      "sha256": "705eacf562f85ca6a039e4569170d949c7b3d7e3eaeeed5078a17d4910e5722b"
+      "sha256": "eaaae9218a123dc602c88c8860afd957b4c427eb0cdd0a8a2e4f4b8b472f099d"
     },
     {
       "path": "banana_mv/web/clip_review.js",
@@ -292,7 +292,7 @@
     },
     {
       "path": "tests/test_whole_song.py",
-      "sha256": "8313a54827feaf8703f34a4272d0e54c1a2ac38e414aebb57b93ce8f9064e521"
+      "sha256": "0ec9aad535c52c0f1119bb0547eab4b4c2e2b79fae48db2b5eec93d04b9cae26"
     },
     {
       "path": "tools/build_notebook.py",

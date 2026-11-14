@@ -77,10 +77,10 @@ class WholeSongTests(TestCase):
         req.update(
             director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,
             rewrite=False, story_plan=False, dynamic_cuts=False, plan_review=True,
-            prompt=("【共同設定】\n@圖片1 是快遞員。\n@圖片2 是機車。\n"
-                    "【分段劇情】\n【00:00.00–00:04.00】\n快遞員開車。\n"
-                    "【00:04.00–00:08.00】\n快遞員抵達。\n"
-                    "【共通設定】\nFPV 一鏡到底。"),
+            prompt=("【參考圖】\n@圖片1 是快遞員。\n@圖片2 是機車。\n"
+                    "【59秒連續劇情與攝影機運動】\n【00:00–00:04｜最後一單！】\n快遞員開車。\n"
+                    "【00:04–00:08.00｜抵達！】\n快遞員抵達。\n"
+                    "【最終畫面原則】\nFPV 一鏡到底。"),
         )
         self.job['segments'] = segments(8, 4)
         self.plan()
