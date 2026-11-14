@@ -74,12 +74,13 @@ class WholeSongTests(TestCase):
         self.job['request'].update(
             director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,
             rewrite=False, story_plan=False, audio_analysis=False, preview_zh=True,
-            prompt=("## 角色設定\n小語是 @圖片1。\n"
-                    "### CHAPTER 01｜00:00–00:08\n### 入園與戲水\n"
+            prompt=("01｜角色設定\n小語是 @圖片1。\n"
+                    "CHAPTER 01｜00:00–00:08\n入園與戲水\n"
                     "00:00–00:04\n小語推開園門。\n"
                     "00:04–00:08\n小語滑入水池。\n"
-                    "### CHAPTER 02｜00:08–00:09\n### 道別\n"
-                    "00:08–00:09\n小語向售票員揮手。"),
+                    "SEGMENT 02｜00:08–00:09\n道別\n"
+                    "00:08–00:09\n小語向售票員揮手。\n"
+                    "05｜剪輯設定\n維持原曲。\n最後畫面停留在笑容。"),
         )
         self.job['segments'] = segments(9, 4)
         self.plan()
@@ -91,4 +92,7 @@ class WholeSongTests(TestCase):
         self.assertNotIn('小語向售票員揮手。', prompt)
         self.assertNotIn('小語滑入水池。', opening['director_plan']['event'])
         self.assertIn('小語向售票員揮手。', ending['director_plan']['event'])
+        self.assertIn('最後畫面停留在笑容。', ending['director_plan']['event'])
+        self.assertNotIn('最後畫面', self.job['plan_preview_setup'])
+        self.assertIn('維持原曲。', self.job['plan_preview_setup'])
         self.model.assert_not_called()
