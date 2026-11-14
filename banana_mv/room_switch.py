@@ -9,14 +9,15 @@ from urllib.parse import urlsplit
 def launcher(target, port):
     if os.name != 'nt' or port != 8193:
         return None
+    local = os.environ.get('LOCALAPPDATA')
+    candidates = []
     if target == 'film':
-        path = Path(r'F:\AI\BANANA_FILM_5070_STUDIO\Launcher\Bootstrap_BANANA_FILM_5070.ps1')
-    else:
-        local = os.environ.get('LOCALAPPDATA')
-        if not local:
-            return None
-        path = Path(local) / 'BananaMV-5070-CU130-Launcher' / 'Launch_Banana_5070.ps1'
-    return path if path.is_file() else None
+        if local:
+            candidates.append(Path(local) / 'BananaFilm-5070-CU130-Launcher' / 'Bootstrap_BANANA_FILM_5070.ps1')
+        candidates.append(Path(r'F:\AI\BANANA_FILM_5070_STUDIO\Launcher\Bootstrap_BANANA_FILM_5070.ps1'))
+    elif target == 'mv' and local:
+        candidates.append(Path(local) / 'BananaMV-5070-CU130-Launcher' / 'Launch_Banana_5070.ps1')
+    return next((path for path in candidates if path.is_file()), None)
 
 
 def switch(handler, target, backend, gpu_lock):
