@@ -76,6 +76,19 @@ def parse_timed_source(prompt, *, authored_intervals=False):
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
             continue
         heading = HEADING.match(line)
+        bracket_span = False
+        if authored_intervals and line.startswith('【') and line.endswith('】'):
+            title = line[1:-1].strip()
+            if TIME_SPAN.fullmatch(title):
+                if current is None or 'bracket_span' in current:
+                    bracket_span = True
+                    line = '### ' + title
+                    heading = HEADING.match(line)
+                else:
+                    line = title
+            elif PLAIN_SECTION.fullmatch(title):
+                line = '## ' + title
+                heading = HEADING.match(line)
         plain_scene = authored_intervals and PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
         plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line))
         if heading or plain_scene or plain_section:
@@ -90,6 +103,8 @@ def parse_timed_source(prompt, *, authored_intervals=False):
                 current = {'title': title, 'actions': [], 'start':start, 'end':end,
                            'ordinal':_number(number.group(1)) if number else None,
                            'constraints':[]}
+                if bracket_span:
+                    current['bracket_span'] = True
                 chapters.append(current)
                 interval = None
                 current_level = level
