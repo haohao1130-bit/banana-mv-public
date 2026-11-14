@@ -6,6 +6,7 @@ class Element{
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=nodes;}
   setAttribute(key,value){this[key]=value;}
+  getAttribute(key){return this[key]||null;}
   removeAttribute(key){delete this[key];}
   addEventListener(name,fn){this.events[name]=fn;}
   focus(){this.focused=true;}
@@ -178,6 +179,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['clip-list'].children[1].children[1],rows[1].video);
   await els['clips-retake'].onclick();
   assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'}});
+  vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
+  assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
+  vm.runInContext('renderFinalPreviews({})',context);
+  assert.equal(els['final-previews'].hidden,true);assert.equal(els['refined-video'].src,undefined);
   vm.runInContext("renderOutputLocation({final_video:'/job/final.mp4',current_master:2,final_versions:[{version:1,download:'/old-v1'},{version:2,download:'/new-v2'}]})",context);
   assert(els['output-location'].textContent.includes('/job/final.mp4'));
   assert.equal(els['master-list'].children.length,2);assert.equal(els['master-list'].children[0].href,'/old-v1');

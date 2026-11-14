@@ -12,7 +12,7 @@
     },
     {
       "path": "Banana_MV_Public.ipynb",
-      "sha256": "5affbf5422f4ab5994a0a8da5041b4f5a9010ddb4aa83278b5f5d7b59850706c"
+      "sha256": "66d9bf7a2e3f19728c27e41b274d999e988a8c2833caa50b0a3df4dcac18ff48"
     },
     {
       "path": "LICENSE",
@@ -52,7 +52,7 @@
     },
     {
       "path": "banana_mv/face_refine.py",
-      "sha256": "4b11dc223383ba48e4d0035986a278a5a51c85af777a2dcecef8414771a3ec5b"
+      "sha256": "e85b487dcb1079e3d26e6bf3583c4ca3942c8e154c1355f4994606726cd012d0"
     },
     {
       "path": "banana_mv/h3_prompt.py",
@@ -92,7 +92,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "cf25dcbff8abfb632f4d17362972243a8dda7fcdadcd97cc0c35af92525a504d"
+      "sha256": "cb1d9baf3e2d8c7dc4cd1290ff1eea087cc2d8fea0e8968c3a5b89a2872c5f4e"
     },
     {
       "path": "banana_mv/services.py",
@@ -120,11 +120,11 @@
     },
     {
       "path": "banana_mv/web/clip_review.js",
-      "sha256": "8e61015c449eb8730f258f534995b5a09c077aa05c7a7112483232408e057065"
+      "sha256": "afcf885caa7eef5b61dcbcba155e218553b93f437f33cb65827225e8632b3a3f"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "7022d4cb727044b59bb99fdddf0ba9513dbf8dfda57c37791b4ad2d582482286"
+      "sha256": "86df6dfc9cf129ad9bef73ec4d398ba19b5cabaa34d1d4e28a09fb7a539ee830"
     },
     {
       "path": "docs/clip_review.md",
@@ -148,7 +148,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "e99928857757077d6720074cbf0465a42880540146b85e89f7d7549fc08eeae0"
+      "sha256": "3c4198562a62e000dfc7325d486d8eeb3090a56bfd3ea90493a9c5f32f732190"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -276,7 +276,7 @@
     },
     {
       "path": "tools/build_notebook.py",
-      "sha256": "84753ff43029aaabbef4cf6b758d7217221867a992e16ebb901704794d8bf350"
+      "sha256": "8a131978441a3a262e85dff5affe6585c1f3b18aa464e964fb18d407240e2d70"
     },
     {
       "path": "tools/colab_runtime.py",
@@ -309,6 +309,10 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
+    },
+    {
+      "path": "BANANAMV_CLASSIC_PUBLIC.ipynb",
+      "sha256": "4897bf05b55f1efe7e248f7704c3008a9fb2680e71b770f20757c742dd6cd7d2"
     }
   ]
 }

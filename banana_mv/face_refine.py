@@ -88,6 +88,7 @@ def candidates(app, cfg, job, parts, originals, source):
     work = app.job_dir(job['id'])
     inputs = Path(cfg['comfy_input_dir'])
     face = originals[job['request']['face_refine_reference'] - 1]
+    refined = {}
     for index, part in enumerate(parts):
         if job['id'] in app.CANCEL:
             return
@@ -109,6 +110,13 @@ def candidates(app, cfg, job, parts, originals, source):
                 app.backend.comfy_download(cfg, app.video_info(entry), temp)
                 if not app.valid_part(temp, seg, job['size']):
                     raise ValueError('修臉輸出尺寸或影格數與原毛片不同。')
+                normalized = temp.with_suffix('.normalized.mp4')
+                try:
+                    from banana_mv.core import trim_video
+                    trim_video(temp, normalized, seg['frames'])
+                    normalized.replace(temp)
+                finally:
+                    normalized.unlink(missing_ok=True)
                 if job['request'].get('production') == 'film':
                     muxed = temp.with_suffix('.audio.mp4')
                     try:
@@ -128,6 +136,8 @@ def candidates(app, cfg, job, parts, originals, source):
                                      'seed':seg.get('render_seed',job['seed']+index),
                                      'created':time.time(), 'kind':'face_refine'})
                 seg['face_refine_status'] = 'ready'
+                seg.pop('face_refine_error', None)
+                refined[index] = take_id
             finally:
                 temp.unlink(missing_ok=True)
         except Exception as error:
@@ -137,3 +147,44 @@ def candidates(app, cfg, job, parts, originals, source):
             clip_file.unlink(missing_ok=True)
             face_file.unlink(missing_ok=True)
         app.write_state(job)
+    return refined
+
+
+def render_version(app, cfg, job, parts, originals, song=None, **assembly_options):
+    from banana_mv import masters, takes
+
+    job.pop('face_refine_error', None)
+    job['status'] = 'refining_faces'
+    app.write_state(job)
+    source = template(app, cfg)
+    refined = candidates(app, cfg, job, parts, originals, source)
+    if job['id'] in app.CANCEL:
+        job['face_refine_error'] = '已停止修臉。'
+        return
+    if not refined:
+        job['face_refine_error'] = '沒有成功修臉的片段，可在毛片放映室查看各段狀態。'
+        return
+
+    work = app.job_dir(job['id'])
+    pending = work / 'face_refine_pending.mp4'
+    source_master = job['current_master']
+    base = next(row for row in job['final_versions'] if row['version'] == source_master)
+    choices = {int(index): take_id for index, take_id in base['takes'].items()}
+    compare = list(parts)
+    for index, take_id in refined.items():
+        choices[index] = take_id
+        compare[index] = takes.take_source(job, index, take_id)
+    try:
+        app.assemble(compare, song, pending, job['duration'], job['output_size'], **assembly_options)
+        master = masters.archive(job, work, pending, 'face_refine', choices)
+        master.update(source_master=source_master, refined_clips=len(refined))
+        try:
+            output = app.export_finished_video(job, work / master['file'],
+                                               refined_version=master['version'])
+        except OSError as error:
+            master['export_error'] = f'修臉版另存失敗：{error}'
+        else:
+            master['output_video'] = str(output)
+    finally:
+        pending.unlink(missing_ok=True)
+        pending.with_suffix('.ffconcat').unlink(missing_ok=True)

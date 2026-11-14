@@ -22,13 +22,23 @@ md(f'''# 🍌 Banana MV｜大乘蕉宗公開煉丹房
 公開版不需要 GitHub Token。可在左側🔑加入自己的唯讀 `HF_TOKEN` 以改善模型下載；未設定時嘗試匿名下載。只在 Colab 密鑰填入，勿貼到程式或輸出。
 
 [使用說明](https://github.com/{REPOSITORY}#readme) · [問題回報](https://github.com/{REPOSITORY}/issues)
+
+**遠景修臉（選用）**：在①勾選 `INSTALL_FACE_REFINE` 後執行，再跑②③。開啟網頁後，在生成設定勾選實驗性修臉。首次使用可能下載人臉辨識模型，修臉會額外花時間。完成後可並排播放與下載母片及修臉版，兩支 MP4 也會另存到成品資料夾。
 '''),
-code('#@title ① 安裝 Banana MV、ComfyUI 與外掛\n'+(ROOT/'tools/public_clone.py').read_text()+f'''
+code('#@title ① 安裝 Banana MV、ComfyUI 與外掛（含選用修臉）\n#@markdown **選用遠景修臉**。需要用到時請勾選，再執行本格。一般生成可直接執行本格。\nINSTALL_FACE_REFINE = False #@param {type:"boolean"}\n'+(ROOT/'tools/public_clone.py').read_text()+f'''
 PROJECT=Path('/content/banana-mv-public')
 clone_project(PROJECT,'https://github.com/{REPOSITORY}.git')
 sys.path.insert(0,str(PROJECT/'tools'))
 import colab_runtime as runtime
+face_installer = PROJECT / 'tools/install_face_refine.py'
+if INSTALL_FACE_REFINE and not face_installer.is_file():
+    raise RuntimeError('這個執行階段沿用了舊版程式。請中斷連線並刪除執行階段，連線後重跑①。')
+
 runtime.install(globals())
+if INSTALL_FACE_REFINE:
+    subprocess.run([sys.executable, str(face_installer),
+                    '--comfy-source', str(COMFY), '--comfy-base', str(COMFY)], check=True)
+    print('修臉安裝完成。接著執行②③，再到生成設定開啟實驗性修臉。')
 '''),
 code('''#@title ② 下載模型
 INCLUDE_REWRITER = True #@param {type:"boolean"}

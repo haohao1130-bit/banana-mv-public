@@ -7,7 +7,7 @@ function updateClipActions(){
     row.check.disabled=clipView.locked;
     if(row.check.checked)count++;
     row.use.disabled=!clipIdle()||row.select.value===(row.segment.pending_take||row.segment.selected_take);
-    row.correction.disabled=clipView.locked||['retaking','assembling'].includes(clipView.jobData?.status);
+    row.correction.disabled=clipView.locked||['retaking','assembling','refining_faces'].includes(clipView.jobData?.status);
   }
   const pending=Object.keys(clipView.jobData?.pending_takes||{}).length;
   $('clips-condense').disabled=!clipIdle()||!pending||clipView.jobData?.segments?.some(s=>s.status!=='done');
@@ -59,7 +59,7 @@ function renderClipPreviews(job){
       const previous=row.select.value;row.select.replaceChildren();
       for(const [n,take] of ready.entries()){
         const option=document.createElement('option');option.value=take.id;
-        option.textContent=`V${take.version||(n+1)}${take.id==='original'?' · 初煉':' · 回爐'}`+(take.id===segment.selected_take?' · 目前成片':'')+(take.id===desired&&desired!==segment.selected_take?' · 待凝丹':'');row.select.append(option);
+        option.textContent=`V${take.version||(n+1)}${take.id==='original'?' · 初煉':take.kind==='face_refine'?' · 修臉':' · 回爐'}`+(take.id===segment.selected_take?' · 目前成片':'')+(take.id===desired&&desired!==segment.selected_take?' · 待凝丹':'');row.select.append(option);
       }
       row.select.value=changed||!ready.some(t=>t.id===previous)?desired:previous;row.signature=signature;
     }
