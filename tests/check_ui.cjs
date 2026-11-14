@@ -203,6 +203,13 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'}});
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
+
+  vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'clip',index:1,total:2}})",context);
+  assert.match(els['refined-status'].textContent,/正在修臉第 2／2 段/);
+  vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'assembling'}})",context);
+  assert.match(els['refined-status'].textContent,/正在合成/);
+  vm.runInContext("renderFinalPreviews({video:'/master',status:'done',segments:[{face_refine_error:'測試原因'}]})",context);
+  assert.match(els['refined-status'].textContent,/第 1 段：測試原因/);
   vm.runInContext('renderFinalPreviews({})',context);
   assert.equal(els['final-previews'].hidden,true);assert.equal(els['refined-video'].src,undefined);
   vm.runInContext("renderOutputLocation({final_video:'/job/final.mp4',current_master:2,final_versions:[{version:1,download:'/old-v1'},{version:2,download:'/new-v2'}]})",context);

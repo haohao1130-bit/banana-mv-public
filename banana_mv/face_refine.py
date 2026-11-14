@@ -94,6 +94,8 @@ def candidates(app, cfg, job, parts, originals, source):
         if job['id'] in app.CANCEL:
             return
         seg = job['segments'][index]
+        job['face_refine_progress'] = {'stage': 'clip', 'index': index, 'total': len(parts)}
+        app.write_state(job)
         take_id = uuid.uuid4().hex[:12]
         prefix = f"banana_face_{job['id']}_{index:02d}_{take_id}"
         clip_file = inputs / (prefix + '.mp4')
@@ -148,6 +150,10 @@ def render_version(app, cfg, job, parts, originals, song=None, **assembly_option
 
     job.pop('face_refine_error', None)
     job['status'] = 'refining_faces'
+    job['face_refine_progress'] = {'stage': 'preparing'}
+    for segment in job['segments']:
+        segment.pop('face_refine_status', None)
+        segment.pop('face_refine_error', None)
     app.write_state(job)
     source = template(app, cfg)
     refined = candidates(app, cfg, job, parts, originals, source)
@@ -155,7 +161,7 @@ def render_version(app, cfg, job, parts, originals, song=None, **assembly_option
         job['face_refine_error'] = '已停止修臉。'
         return
     if not refined:
-        job['face_refine_error'] = '沒有成功修臉的片段，可在毛片放映室查看各段狀態。'
+        job['face_refine_error'] = '沒有成功修臉的片段。'
         return
 
     work = app.job_dir(job['id'])
@@ -167,6 +173,8 @@ def render_version(app, cfg, job, parts, originals, song=None, **assembly_option
     for index, take_id in refined.items():
         choices[index] = take_id
         compare[index] = takes.take_source(job, index, take_id)
+    job['face_refine_progress'] = {'stage': 'assembling'}
+    app.write_state(job)
     try:
         app.assemble(compare, song, pending, job['duration'], job['output_size'], **assembly_options)
         master = masters.archive(job, work, pending, 'face_refine', choices)
