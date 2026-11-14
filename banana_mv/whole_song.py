@@ -14,6 +14,7 @@ from banana_mv.scene_state import SceneStateError, atomic_json, digest, parse_ob
 from banana_mv.shoot_plan import _pictures
 
 VERSION = 7
+DIRECT_SCRIPT = 8
 SYSTEM = """You are directing the entire MV in one pass. Return only one JSON object.
 Use this schema:
 {"setup":"timeless appearance, visual style and named original picture bindings",
@@ -122,6 +123,18 @@ def shot_text(shots, overlap=0, *, include_bindings=False):
         binding = f'{shot["bindings"]} ' if include_bindings and shot["bindings"] else ''
         lines.append(f'[Shot {index}]{marker} {binding}{shot["visual"]}')
     return '\n'.join(lines)
+
+
+def direct_script_prompt(req, segment, picture_count, tail):
+    """Package just this authored interval for H3 without invoking 9B."""
+    from banana_mv.core import fallback_prompt
+
+    text = '\n\n'.join(filter(None, (segment.get('fixed_reference_settings'),
+                                      segment['director_plan']['event'])))
+    if tail:
+        text = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', text)
+    prompt = fallback_prompt(text, bool(tail), '', picture_count, scene_aware=True)
+    return normalize_mv_prompt(prompt, picture_count + int(bool(tail)))
 
 
 def h3_prompt(req, segment, picture_count, tail):

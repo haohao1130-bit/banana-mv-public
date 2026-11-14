@@ -25,12 +25,13 @@ SENTENCES = re.compile(r'(?<=[。！？!?；;])\s*')
 
 # Normalize presentation syntax only when the brief has identifiable story sections.
 SECTION_PREFIX = re.compile(r'^(?:(?:\d+|[一二三四五六七八九十]+)\s*[｜|、.．:：\-—]\s*)?')
-SECTION_STORY = frozenset(('故事內容', '故事劇情', '劇情內容', '故事大綱', '劇情大綱', '劇本內容', 'MV 故事'))
+SECTION_STORY = frozenset(('故事內容', '故事劇情', '劇情內容', '故事大綱', '劇情大綱', '劇本內容', 'MV 故事', '完整故事劇情'))
 SECTION_SETUP = frozenset(('角色設定', '人物設定', '人物介紹', '角色介紹', '人物',
                            '角色綁定', 'MV 主題', '主題', '風格', '世界觀', '場景設定',
                            '演唱與劇情安排', '演唱與攝影', '演唱安排', '劇情連續性',
                            '特殊要求', '攝影與舞蹈', '導演自由發揮', '全曲執行原則',
-                           '全曲固定原則', 'GLOBAL RULES', '導演執行重點', '執行重點'))
+                           '全曲固定原則', 'GLOBAL RULES', '導演執行重點', '執行重點',
+                           '導演執行要求', '視覺基調'))
 MARKDOWN_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+')
 ONLY_CLOSING_MARKS = re.compile(r'^[」』）)】\]]+$')
 ONLY_PUNCTUATION = re.compile(r'^[、，,。．；;：:！？!?…—-]+$')
@@ -421,8 +422,10 @@ def ensure_python_slot_plan(req, segments, originals, work):
 
     # Explicit Markdown chapter timestamps outrank text-count allocation.
     # Preserve the proven legacy allocator for non-timecoded source scripts.
-    timed = parse_timed_source(brief)
-    fixed, chapters = timed if timed is not None else split_source(brief)
+    timed = parse_timed_source(brief, authored_intervals=req.get('direct_script', False))
+    fixed, chapters = timed if timed is not None else split_source(
+        brief if brief.strip() or not req.get('direct_script') else
+        'The lead performer in <Picture 1> lip-syncs to <Audio 1> in the supplied setting.')
     fixed = normalize_mv_prompt(fixed, count) if fixed else ''
     short_tail = (timed is None and bool(contract.get('short_tail_seconds', 0))
                   and len(segments)>1)

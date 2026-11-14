@@ -49,7 +49,7 @@ def _clean_line(raw):
     return line
 
 
-def parse_timed_source(prompt):
+def parse_timed_source(prompt, *, authored_intervals=False):
     """Return (fixed_setup, timed_chapters) or None for legacy non-timed briefs.
 
     Every time-coded Markdown heading starts a scene; a peer/higher heading ends
@@ -60,6 +60,7 @@ def parse_timed_source(prompt):
     chapters = []
     current = None
     current_level = 0
+    interval = None
     for raw in prompt.replace('\r\n', '\n').splitlines():
         line = raw.strip()
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
@@ -78,10 +79,18 @@ def parse_timed_source(prompt):
                            'ordinal':_number(number.group(1)) if number else None,
                            'constraints':[]}
                 chapters.append(current)
+                interval = None
                 current_level = level
+                continue
+            if (authored_intervals and current is not None and level == current_level
+                    and re.match(r'^CHAPTER\s+\d+', current['title'], re.I)
+                    and not current['actions'] and interval is None
+                    and not current['constraints']):
+                current['constraints'].append(title)
                 continue
             if current is None or level <= current_level:
                 current = None
+                interval = None
                 fixed.append(line)
             else:
                 # A nested subheading inside a scene labels staging, not an action.
@@ -93,7 +102,21 @@ def parse_timed_source(prompt):
         if current is None:
             fixed.append(cleaned)
         else:
-            current['actions'].extend(s for s in SENTENCES.split(cleaned) if s)
+            timed_body = TIME_SPAN.fullmatch(cleaned) if authored_intervals else None
+            if timed_body:
+                start, end = _seconds(timed_body.group('begin')), _seconds(timed_body.group('end'))
+                if not current['start'] <= start < end <= current['end']:
+                    raise ValueError(f'章內時間碼超出章節範圍：{cleaned}')
+                intervals = current.setdefault('intervals', [])
+                if intervals and start < intervals[-1]['end']:
+                    raise ValueError(f'章內時間碼重疊或順序錯誤：{cleaned}')
+                interval = {'start': start, 'end': end, 'actions': []}
+                intervals.append(interval)
+                continue
+            actions = [text for text in SENTENCES.split(cleaned) if text]
+            current['actions'].extend(actions)
+            if interval is not None:
+                interval['actions'].extend(actions)
     if not chapters:
         return None
     if any(not chapter['actions'] for chapter in chapters):
@@ -101,7 +124,8 @@ def parse_timed_source(prompt):
 
     retained = []
     for line in fixed:
-        if LAST_SECONDS.match(line) or FINAL_EVENT.search(line):
+        if (LAST_SECONDS.match(line) or FINAL_EVENT.search(line) or
+                authored_intervals and re.match(r'^(?:最後畫面|FINAL HARD STOP|夕陽告別)', line, re.I)):
             # Keep user-authored finale notes out of earlier clips.
             chapters[-1]['constraints'].append(line)
             continue
@@ -117,7 +141,16 @@ def parse_timed_source(prompt):
                 chapter['constraints'].append(line)
         else:
             retained.append(line)
-    return '\n'.join(retained), chapters
+    expanded = []
+    for chapter in chapters:
+        if 'intervals' not in chapter:
+            expanded.append(chapter)
+            continue
+        # Preface and headings give context. Narrative starts at its explicit timestamp.
+        for item in chapter['intervals']:
+            if item['actions']:
+                expanded.append({**chapter, **item})
+    return '\n'.join(retained), expanded or chapters
 
 
 def _last_narrative(actions, previous):
