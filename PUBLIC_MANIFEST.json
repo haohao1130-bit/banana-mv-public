@@ -11,6 +11,10 @@
       "sha256": "6e28ce737e3bcc1446f20385cfe6667ec0451808a9f24dcac6bde3822eb54d14"
     },
     {
+      "path": "BANANAMV_CLASSIC_PUBLIC.ipynb",
+      "sha256": "eb5f07d784fea381bb6c4f25f232cdf662b8483267baa937ae23445bba154ab9"
+    },
+    {
       "path": "Banana_MV_Public.ipynb",
       "sha256": "ff0f9d3cf5254207cb4354a6292ae6dbd64e949e379971cda28509f75d566213"
     },
@@ -87,12 +91,16 @@
       "sha256": "e3b8c91531b3a6b243412973f88190b615334252c10d7ca0f7430b87e3906170"
     },
     {
+      "path": "banana_mv/python_slots.py",
+      "sha256": "fa7d59e5e1aabb75fb51ddf92110262fdb84c559a2b79f4c444cc36b25385fca"
+    },
+    {
       "path": "banana_mv/scene_state.py",
       "sha256": "3eb48e11bab478053404583a528cd158cff104a8fa54dbbdff102c38d3c78676"
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "cb1d9baf3e2d8c7dc4cd1290ff1eea087cc2d8fea0e8968c3a5b89a2872c5f4e"
+      "sha256": "2d8e524623bdc63a43be68603872276386af1b531b94d8571137fc80c598f1cb"
     },
     {
       "path": "banana_mv/services.py",
@@ -119,12 +127,20 @@
       "sha256": "365c5c7671c7d4bb066ff0ac37f1998c0b17c241abeeb5bd161d08e79686be71"
     },
     {
+      "path": "banana_mv/timed_slots.py",
+      "sha256": "79cb1d63c8f747e974ff2ebfc37a8777c70cd7ee8663d5e1ba58e254c933cb51"
+    },
+    {
       "path": "banana_mv/web/clip_review.js",
       "sha256": "afcf885caa7eef5b61dcbcba155e218553b93f437f33cb65827225e8632b3a3f"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "8b91aca5b26ac403f129de9007d5fb017ba77427b62ca2f1758b7690f9b05123"
+      "sha256": "612f5d233c5b085a5dbae57d0a4469af7933182890ceeb40a58aa93b36b7dc4f"
+    },
+    {
+      "path": "banana_mv/whole_song.py",
+      "sha256": "197ae52311ff58c3330a239e63e59749026e735287390c10361556d2f3f2c57f"
     },
     {
       "path": "docs/clip_review.md",
@@ -309,10 +325,6 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
-    },
-    {
-      "path": "BANANAMV_CLASSIC_PUBLIC.ipynb",
-      "sha256": "eb5f07d784fea381bb6c4f25f232cdf662b8483267baa937ae23445bba154ab9"
     }
   ]
 }
