@@ -233,6 +233,36 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertIn('END_ONLY_17',s[3])
         self.assertNotIn('SOURCE SONG SHORT TAIL',s[3])
 
+    def test_plain_one_click_story_keeps_cast_and_direction_out_of_timeline(self):
+        prompt = (
+            'H3 ONE-CLICK MV｜蕉猿戲水樂園\n\n'
+            '故事：終於帶我來玩水了\n'
+            '角色：@圖片1 = 小語，唯一女主角。\n\n'
+            '完整故事劇情\n\n'
+            '早晨，小語跑向入口。猴子拿反地圖替她指路。\n\n'
+            '午後，小語滑下水道，落進水池。\n\n'
+            '傍晚，猴子售票員揮手，小語轉向鏡頭微笑。\n\n'
+            '導演執行要求\n'
+            '- 對嘴演唱自然融入適合的場景。\n'
+            '- 不要自行改寫故事結局。\n\n'
+            '視覺基調\n'
+            '16:9 電影式真人實景攝影。'
+        )
+        segs = [{'index': i, 'start': 10 * i, 'seconds': 10} for i in range(2)]
+        with tempfile.TemporaryDirectory() as d:
+            plan = ensure_python_slot_plan(dict(request(), prompt=prompt),
+                                           segs, [Path(d)/'ref.png'], d)
+        setup = plan['shared_setup']
+        events = [row['event'] for row in plan['segments']]
+        self.assertIn('角色：<Picture 1> = 小語', setup)
+        self.assertIn('對嘴演唱自然融入', setup)
+        self.assertIn('16:9 電影式真人實景攝影', setup)
+        self.assertIn('早晨，小語跑向入口', events[0])
+        self.assertIn('小語轉向鏡頭微笑', events[-1])
+        self.assertNotIn('小語轉向鏡頭微笑', events[0])
+        for rule in ('H3 ONE-CLICK MV', '對嘴演唱自然融入', '16:9 電影式'):
+            self.assertNotIn(rule, '\n'.join(events))
+
     def test_sectioned_brief_with_and_without_markdown_keeps_setup_out_of_actions(self):
         markdown = (
             '# 午夜歌舞 MV\n'
