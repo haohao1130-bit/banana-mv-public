@@ -52,7 +52,7 @@
     },
     {
       "path": "banana_mv/face_refine.py",
-      "sha256": "e85b487dcb1079e3d26e6bf3583c4ca3942c8e154c1355f4994606726cd012d0"
+      "sha256": "f8ddac18fa3bd53d1a7cd1836340b0f2ff6d54b43c2684d2321f9c14dd09a6f6"
     },
     {
       "path": "banana_mv/h3_prompt.py",
@@ -124,7 +124,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "86df6dfc9cf129ad9bef73ec4d398ba19b5cabaa34d1d4e28a09fb7a539ee830"
+      "sha256": "39810195bd1f2a860f7461e8b8e2483074f2033d915c09835b99119c2d43fae6"
     },
     {
       "path": "docs/clip_review.md",
@@ -148,7 +148,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "3c4198562a62e000dfc7325d486d8eeb3090a56bfd3ea90493a9c5f32f732190"
+      "sha256": "dcb82c10a67492121ce994cc70e2a77f42f460b96a8d18eec7e729a57f78ef84"
     },
     {
       "path": "tests/test_audio_analysis.py",

@@ -213,9 +213,16 @@ async function api(url,options){const r=await fetch(url,options);const data=awai
 async function upload(file){return api('api/upload',{method:'POST',headers:{'X-Filename':encodeURIComponent(file.name)},body:file});}
 function message(s){$('status').textContent=s;}
 function setFurnace(state,detail){const titles={idle:'爐火待命',planning:'投藥煉方',working:'開爐煉影',assembling:'凝影成丹',done:'本爐丹成',error:'本爐火候有異',paused:'暫時封爐',reconnecting:'靈氣暫斷'};$('furnace').setAttribute('data-state',state);$('furnace-title').textContent=titles[state]||titles.idle;$('furnace-detail').textContent=detail||'藥材與靈氣就位，即可開爐。';}
-function renderFurnace(j){const status=j.status,segments=j.segments||[];if(status==='plan_ready')return setFurnace('paused','丹方已備妥，確認後才開爐。');if(status==='done')return setFurnace('done','蕉彌與蕉大師收功，可以取丹下載 MV。');if(status==='error')return setFurnace('error','請查看下方錯誤與可續跑段落。');if(['cancelled','interrupted'].includes(status))return setFurnace('paused','請查看已完成段落，可續跑此專案。');if(status==='retaking')return setFurnace('working','所選丹藥正在回爐，其餘丹藥保留原樣。');if(status==='refining_faces')return setFurnace('assembling','母片已完成，正在生成修臉版。');if(status==='assembling')return setFurnace('assembling','蕉大師收攏丹火，正在合成片段與原曲。');if(status==='translating_review')return setFurnace('planning','正在翻譯丹方供審閱，英文拍攝原稿保持不變。');if(status==='analyzing_audio')return setFurnace('planning','蕉彌投下音樂藥材，分析強弱與停頓。');if(['planning_story','planning_state'].includes(status)||segments.some(s=>s.status==='rewriting'))return setFurnace('planning','蕉彌投藥配方，導演安排故事與鏡頭。');if(segments.some(s=>s.status==='generating'))return setFurnace('working','蕉大師打太極催火，正在生成影片。');return setFurnace('planning','正在備料，準備下一段煉製。');}
+function renderFurnace(j){const status=j.status,segments=j.segments||[];if(status==='plan_ready')return setFurnace('paused','丹方已備妥，確認後才開爐。');if(status==='done')return setFurnace('done','蕉彌與蕉大師收功，可以取丹下載 MV。');if(status==='error')return setFurnace('error','請查看下方錯誤與可續跑段落。');if(['cancelled','interrupted'].includes(status))return setFurnace('paused','請查看已完成段落，可續跑此專案。');if(status==='retaking')return setFurnace('working','所選丹藥正在回爐，其餘丹藥保留原樣。');if(status==='refining_faces')return setFurnace('assembling','母片已完成。'+faceRefineActivity(j));if(status==='assembling')return setFurnace('assembling','蕉大師收攏丹火，正在合成片段與原曲。');if(status==='translating_review')return setFurnace('planning','正在翻譯丹方供審閱，英文拍攝原稿保持不變。');if(status==='analyzing_audio')return setFurnace('planning','蕉彌投下音樂藥材，分析強弱與停頓。');if(['planning_story','planning_state'].includes(status)||segments.some(s=>s.status==='rewriting'))return setFurnace('planning','蕉彌投藥配方，導演安排故事與鏡頭。');if(segments.some(s=>s.status==='generating'))return setFurnace('working','蕉大師打太極催火，正在生成影片。');return setFurnace('planning','正在備料，準備下一段煉製。');}
 function renderSceneSummary(j){const state=j.scene_state_summary;$('scene-state-summary').hidden=!state;$('scene-state-summary').textContent=state?`跨段狀態 V1：已提交 ${state.committed_clips}／${j.segments?.length||0} 段（導演規劃，未做影片視覺驗證）`:'';}
 function renderSceneDebug(segment){const record=segment?.scene_state_debug||segment?.scene_state_attempt;$('scene-state-details').hidden=!record;if(record){const {clip_prompt,...debug}=record;$('scene-state-debug').textContent=JSON.stringify(debug,null,2);}else $('scene-state-debug').textContent='';}
+function faceRefineActivity(job) {
+ const progress = job.face_refine_progress;
+ if (progress?.stage === 'clip') return `正在修臉第 ${progress.index + 1}／${progress.total} 段…`;
+ if (progress?.stage === 'assembling') return '正在合成並另存修臉版…';
+ return '正在準備修臉…';
+}
+
 function renderFinalPreviews(job, relative = false) {
  const current = (job.final_versions || []).find(version => version.version === job.current_master);
  const refined = (job.final_versions || []).findLast(version =>
@@ -243,14 +250,19 @@ function renderFinalPreviews(job, relative = false) {
  output.textContent = refined?.output_video ? '修臉版成品：' + refined.output_video : refined?.export_error || '';
  output.hidden = !output.textContent;
  const status = $('refined-status');
- const segmentCount = job.segments?.length || 0;
- status.hidden = Boolean(refined && refined.refined_clips === segmentCount);
- if (refined) {
-  status.textContent = `${refined.refined_clips}／${segmentCount} 段完成修臉，其餘沿用母片。`;
- } else if (job.face_refine_error) {
-  status.textContent = '修臉版未輸出：' + job.face_refine_error;
- } else if (job.status === 'refining_faces') {
-  status.textContent = '正在生成修臉版…';
+ const segments = job.segments || [];
+ const failed = segments.flatMap((segment, index) => segment.face_refine_error
+  ? [`第 ${index + 1} 段：${segment.face_refine_error.split('\n')[0].slice(0, 220)}`] : []);
+ const refining = job.status === 'refining_faces';
+ status.hidden = !refining && Boolean(refined && refined.refined_clips === segments.length);
+ if (refining) {
+  status.textContent = faceRefineActivity(job);
+ } else if (refined) {
+  status.textContent = [`${refined.refined_clips}／${segments.length} 段完成修臉，其餘沿用母片。`, ...failed].join(' ');
+ } else if (job.face_refine_error || failed.length) {
+  status.textContent = ['修臉版未輸出。', job.face_refine_error, ...failed].filter(Boolean).join(' ');
+ } else if (job.request?.face_refine === false) {
+  status.textContent = '本次未啟用修臉。';
  } else {
   status.textContent = '這版母片尚無完整修臉版。';
  }
@@ -301,7 +313,7 @@ function renderPrompts(j){const job=j.id||active||'unknown';if(promptView.job!==
 $('prompt-segment').onchange=()=>{promptView.manual=true;promptView.index=Number($('prompt-segment').value);showSelectedPrompt();};
 $('copy-prompt').onclick=async()=>{const text=$('rewritten-prompt').value;if(!text.trim())return;try{if(!globalThis.navigator?.clipboard?.writeText)throw Error('clipboard unavailable');await navigator.clipboard.writeText(text);$('copy-feedback').textContent='已複製這段提示詞。';}catch(e){$('rewritten-prompt').focus();$('rewritten-prompt').select();$('copy-feedback').textContent='已選取文字，請長按文字選擇複製。';}};
 function renderRewriteAttempt(j){const a=j.rewrite_attempt;const active=a&&(j.status==='planning_state'||(j.status==='running'&&a.stage==='rewriting')||(j.status==='error'&&['rewriting','planning_state'].includes(j.error_stage)));$('rewrite-status').textContent=active?`9B ${a.clip_index!==undefined?'第 '+(a.clip_index+1)+' 段'+(a.phase==='memory'?'狀態記錄':''):'狀態初始化'}：第 ${a.attempt} / ${a.max_attempts} 次嘗試（含首次）`:'';}
-async function poll(){if(!active)return;try{const j=await api('api/mv/status?id='+active);renderJobSeed(j);renderRecipe(j);renderAudioAnalysis(j);renderDirectorPlan(j);renderEventPlan(j);renderPrompts(j);renderClipPreviews(j);renderSceneSummary(j);renderFurnace(j);renderOutputLocation(j);renderRewriteAttempt(j);const done=j.segments.filter(x=>x.status==='done').length;renderProgress(j);const names={preparing:'裁切音訊',rewriting:'本地提示詞優化',generating:'影片採樣',done:'完成'};message((j.error?'錯誤'+(j.error_stage?'（'+j.error_stage+'）':'')+'：'+j.error+'\n\n':'')+`狀態：${j.status==='analyzing_audio'?'正在分析歌曲強弱與停頓':j.status==='translating_review'?'正在翻譯繁中審閱丹方':j.status==='refining_faces'?'正在生成修臉版':j.status==='planning_story'?'9B 正在分配全曲事件':j.status==='plan_ready'?'丹方待確認，尚未開爐':j.status}\n已完成 ${done} / ${j.segments.length} 段\n`+j.segments.map((s,i)=>`${i+1}. ${s.start.toFixed(2)}–${(s.start+s.seconds).toFixed(2)} 秒 · ${names[s.status]||'等待'}${s.director_plan?' · '+s.director_plan.mode:''}${s.prompt_validation?.status==='passed'?' · 必要格式檢查通過':''}${s.prompt_reference_repair?' · '+s.prompt_reference_repair.message:''}${s.scene_state_debug?.memory_update?.status==='failed'?' · 狀態記錄未成功，請查看Debug':''}${s.lyric_reference_cleanup?.removed_spans?' · 已移除逐字歌詞引用':''}`).join('\n'));if(['done','error','cancelled','interrupted','plan_ready'].includes(j.status)){busy(false);$('resume-project').hidden=!['error','cancelled','interrupted'].includes(j.status);clearTimeout(timer);return;}timer=setTimeout(poll,3000);}catch(e){if(e.status===400||e.status===404){setFurnace('idle');message(e.message+'\n舊紀錄不存在，可以開始新工作。');active=null;localStorage.removeItem('banana_mv_job');busy(false);return;}$('current-activity').hidden=false;setFurnace('reconnecting','正在重新連線；不代表生成停止。');$('activity-text').textContent='連線中斷，正在等待重新查詢…';message(e.message+'\n連線中斷不代表生成停止；10 秒後重新查詢。');timer=setTimeout(poll,10000);}}
+async function poll(){if(!active)return;try{const j=await api('api/mv/status?id='+active);renderJobSeed(j);renderRecipe(j);renderAudioAnalysis(j);renderDirectorPlan(j);renderEventPlan(j);renderPrompts(j);renderClipPreviews(j);renderSceneSummary(j);renderFurnace(j);renderOutputLocation(j);renderRewriteAttempt(j);const done=j.segments.filter(x=>x.status==='done').length;renderProgress(j);const names={preparing:'裁切音訊',rewriting:'本地提示詞優化',generating:'影片採樣',done:'完成'};message((j.error?'錯誤'+(j.error_stage?'（'+j.error_stage+'）':'')+'：'+j.error+'\n\n':'')+`狀態：${j.status==='analyzing_audio'?'正在分析歌曲強弱與停頓':j.status==='translating_review'?'正在翻譯繁中審閱丹方':j.status==='refining_faces'?faceRefineActivity(j):j.status==='planning_story'?'9B 正在分配全曲事件':j.status==='plan_ready'?'丹方待確認，尚未開爐':j.status}\n已完成 ${done} / ${j.segments.length} 段\n`+j.segments.map((s,i)=>`${i+1}. ${s.start.toFixed(2)}–${(s.start+s.seconds).toFixed(2)} 秒 · ${names[s.status]||'等待'}${s.director_plan?' · '+s.director_plan.mode:''}${s.prompt_validation?.status==='passed'?' · 必要格式檢查通過':''}${s.prompt_reference_repair?' · '+s.prompt_reference_repair.message:''}${s.scene_state_debug?.memory_update?.status==='failed'?' · 狀態記錄未成功，請查看Debug':''}${s.lyric_reference_cleanup?.removed_spans?' · 已移除逐字歌詞引用':''}`).join('\n'));if(['done','error','cancelled','interrupted','plan_ready'].includes(j.status)){busy(false);$('resume-project').hidden=!['error','cancelled','interrupted'].includes(j.status);clearTimeout(timer);return;}timer=setTimeout(poll,3000);}catch(e){if(e.status===400||e.status===404){setFurnace('idle');message(e.message+'\n舊紀錄不存在，可以開始新工作。');active=null;localStorage.removeItem('banana_mv_job');busy(false);return;}$('current-activity').hidden=false;setFurnace('reconnecting','正在重新連線；不代表生成停止。');$('activity-text').textContent='連線中斷，正在等待重新查詢…';message(e.message+'\n連線中斷不代表生成停止；10 秒後重新查詢。');timer=setTimeout(poll,10000);}}
 function imageLimit(){return $('mode').value==='chain'?8:9;}
 function activeImages(){return selectedImages.filter(Boolean);}
 function validateImages(){if(!selectedImages[0])throw Error('請在圖片1欄位選取參考圖。');const last=selectedImages.reduce((last,item,i)=>item?i:last,-1);if(last>=imageLimit())throw Error(`目前模式最多 ${imageLimit()} 張參考圖；請清除圖片${last+1}，或改用獨立分段。`);for(let i=0;i<=last;i++)if(!selectedImages[i])throw Error(`圖片${i+1}尚未選取。請補上此格或清除後面的圖片；其他圖片不會自動往前遞補。`);}
