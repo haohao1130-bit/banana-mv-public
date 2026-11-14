@@ -96,7 +96,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "e922583575fa9bf0ecf201d7dfdf9a97b6952f0d8d799b6283ab398eb69498b4"
+      "sha256": "db16212ea49314d0007c13f82867dfafbd377518ce07b63548bcaa1c100fa77b"
     },
     {
       "path": "banana_mv/services.py",
@@ -128,7 +128,11 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "38e4e34a9d88961d7268c0fa46058bc7b8c8aa2fa48f1006f3d94d9086dea700"
+      "sha256": "a64157dcb3a450fa56efc8b352a091a70f81dea6fa20aa72134791ffbb1ffb25"
+    },
+    {
+      "path": "banana_mv/whole_song.py",
+      "sha256": "f4e7bd14ab0023c3a83109a459456b459af8c46ad7b847eae91f59282eceefaa"
     },
     {
       "path": "docs/clip_review.md",
@@ -277,6 +281,10 @@
     {
       "path": "tests/test_unified_direction.py",
       "sha256": "779d209f4da73346731fd0a669dccdb287a4b21b3354ad5dabc8f4a55ab3d011"
+    },
+    {
+      "path": "tests/test_whole_song.py",
+      "sha256": "cf45ba09161a10d5eab4b6b0f17aa69368ffc546aa38a484414989a013a1f275"
     },
     {
       "path": "tools/build_notebook.py",
