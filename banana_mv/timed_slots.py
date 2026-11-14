@@ -1,4 +1,4 @@
-"""Optional explicit-time Markdown story parsing for the local Python Slot branch.
+"""Optional explicit-time story parsing for the Python Slot branch.
 
 User-authoritative scene times are mapped to song slots; metadata, cast and
 cinematography instructions are not counted as narrative actions.
@@ -7,6 +7,16 @@ No model call, audio processing, or change to legacy chapter allocation.
 import re
 
 HEADING = re.compile(r'^(?P<marks>#{1,6})\s+(?P<title>.+?)\s*$')
+PLAIN_SCENE = re.compile(
+    r'^(?:CHAPTER\s+\d+|SEGMENT\s+\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
+    r'\s*[｜|:：]\s*', re.I
+)
+PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
+PLAIN_CONTROL = re.compile(
+    r'^【?(?:電影導演控制|電影攝影控制|角色表演控制|角色與物件連續性|'
+    r'角色語音控制|聲音與語音控制|背景音樂與音效|跨段連續性控制|'
+    r'生成優先級|全片限制|核心敘事)】?\s*[：:]?$'
+)
 TIME_SPAN = re.compile(
     r'(?<!\d)(?P<begin>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
     r'\s*[-–—－~～至]\s*'
@@ -52,8 +62,8 @@ def _clean_line(raw):
 def parse_timed_source(prompt, *, authored_intervals=False):
     """Return (fixed_setup, timed_chapters) or None for legacy non-timed briefs.
 
-    Every time-coded Markdown heading starts a scene; a peer/higher heading ends
-    it. Unscoped metadata remains global, except ordinal-specific constraints,
+    A time-coded heading starts a scene. In authored scripts, plain CHAPTER
+    and SEGMENT markers also start scenes, and plain section titles close them. Unscoped metadata remains global, except ordinal-specific constraints,
     which are attached only to the corresponding scene(s), avoiding future leak.
     """
     fixed = []
@@ -61,16 +71,18 @@ def parse_timed_source(prompt, *, authored_intervals=False):
     current = None
     current_level = 0
     interval = None
-    for raw in prompt.replace('\r\n', '\n').splitlines():
+    for raw in prompt.splitlines():
         line = raw.strip()
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
             continue
         heading = HEADING.match(line)
-        if heading:
-            title = heading.group('title').strip()
-            level = len(heading.group('marks'))
+        plain_scene = authored_intervals and PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
+        plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line))
+        if heading or plain_scene or plain_section:
+            title = heading.group('title').strip() if heading else line
+            level = len(heading.group('marks')) if heading else (3 if plain_scene else 2)
             timed = TIME_SPAN.search(title)
-            if timed and (STORY_NUMBER.search(title) or '段' in title or '幕' in title or level >= 2):
+            if timed and not plain_section and (STORY_NUMBER.search(title) or '段' in title or '幕' in title or level >= 2):
                 start, end = _seconds(timed.group('begin')), _seconds(timed.group('end'))
                 if not 0 <= start < end:
                     raise ValueError(f'劇情段落時間不正確：{title}')
@@ -82,7 +94,7 @@ def parse_timed_source(prompt, *, authored_intervals=False):
                 interval = None
                 current_level = level
                 continue
-            if (authored_intervals and current is not None and level == current_level
+            if (heading and authored_intervals and current is not None and level == current_level
                     and re.match(r'^CHAPTER\s+\d+', current['title'], re.I)
                     and not current['actions'] and interval is None
                     and not current['constraints']):
@@ -127,7 +139,11 @@ def parse_timed_source(prompt, *, authored_intervals=False):
         if (LAST_SECONDS.match(line) or FINAL_EVENT.search(line) or
                 authored_intervals and re.match(r'^(?:最後畫面|FINAL HARD STOP|夕陽告別)', line, re.I)):
             # Keep user-authored finale notes out of earlier clips.
-            chapters[-1]['constraints'].append(line)
+            last = chapters[-1]
+            if last.get('intervals'):
+                last['intervals'][-1].setdefault('closing_notes', []).append(line)
+            else:
+                last['constraints'].append(line)
             continue
         match = TARGET_RULE.match(line)
         target_numbers = set()
@@ -149,7 +165,8 @@ def parse_timed_source(prompt, *, authored_intervals=False):
         # Preface and headings give context. Narrative starts at its explicit timestamp.
         for item in chapter['intervals']:
             if item['actions']:
-                expanded.append({**chapter, **item})
+                expanded.append({**chapter, **item, 'constraints':
+                                 chapter['constraints'] + item.get('closing_notes', [])})
     return '\n'.join(retained), expanded or chapters
 
 
