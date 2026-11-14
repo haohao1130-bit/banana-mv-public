@@ -100,7 +100,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "686af26e305077cb481ab6099eab549f21a9ac14f2430a1cdb376169a338d422"
+      "sha256": "0be24f73b8492841cfdcbd7de233a30ef5e2b6e7787c02606ddf161e9ae56735"
     },
     {
       "path": "banana_mv/services.py",

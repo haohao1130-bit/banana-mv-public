@@ -402,7 +402,13 @@ def video_info(entry):
 
 def export_finished_video(job,source,*,refined_version=None,upscaled_version=None):
     """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
-    folder=backend.DATA/'videos'
+    configured = os.environ.get('BANANA_FINISHED_VIDEOS')
+    if configured:
+        folder = Path(configured)
+    elif sys.platform == 'win32' and backend.PORT == 8193:
+        folder = Path(r'F:\BANANAMV\videos')
+    else:
+        folder = backend.DATA / 'videos'
     folder.mkdir(parents=True,exist_ok=True)
     title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
     suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
