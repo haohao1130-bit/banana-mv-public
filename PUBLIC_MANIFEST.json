@@ -136,7 +136,7 @@
     },
     {
       "path": "banana_mv/whole_song.py",
-      "sha256": "4d3fac356fc70b7846fb9e23ed99929f56530f2ee9fd6f48dbe3495ed869e63e"
+      "sha256": "197ae52311ff58c3330a239e63e59749026e735287390c10361556d2f3f2c57f"
     },
     {
       "path": "docs/clip_review.md",
@@ -288,7 +288,7 @@
     },
     {
       "path": "tests/test_whole_song.py",
-      "sha256": "6b77f1d7f88bfb4437a0d5b238309e4de920908f7894114a211079932cb2cc2f"
+      "sha256": "a2049835b585209fd8347aa4baf1cc1f28dd361418e4c25fe73e1538174ae8e9"
     },
     {
       "path": "tools/build_notebook.py",

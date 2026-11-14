@@ -25,13 +25,11 @@ All at values are absolute seconds from the start of the supplied song. Start at
 zero, strictly increase, and keep every start before the actual song end. The next
 shot's start ends the preceding shot. Write in the language of the user's brief.
 One row is one filmable shot, not one processing interval. Never put timestamped
-sub-shots inside a visual. Pick any supported mode per shot. The Python runner will
-cut at the listed clip boundaries. Do not span more than one boundary per shot. Prefer completing causal beats before these
-boundaries. For any shot that crosses one, write continuation for the part after
-the boundary, with current pose, props and location, and only the remaining
-movement. Do not replay an already completed action. Do not move a timing cue
-to another interval. Avoid starting a new performance or story beat in a short
-technical tail. No new plot belongs in setup or picture_bindings.
+sub-shots inside a visual. Pick any supported mode per shot. Direct the song as
+one continuous timeline. Choose shot starts by story and music. For shots with
+ongoing action, include an optional continuation with the pose, props, location
+and movement after the action has begun. Do not replay an already completed
+action or move a timing cue. No new plot belongs in setup or picture_bindings.
 
 Expand a rough cue into a complete, causal story unless this is an excerpt.
 For a supplied developed story, preserve its order, mandatory milestones, roles
@@ -68,7 +66,7 @@ def _validated(raw, req, count, duration):
     for index, row in enumerate(shots):
         at = row.get('at') if isinstance(row, dict) else None
         if type(at) not in (int, float) or not math.isfinite(at) or not 0 <= at < duration:
-            raise SceneStateError(f'全曲第 {index + 1} 鏡起點超出歌曲時間。')
+            raise SceneStateError(f'全曲第 {index + 1} 鏡起點無效（{at!r}；歌曲範圍為 0 至 {duration:g} 秒，終點不含）。')
         frame = math.floor(at * FPS + 1e-7)
         if frame <= previous or index == 0 and at != 0:
             raise SceneStateError('全曲鏡頭須從 0 秒開始，且每鏡至少相隔一影格。')
@@ -96,14 +94,17 @@ def slice_shots(shots, segments):
             if shot['frame'] >= end or stop <= start:
                 continue
             continued = shot['frame'] < start
-            if continued and not shot['continuation']:
-                raise SceneStateError(f'跨越第 {segment["index"]+1} 段的鏡頭缺少 continuation。')
+            visual = shot['visual']
+            if continued:
+                visual = shot['continuation'] or (
+                    'Continue this shot already in progress. Maintain the current scene, pose '
+                    'and props, and show only the remaining action. Shot context: ' + visual)
             local.append({
                 'frame': max(shot['frame'], start) - start,
                 'frames': min(stop, end) - max(shot['frame'], start),
                 'mode': shot['mode'],
                 'bindings': shot['bindings'],
-                'visual': shot['continuation'] if continued else shot['visual'],
+                'visual': visual,
             })
         primary = max(local, key=lambda shot: shot['frames'])['mode']
         result.append({'index': segment['index'], 'mode': primary, 'shots': local,
@@ -183,7 +184,22 @@ def ensure_whole_song_plan(cfg, req, segments, originals, work, rewrite):
                                                        if k not in ('input_sha256', 'content_sha256')})):
             raise SceneStateError('保存的全曲拍攝稿與專案資料不一致。')
         return saved
-    parts = [('text', json.dumps(task, ensure_ascii=False))] + _pictures(originals)
+    director_task = {key: value for key, value in task.items() if key not in ('clip_windows', 'ending')}
+    director_task['ending'] = ending_contract({**req, 'segment_seconds': duration}, duration)
+    peaks = set()
+    downbeats = set()
+    for seg in segments:
+        evidence = seg.get('audio_evidence', {})
+        start = seg['start']
+        peaks.update(round(start + t, 3) for t in evidence.get('transient_candidates_s', []))
+        downbeats.update(round(start + t, 3) for t in evidence.get('music_structure', {}).get('downbeats_s', []))
+    director_task['music'] = {
+        'transient_candidates_s': sorted(t for t in peaks if t < duration),
+        'predicted_downbeats_s': sorted(t for t in downbeats if t < duration),
+        'pulse_estimate': next((seg['audio_evidence']['pulse_estimate'] for seg in segments
+                                if seg.get('audio_evidence', {}).get('pulse_estimate')), None),
+    }
+    parts = [('text', json.dumps(director_task, ensure_ascii=False))] + _pictures(originals)
     raw = rewrite(cfg, SYSTEM + '\nSupported modes: ' + ', '.join(MODES), parts, uuid.uuid4().hex[:8])
     (Path(work) / 'whole_song_director_raw.txt').write_text(str(raw), encoding='utf-8')
     try:

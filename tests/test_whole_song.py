@@ -28,7 +28,7 @@ class WholeSongTests(TestCase):
                 {'at': 3, 'mode': 'comedy', 'visual': '滑水出發',
                  'continuation': '延續滑行，落水後笑出聲'},
                 {'at': 6, 'mode': 'story', 'visual': '夕陽下揮手',
-                 'continuation': '停在回頭微笑'},
+                 },
             ],
         }
         analysis = mock.Mock(return_value={'pulse': None})
@@ -41,7 +41,8 @@ class WholeSongTests(TestCase):
         self.model.assert_called_once()
         task = json.loads(self.model.call_args.args[2][0][1])
         self.assertIn('終於帶我來玩水了', task['brief'])
-        self.assertEqual(task['clip_windows'][0]['music'], evidence)
+        self.assertNotIn('clip_windows', task)
+        self.assertEqual(task['music']['transient_candidates_s'], [1.25, 5.25])
         self.assertEqual(task['srt'][0]['start'], 2)
 
         saved = server.read_state(self.job['id'])
@@ -68,7 +69,8 @@ class WholeSongTests(TestCase):
         self.assertNotIn('夕陽下揮手', prompts[0])
         self.assertIn('延續滑行', prompts[1])
         self.assertNotIn('滑水出發', prompts[1])
-        self.assertIn('停在回頭微笑', prompts[2])
+        self.assertIn('Continue this shot already in progress.', prompts[2])
+        self.assertIn('夕陽下揮手', prompts[2])
 
     def test_manual_draft_slices_authored_times_without_9b(self):
         self.job['request'].update(
