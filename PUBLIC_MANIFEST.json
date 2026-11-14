@@ -12,7 +12,7 @@
     },
     {
       "path": "Banana_MV_Public.ipynb",
-      "sha256": "719f317d043ad05d516b2185847797497645321366276aa6a250b469725e82d5"
+      "sha256": "1ccf957c148c0e242989e2bf2143fb626dc60a782fad7d576afcfefff69f4815"
     },
     {
       "path": "LICENSE",
@@ -52,7 +52,7 @@
     },
     {
       "path": "banana_mv/face_refine.py",
-      "sha256": "a6f37414321b6b99fedba059922f8ac70341f628238b8342505f1db26e84537f"
+      "sha256": "4b11dc223383ba48e4d0035986a278a5a51c85af777a2dcecef8414771a3ec5b"
     },
     {
       "path": "banana_mv/h3_prompt.py",
@@ -285,6 +285,10 @@
     {
       "path": "tools/create_classic_shortcut.ps1",
       "sha256": "65c25a376626969011df4ba18c8cfc4063f8b41a31ccf7e86c4e86b9a45c5af1"
+    },
+    {
+      "path": "tools/install_face_refine.py",
+      "sha256": "1bb1ec8144646f257e98206c9cf73f27d1baede873fa221225187b9fab6a8434"
     },
     {
       "path": "tools/public_clone.py",

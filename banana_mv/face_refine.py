@@ -7,7 +7,7 @@ import uuid
 def template(app, cfg):
     path = app.backend.DATA / 'face_refine_api.json'
     if not path.is_file():
-        raise ValueError('請先安裝 H3-FaceRefine 並將 API 工作流存成 ' + str(path))
+        return default_template(app, cfg)
     source = path.read_text(encoding='utf-8-sig')
     for marker in ('__BANANA_VIDEO__', '__BANANA_FACE__', '__BANANA_OUTPUT__'):
         if json.dumps(marker) not in source:
@@ -15,6 +15,68 @@ def template(app, cfg):
     graph = json.loads(source)
     app.preflight(cfg, graph)
     return source
+
+
+def default_template(app, cfg):
+    from banana_mv.core import FPS, MODELS
+
+    info = app.backend.comfy(cfg, '/object_info')
+    graph = {}
+
+    def add(key, kind, **inputs):
+        if kind not in info:
+            raise ValueError(f'缺少 {kind}。安裝修臉外掛後請重啟 ComfyUI。')
+        for name, spec in info[kind]['input'].get('required', {}).items():
+            if name in inputs:
+                continue
+            choices = spec[0]
+            options = spec[1] if len(spec)>1 and isinstance(spec[1],dict) else {}
+            if 'default' in options:
+                inputs[name] = options['default']
+            elif isinstance(choices,list) and choices:
+                inputs[name] = choices[0]
+            else:
+                raise ValueError(f'修臉節點需要額外設定 {kind}.{name}。')
+        graph[key] = {'class_type':kind,'inputs':inputs}
+        return [key,0]
+
+    add('model','UNETLoader',unet_name=MODELS['unet'],weight_dtype='default')
+    add('clip','CLIPLoader',clip_name=MODELS['clip'],type='minimax',device='default')
+    add('vae','VAELoader',vae_name=MODELS['video_vae'])
+    audio_vae = add('audio_vae', 'VAELoader', vae_name=MODELS['audio_vae'])
+    face = add('face','LoadImage',image='__BANANA_FACE__')
+    if 'H3FaceSelect' not in info:
+        raise ValueError('請先一鍵安裝 H3-FaceRefine，並重啟 ComfyUI。')
+    detector_spec = info['H3FaceSelect']['input']['required']['detector'][0]
+    detector = next((item for item in detector_spec if item.endswith('face_yolov8m.pt')),None)
+    if detector is None:
+        raise ValueError('找不到 face_yolov8m.pt，請確認模型目錄並重啟 ComfyUI。')
+    add('source', 'H3FaceSelect', video='__BANANA_VIDEO__', detector=detector,
+        select='identity_reference', identity_reference=face,
+        cut_detection='auto (pyscenedetect)')
+    crop = add('crop','H3FaceTrackCrop',images=['source',0],detector=detector,
+               face_pick=['source',2],canvas_width=512,canvas_height=512,canvas_mode='manual',
+               absent_shots='by_identity')
+    cond = add('cond','MiniMaxH3ReferenceToVideo',clip=['clip',0],vae=['vae',0],
+               audio_vae=audio_vae, ref_image_size='match',
+               prompt='Preserve the source performance and refine the reference face.',
+               width=['crop',4],height=['crop',5],length=['crop',6],
+               **{'ref_images.ref_image_0':face})
+    latent = add('latent','H3InjectVideoLatent',av_latent=['cond',1],images=crop,vae=['vae',0])
+    model = add('shift','MiniMaxH3SigmaShift',model=['model',0],shift_video=12.,shift_audio=3.)
+    guider = add('guider','BasicGuider',model=model,conditioning=cond)
+    sigmas = add('sigmas','BasicScheduler',model=model,scheduler='simple',steps=8,denoise=.30)
+    noise = add('noise','RandomNoise',noise_seed=0)
+    sampler = add('sampler','KSamplerSelect',sampler_name='euler')
+    sample = add('sample','SamplerCustomAdvanced',noise=noise,guider=guider,sampler=sampler,
+                 sigmas=sigmas,latent_image=latent)
+    decoded = add('decode','VAEDecode',samples=sample,vae=['vae',0])
+    stitched = add('stitch','H3FaceStitch',base_images=['source',0],refined_crops=decoded,transform=['crop',1])
+    video = add('video','CreateVideo',images=stitched,fps=float(FPS))
+    add('save','SaveVideo',video=video,filename_prefix='__BANANA_OUTPUT__',
+        format='mp4',**{'format.codec':'h264'})
+    app.preflight(cfg,graph)
+    return json.dumps(graph)
 
 
 def candidates(app, cfg, job, parts, originals, source):
