@@ -88,7 +88,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "d6096e9397915734b3d0bd1ae8778e3ca9ca4fe3dbafecf4faccb3f927ab08a0"
+      "sha256": "f3d1ae51f0a5cb575d559272c6cfdf77e17b08c2b951aa6c43c63758f4e1f0c6"
     },
     {
       "path": "banana_mv/services.py",
@@ -116,11 +116,11 @@
     },
     {
       "path": "banana_mv/web/clip_review.js",
-      "sha256": "8e61015c449eb8730f258f534995b5a09c077aa05c7a7112483232408e057065"
+      "sha256": "941b73d451e9ad8bc5a91bd7544236b1b1a73306741fb0bcf59dd9d9adb90b9e"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "eede2e5af98d990f540551007ae108b309b9188414076aba38bd8bfab4bbdd6e"
+      "sha256": "9a60452fd25e1092dce8814e02cf3ba82e82fbd780e38ef4ce8980f0d899ad44"
     },
     {
       "path": "docs/clip_review.md",
@@ -140,7 +140,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "e99928857757077d6720074cbf0465a42880540146b85e89f7d7549fc08eeae0"
+      "sha256": "ea208913f30780e4b2fdf34e21c1b34d857d7b00e71ee99ccec1a535e5400703"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -301,6 +301,10 @@
     {
       "path": "tests/test_classic_isolation.py",
       "sha256": "3c9b8daafe5693c28d07aefd87bd2c710b5de65713fe995c684e350cbc2bb1fb"
+    },
+    {
+      "path": "banana_mv/face_refine.py",
+      "sha256": "831fb6d0c5a9c3f6db1227ca49679d6b3cf2b2fb2210be3e09c8f62c1c4a9752"
     }
   ]
 }
