@@ -13,7 +13,7 @@ from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
 from banana_mv.mv_scope import ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest
-from banana_mv.timed_slots import parse_timed_source, allocate_timed_chapters
+from banana_mv.timed_slots import allocate_authored_cues, allocate_timed_chapters, parse_timed_source
 
 
 CHAPTER = re.compile(
@@ -433,7 +433,10 @@ def ensure_python_slot_plan(req, segments, originals, work):
     counts = span_counts(chapters, usable) if timed is None else None
     allocated = []
     previous = ''
-    if timed is not None:
+    authored_cues = timed is not None and req.get('direct_script', False)
+    if authored_cues:
+        allocated = allocate_authored_cues(chapters, segments)
+    elif timed is not None:
         allocated = allocate_timed_chapters(chapters, segments, commission)
     elif counts is not None:
         for chapter, slots in zip(chapters, counts):
@@ -465,12 +468,13 @@ def ensure_python_slot_plan(req, segments, originals, work):
                            'Sustain and develop its immediate visual consequence, never '
                            'replay the decisive event or introduce a new finale.\n'
                            'Previously established: '+previous)
-    filmed_events = _inject_actor_state(slot_events, fixed, chapters)
+    filmed_events = slot_events if authored_cues else _inject_actor_state(slot_events, fixed, chapters)
     rows = []
     for seg, source_event, event in zip(segments, slot_events, filmed_events):
         rows.append({
             'index': seg['index'], 'mode': mode_for(source_event, req),
             'handoff_version': 1,
+            **({'authored_cues': True} if authored_cues else {}),
             'event': normalize_mv_prompt(event, count),
         })
     plan = {

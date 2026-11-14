@@ -135,14 +135,24 @@ def direct_script_prompt(req, segment, picture_count, tail):
         'Use the original reference images according to the author’s bindings.',
         setup or 'Follow the author’s instructions for this interval.',
         audio,
-        '[Shot 1] ' + event,
+        '[Shot 1] ' + (
+            '以下秒數皆以本段第一幀為 0 秒。每個時間碼是目前鏡頭裡的動作提示。'
+            '依原稿維持攝影機的連續位置與運動。\n\n'
+            if segment['director_plan'].get('authored_cues') and not req.get('dynamic_cuts', True) else ''
+        ) + event,
         audio,
         'Use the supplied soundtrack.',
     ]
     prompt = '\n\n'.join(f'{key}:\n{value}' for key, value in zip(H3_SECTIONS, values))
     if tail:
         prompt = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', prompt)
-        prompt += '\n<Picture 1> is the supplied opening continuity frame.'
+        opening = '<Picture 1> 是上一段交接的起始畫面。'
+        if segment['director_plan'].get('authored_cues'):
+            opening += ('從畫面中的位置與朝向延續。角色、載具與攝影機各自維持原有行進方向和動勢，'
+                        '到原稿指定的時間才轉向或變速。攝影機的朝向及移動與載具獨立，'
+                        '攝影機倒飛時，載具仍照原稿沿自己的路線行駛。')
+        prompt = prompt.replace('detailed_description:\n[Shot 1] ',
+                                'detailed_description:\n[Shot 1] ' + opening + '\n\n', 1)
     validate_h3_sections(prompt)
     return normalize_mv_prompt(prompt, picture_count + int(bool(tail)))
 

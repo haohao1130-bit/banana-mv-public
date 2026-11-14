@@ -203,6 +203,34 @@ def _last_narrative(actions, previous):
     return previous
 
 
+def allocate_authored_cues(chapters, segments):
+    """Package authored cues on the clip clock, keeping actions in source order."""
+    rows = []
+    for segment in segments:
+        start = segment['start']
+        end = start + segment['seconds']
+        cues = []
+        for chapter in chapters:
+            cue_start, cue_end = chapter['start'], chapter['end']
+            begin, finish = max(start, cue_start), min(end, cue_end)
+            if finish - begin <= 1e-6:
+                continue
+            actions = chapter['actions']
+            duration = cue_end - cue_start
+            # When there are no inner timestamps, estimate where action lines
+            # fall within their authored cue by the elapsed fraction.
+            first = int(len(actions) * (begin - cue_start) / duration + 1e-8)
+            last = int(len(actions) * (finish - cue_start) / duration + 1e-8)
+            local = actions[first:last]
+            if not local:
+                local = ['延續目前的動作與運鏡。']
+            if finish >= cue_end - 1e-6:
+                local = [*local, *chapter['constraints']]
+            cues.append(f'{begin-start:.3f}–{finish-start:.3f} 秒\n' + '\n'.join(local))
+        rows.append('\n\n'.join(cues) or '延續已建立的場景、動作與運鏡。')
+    return rows
+
+
 def allocate_timed_chapters(chapters, segments, commission):
     """Map time-anchored scenes onto exact audio slots (including transitions).
 

@@ -95,6 +95,30 @@ class WholeSongTests(TestCase):
             self.assertNotIn('Singing shots use', prompt)
         self.assertIn('FPV 一鏡到底。', self.job['plan_preview_setup'])
 
+    def test_manual_timeline_clips_crossing_cue_on_local_clock(self):
+        req = self.job['request']
+        req.update(
+            director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,
+            rewrite=False, story_plan=False, dynamic_cuts=False, plan_review=True,
+            prompt=("【00:00.00–00:06.98】\n攝影機沿車輪往前。\n"
+                    "【00:06.98–00:13.00】\n機車繼續沿道路前進。\n"
+                    "鏡頭倒飛進入市場。\n"),
+        )
+        self.job['segments'] = segments(13, 10)
+        self.plan()
+        first, second = self.job['segments']
+        first_prompt = server.local_prompt(self.cfg, req, first, self.images, None)
+        second_prompt = server.local_prompt(self.cfg, req, second, self.images, True)
+        self.assertEqual(first_prompt.count('[Shot '), 1)
+        self.assertIn('每個時間碼是目前鏡頭裡的動作提示', first_prompt)
+        self.assertIn('6.980–10.000 秒\n機車繼續沿道路前進。', first_prompt)
+        self.assertIn('0.000–3.000 秒\n鏡頭倒飛進入市場。', second_prompt)
+        self.assertIn('[Shot 1] <Picture 1> 是上一段交接的起始畫面。', second_prompt)
+        self.assertIn('攝影機倒飛時，載具仍照原稿沿自己的路線行駛。', second_prompt)
+        self.assertNotIn('Phase inside chapter', first_prompt)
+        self.assertNotIn('鏡頭倒飛進入市場。', first_prompt)
+        self.model.assert_not_called()
+
     def test_manual_draft_slices_authored_times_without_9b(self):
         self.job['request'].update(
             director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,

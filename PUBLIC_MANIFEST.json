@@ -92,7 +92,7 @@
     },
     {
       "path": "banana_mv/python_slots.py",
-      "sha256": "fa7d59e5e1aabb75fb51ddf92110262fdb84c559a2b79f4c444cc36b25385fca"
+      "sha256": "9b8dd894991a554202bc762faf1f6ef4c99fa8469e4247e32e848722939f7198"
     },
     {
       "path": "banana_mv/scene_state.py",
@@ -128,7 +128,7 @@
     },
     {
       "path": "banana_mv/timed_slots.py",
-      "sha256": "7d64e6418264bbf07b6fa14a916a316b04adcaf794de1f89ff4e06698ab06297"
+      "sha256": "705eacf562f85ca6a039e4569170d949c7b3d7e3eaeeed5078a17d4910e5722b"
     },
     {
       "path": "banana_mv/web/clip_review.js",
@@ -140,7 +140,7 @@
     },
     {
       "path": "banana_mv/whole_song.py",
-      "sha256": "f4f29f851459004928c222c4a7fd6f08898d67dbac3e9bbb0d88c9c0a37c5878"
+      "sha256": "f96373fbd33807a4385d9ec65a605736b2b704c032afeda0a1daae2b193a9cc2"
     },
     {
       "path": "docs/clip_review.md",
@@ -292,7 +292,7 @@
     },
     {
       "path": "tests/test_whole_song.py",
-      "sha256": "fe712b786af9eeec3b41d30aa0bce774b2918961fcaffb36a9db759b6f2149f5"
+      "sha256": "8313a54827feaf8703f34a4272d0e54c1a2ac38e414aebb57b93ce8f9064e521"
     },
     {
       "path": "tools/build_notebook.py",
