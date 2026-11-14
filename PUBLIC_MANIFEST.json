@@ -52,7 +52,7 @@
     },
     {
       "path": "banana_mv/face_refine.py",
-      "sha256": "5b156ea34f5059964a1f77b444e52adac4b29d313b9709e5203e19064d0e17fd"
+      "sha256": "84bd35d22ace5f510a1366ef26cbe7380346a6d0d115cb50a4ce8cc97c9ff8e8"
     },
     {
       "path": "banana_mv/h3_prompt.py",
@@ -96,11 +96,11 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "8b6f6b3dc025724b3090dedcec7a7d2851aa22ff06154fa6d7af2f42f531402e"
+      "sha256": "e922583575fa9bf0ecf201d7dfdf9a97b6952f0d8d799b6283ab398eb69498b4"
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "5655e3adb2d6fe12f383c19186b72a0e76af6025feee7d6a79a7495f27c86368"
+      "sha256": "885e774955ceceae300ebae3c7bd26053cfb9b4b8863f6c5f40a747b3868bbd8"
     },
     {
       "path": "banana_mv/shoot_plan.py",
@@ -128,7 +128,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "ef6bb4ec0ffaed390fc4723131b27a3f606d7de644af3dbdfa073f942d9f652a"
+      "sha256": "38e4e34a9d88961d7268c0fa46058bc7b8c8aa2fa48f1006f3d94d9086dea700"
     },
     {
       "path": "docs/clip_review.md",

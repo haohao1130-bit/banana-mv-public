@@ -695,12 +695,10 @@ def start(req):
     if not isinstance(req.get('face_refine', False), bool):
         raise ValueError('遠景救臉設定必須為布林值。')
     if req.get('face_refine'):
-        from banana_mv.face_refine import template
-        reference = req.get('face_refine_reference')
+        from banana_mv.face_refine import references, template
         images = req.get('image_ids')
-        if not isinstance(images, list) or type(reference) is not int or not 1 <= reference <= len(images):
-            raise ValueError('請指定一張已上傳的角色臉部參考圖。')
-        template(sys.modules[__name__], cfg)
+        selected = references(req, len(images) if isinstance(images, list) else 0)
+        template(sys.modules[__name__], cfg, dual=len(selected) == 2)
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
              director_schema=6,story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),

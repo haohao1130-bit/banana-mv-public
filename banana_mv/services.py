@@ -6,6 +6,7 @@ import random
 import shutil
 import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -169,3 +170,15 @@ def rewrite_local(cfg, system, parts, job_id):
             (Path(cfg['comfy_input_dir'])/name).unlink(missing_ok=True)
         if entry is not None and cfg.get('free_after_rewrite', True):
             comfy(cfg, '/free', {'unload_models': True, 'free_memory': True})
+
+
+def upload_comfy_image(cfg, name, data, content_type):
+    boundary = uuid.uuid4().hex
+    header = (f'--{boundary}\r\nContent-Disposition: form-data; name="image"; '
+              f'filename="{name}"\r\nContent-Type: {content_type}\r\n\r\n')
+    body = header.encode() + data + f'\r\n--{boundary}--\r\n'.encode()
+    request = urllib.request.Request(cfg['comfy_url'].rstrip('/') + '/upload/image',
+        data=body, headers={'Content-Type': f'multipart/form-data; boundary={boundary}'})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        uploaded = json.load(response)
+    return '/'.join(filter(None, (uploaded.get('subfolder'), uploaded['name'])))
