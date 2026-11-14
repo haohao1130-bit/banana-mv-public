@@ -294,7 +294,8 @@ function renderRecipe(j){
  if(!ready){$('recipe-text').textContent='';$('recipe-feedback').textContent='';return;}
  const label=text=>String(text||'').replace(/<Picture (\d+)>/g,'@圖片$1');
  const t=j.plan_translation;const translated=t?.status==='ready'&&t.source_plan_revision===j.plan_revision;
- const chinese=($('recipe-language').value||'zh')==='zh'&&translated;
+ const singlePass=[7,8].includes(j.request?.director_schema);
+ const chinese=!singlePass&&($('recipe-language').value||'zh')==='zh'&&translated;
  $('recipe-language-status').textContent=singlePass?'顯示本次全曲定稿，開爐後直接使用這份拍攝稿。':chinese?'繁中僅供審閱；開爐與下游攝影仍使用保存的英文原稿。翻譯可能有誤，可切換英文核對。':translated?'目前顯示英文原稿；可切換繁中審閱。':t?.status==='error'?'繁中翻譯未完成，顯示英文原稿：'+t.error:t?'翻譯與目前丹方不符，顯示英文原稿。':'此專案沒有繁中翻譯，顯示英文原稿。';
  const setup=chinese?t.blocks.setup:j.plan_preview_setup;
  $('recipe-text').textContent=[setup?'共通設定\n'+label(setup):'',...(j.segments||[]).map(s=>`第 ${s.index+1} 段｜${s.start.toFixed(2)}–${(s.start+s.seconds).toFixed(2)} 秒｜${s.director_plan?.mode||''}\n${label(chinese?t.blocks[String(s.index)]:s.director_plan?.event)}`)].filter(Boolean).join('\n\n');
