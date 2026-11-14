@@ -33,6 +33,7 @@ from banana_mv.song_context import segment_context
 from banana_mv.music_structure import load_structure, local_structure
 from banana_mv.audio_analysis import VERSION as AUDIO_VERSION, load_analysis, segment_evidence, audio_guidance, rewrite_evidence
 from banana_mv.story_plan import ensure_plan, plan_context
+from banana_mv import whole_song
 from banana_mv.prompt_quality import (reference_policy, enforce_reference_policy,
                                       clip_scope, enforce_clip_scope, director_led, DIRECTOR_AUTHORITY)
 
@@ -112,6 +113,10 @@ def preflight_five_frame(cfg, req, images, size, seg, seed):
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
+    if req.get('director_schema') == whole_song.VERSION:
+        segment['director_mode'] = segment['director_plan']['mode']
+        segment['prompt_profile'] = {'source':'whole_song_director', 'writer_calls':0, 'contract_check_calls':0}
+        return whole_song.h3_prompt(req, segment, len(original) if isinstance(original, list) else 1, tail)
     if req.get('director_schema') in (5,6) and req.get('rewrite',True):
         from banana_mv.shoot_plan import write_shoot_prompt
         originals=original if isinstance(original,list) else [original]
@@ -340,7 +345,8 @@ def worker(job, cfg, original, song, drive):
             raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
         # Old projects keep their saved prompt behavior. New projects opt in by
         # a persisted request field. Structure inference is CPU-only in an isolated process.
-        needs_analysis = not approved_review and job['request'].get('audio_analysis', False) and any(
+        single_pass = job['request'].get('director_schema') == whole_song.VERSION
+        needs_analysis = not approved_review and (single_pass or job['request'].get('audio_analysis', False)) and any(
             not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
             and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
@@ -362,9 +368,9 @@ def worker(job, cfg, original, song, drive):
                                                    'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
         needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
-                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6))
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION))
                       and job['request'].get('rewrite', True)
-                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6))
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION))
                       and any(not (s.get('status') == 'done' and valid_part(adopted_part(job,s), s, job['size']))
                               and not (job.get('resuming') and ((work/f'{s["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{s["index"]:02d}_prompt.txt').is_file())
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -372,14 +378,18 @@ def worker(job, cfg, original, song, drive):
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             job['status']='planning_story'; write_state(job)
-            if job['request'].get('director_schema')==6:
+            if single_pass:
+                plan = whole_song.ensure_whole_song_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
+                if job['id'] in CANCEL:
+                    job['status']='cancelled'; write_state(job); return
+            elif job['request'].get('director_schema')==6:
                 from banana_mv.python_slots import ensure_python_slot_plan
                 plan = ensure_python_slot_plan(job['request'], job['segments'], original, work)
             else:
                 plan = ensure_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
             for index, (seg, row) in enumerate(zip(job['segments'], plan['segments'])):
                 seg['director_plan'] = row
-                if plan['version'] in (5,6):
+                if plan['version'] in (5,6,whole_song.VERSION):
                     seg.pop('shoot_setup',None)
                     seg['fixed_reference_settings']=plan.get('shared_setup','')
                     seg['direction_ending_contract']=plan['ending_contract']
@@ -394,7 +404,7 @@ def worker(job, cfg, original, song, drive):
                     if 'project_scope' in plan:
                         seg['direction_ending_plan']=plan.get('ending_plan')
                         seg['direction_ending_contract']=plan['ending_contract']
-                if index and plan['version']!=5:
+                if index and plan['version'] not in (5,whole_song.VERSION):
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
             if job['request'].get('plan_review'):
@@ -405,7 +415,7 @@ def worker(job, cfg, original, song, drive):
                 job['status']='cancelled';write_state(job);return
             if not all(s.get('director_plan') for s in job['segments']):
                 raise ValueError('丹方尚未完整，不能進入審閱或開爐。')
-            if job['request'].get('preview_zh',False):
+            if job['request'].get('preview_zh',False) and not single_pass:
                 from banana_mv.plan_translation import translate_plan
                 revision=plan_revision(job)
                 job['status']='translating_review';write_state(job)
@@ -484,12 +494,14 @@ def worker(job, cfg, original, song, drive):
                         guide_files.append(filename)
             if overlap:
                 seg['handoff_overlap_frames'] = overlap
-            seg['status']='preparing' if job['request'].get('director_schema')==4 else 'rewriting'; write_state(job)
+            seg['status']='preparing' if job['request'].get('director_schema') in (4,whole_song.VERSION) else 'rewriting'; write_state(job)
             saved = takes.existing_file(job,i,seg.get('selected_take','original'),'prompt.txt')
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
             record=cached_clip(work,ledger,seg) if ledger is not None else None
-            if ledger is not None and record is not None and job.get('resuming'):
+            if single_pass:
+                prompt=local_prompt(cfg,job['request'],seg,original,tail)
+            elif ledger is not None and record is not None and job.get('resuming'):
                 prompt=record['clip_prompt'];seg['scene_state_debug']=record
             elif ledger is None and job.get('resuming') and saved.is_file() and not seg.get('refresh_prompt'):
                 from banana_mv.core import normalize_mv_prompt
@@ -595,7 +607,8 @@ def start(req):
     cfg = copy.deepcopy(backend.load_config())
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=6,story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
+             director_schema=whole_song.VERSION if req.get('rewrite',True) else 6,
+             story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
              sparse_attention=req.get('sparse_attention',req.get('acceleration',False)))
@@ -673,6 +686,9 @@ def start(req):
              build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
                             **graph_options(req,plan[0]['seconds'])))
     preflight(cfg,graph)
+    if req['director_schema'] == whole_song.VERSION and not req['plan_review']:
+        preflight(cfg, {'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
+                        'generate':{'class_type':'TextGenerate','inputs':{}}})
     preflight_five_frame(cfg, req, images_comfy, size, plan[0], seed)
     if not GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 工作執行中，請等它完成。')

@@ -1,0 +1,71 @@
+"""Exercise whole-MV planning, review and H3 handoff without a GPU."""
+from contextlib import ExitStack
+import json
+from unittest import TestCase, mock
+
+from banana_mv import server, whole_song
+from banana_mv.core import segments
+import test_plan_review
+
+
+class WholeSongTests(TestCase):
+    setUp = test_plan_review.PlanReviewTests.setUp
+    plan = test_plan_review.PlanReviewTests.plan
+
+    def test_single_call_from_audio_through_review_to_h3(self):
+        self.job['request'].update(
+            director_schema=whole_song.VERSION, audio_analysis=False, preview_zh=True,
+            prompt='終於帶我來玩水了，@圖片1 是小語',
+            lyrics='', srt_cues=[{'start': 2, 'end': 4, 'text': '歌曲參考'}],
+        )
+        self.job['segments'] = segments(9, 4)
+        for segment in self.job['segments']:
+            segment.update(song_seconds=9, segment_count=3)
+        self.model.return_value = {
+            'setup': '夏日寫實，<Picture 1> 是小語。',
+            'shots': [
+                {'at': 0, 'mode': 'story', 'visual': '小語入園'},
+                {'at': 3, 'mode': 'comedy', 'visual': '滑水出發',
+                 'continuation': '延續滑行，落水後笑出聲'},
+                {'at': 6, 'mode': 'story', 'visual': '夕陽下揮手',
+                 'continuation': '停在回頭微笑'},
+            ],
+        }
+        analysis = mock.Mock(return_value={'pulse': None})
+        evidence = {'transient_candidates_s': [1.25]}
+        with mock.patch.object(server, 'load_analysis', analysis), mock.patch.object(
+            server, 'segment_evidence', return_value=evidence
+        ):
+            self.plan()
+        analysis.assert_called_once()
+        self.model.assert_called_once()
+        task = json.loads(self.model.call_args.args[2][0][1])
+        self.assertIn('終於帶我來玩水了', task['brief'])
+        self.assertEqual(task['clip_windows'][0]['music'], evidence)
+        self.assertEqual(task['srt'][0]['start'], 2)
+
+        saved = server.read_state(self.job['id'])
+        with mock.patch.object(server.threading, 'Thread'):
+            approved = server.open_furnace(self.job['id'], saved['plan_revision'])
+        with ExitStack() as stack:
+            for obj, name, value in [
+                (server, 'valid_part', lambda p, *_: p.is_file()),
+                (server, 'audio_window', lambda src, dest, *_: dest.write_bytes(b'audio')),
+                (server, 'wait_generation', mock.Mock(return_value={})),
+                (server, 'video_info', mock.Mock(return_value={})),
+                (server.backend, 'comfy_download', lambda c, i, d: d.write_bytes(b'raw')),
+                (server, 'trim_video', lambda s, d, *_, **kw: d.write_bytes(b'part')),
+                (server, 'assemble', lambda p, s, d, *_: d.write_bytes(b'final')),
+                (server, 'export_finished_video', mock.Mock()),
+            ]:
+                stack.enter_context(mock.patch.object(obj, name, value))
+            server.worker(approved, self.cfg, self.images, self.root/'song.wav', self.root/'song.wav')
+        self.assertEqual(approved['status'], 'done', approved.get('error'))
+        self.model.assert_called_once()
+        prompts = [call.args[1]['7']['inputs']['prompt'] for call in self.queue.call_args_list]
+        self.assertEqual(len(prompts), 3)
+        self.assertIn('At 00:03.000, 滑水出發', prompts[0])
+        self.assertNotIn('夕陽下揮手', prompts[0])
+        self.assertIn('延續滑行', prompts[1])
+        self.assertNotIn('滑水出發', prompts[1])
+        self.assertIn('停在回頭微笑', prompts[2])
