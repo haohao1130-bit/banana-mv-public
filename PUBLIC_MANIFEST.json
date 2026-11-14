@@ -100,7 +100,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "2d8e524623bdc63a43be68603872276386af1b531b94d8571137fc80c598f1cb"
+      "sha256": "6c940e3893692a62d4a77936ba9d892debda59e6f893b767361c1c06e04b66fa"
     },
     {
       "path": "banana_mv/services.py",
@@ -136,7 +136,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "a1408995ede7277dad5f565f6ade99dbe13266ca519570e98e89eeffb19daa4b"
+      "sha256": "9bd30820dfc2e8894dfb4a98e1cd212ba7ad17a1092b1ebb9cd9546c48608e32"
     },
     {
       "path": "banana_mv/whole_song.py",

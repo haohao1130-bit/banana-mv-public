@@ -583,8 +583,7 @@ def start(req):
         req = dict(req, rewrite=False, story_plan=False)
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else
-                             whole_song.VERSION if req.get('rewrite',True) else 6,
+             director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else 6,
              story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
@@ -663,7 +662,7 @@ def start(req):
     director_prompt(req, plan[0]['seconds'])
     seed = random.randrange(2**48) if req.get('seed') in (None,'') else int(req['seed'])
     authored_prompt = str(req.get('prompt',''))
-    if req['director_schema'] not in (whole_song.DIRECT_SCRIPT, whole_song.VERSION):
+    if req['director_schema'] == 6 and not req.get('rewrite', True):
         authored_prompt = authored_prompt[:10000]
     req = normalize_references(dict(req, prompt=authored_prompt), seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
