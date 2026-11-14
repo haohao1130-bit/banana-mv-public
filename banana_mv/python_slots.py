@@ -422,8 +422,10 @@ def ensure_python_slot_plan(req, segments, originals, work):
 
     # Explicit Markdown chapter timestamps outrank text-count allocation.
     # Preserve the proven legacy allocator for non-timecoded source scripts.
-    timed = parse_timed_source(brief)
-    fixed, chapters = timed if timed is not None else split_source(brief)
+    timed = parse_timed_source(brief, authored_intervals=req.get('direct_script', False))
+    fixed, chapters = timed if timed is not None else split_source(
+        brief if brief.strip() or not req.get('direct_script') else
+        'The lead performer in <Picture 1> lip-syncs to <Audio 1> in the supplied setting.')
     fixed = normalize_mv_prompt(fixed, count) if fixed else ''
     short_tail = (timed is None and bool(contract.get('short_tail_seconds', 0))
                   and len(segments)>1)

@@ -194,6 +194,10 @@ def preflight_five_frame(cfg, req, images, size, seg, seed):
 
 def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_catalog=None,progress=None):
     # Only local model calls; never silently fall back to a paid API.
+    if req.get('director_schema') == whole_song.DIRECT_SCRIPT:
+        segment['director_mode'] = segment['director_plan']['mode']
+        segment['prompt_profile'] = {'source':'python_direct_script', 'writer_calls':0, 'contract_check_calls':0}
+        return whole_song.direct_script_prompt(req, segment, len(original) if isinstance(original, list) else 1, tail)
     if req.get('director_schema') == whole_song.VERSION:
         segment['director_mode'] = segment['director_plan']['mode']
         segment['prompt_profile'] = {'source':'whole_song_director', 'writer_calls':0, 'contract_check_calls':0}
@@ -453,10 +457,11 @@ def worker(job, cfg, original, song, drive):
                                      'structure': {'status':'ready','bpm':structure['bpm'],
                                                    'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
+        direct_script = job['request'].get('director_schema') == whole_song.DIRECT_SCRIPT
         needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
-                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION))
-                      and job['request'].get('rewrite', True)
-                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION))
+                      and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION,whole_song.DIRECT_SCRIPT))
+                      and (direct_script or job['request'].get('rewrite', True))
+                      and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION,whole_song.DIRECT_SCRIPT))
                       and any(not (s.get('status') == 'done' and valid_part(adopted_part(job,s), s, job['size']))
                               and not (job.get('resuming') and ((work/f'{s["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{s["index"]:02d}_prompt.txt').is_file())
                                        and not s.get('refresh_prompt')) for s in job['segments']))
@@ -468,7 +473,7 @@ def worker(job, cfg, original, song, drive):
                 plan = whole_song.ensure_whole_song_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
                 if job['id'] in CANCEL:
                     job['status']='cancelled'; write_state(job); return
-            elif job['request'].get('director_schema')==6:
+            elif direct_script or job['request'].get('director_schema')==6:
                 from banana_mv.python_slots import ensure_python_slot_plan
                 plan = ensure_python_slot_plan(job['request'], job['segments'], original, work)
             else:
@@ -501,7 +506,7 @@ def worker(job, cfg, original, song, drive):
                 job['status']='cancelled';write_state(job);return
             if not all(s.get('director_plan') for s in job['segments']):
                 raise ValueError('丹方尚未完整，不能進入審閱或開爐。')
-            if job['request'].get('preview_zh',False) and not single_pass:
+            if job['request'].get('preview_zh',False) and not (single_pass or direct_script):
                 from banana_mv.plan_translation import translate_plan
                 revision=plan_revision(job)
                 job['status']='translating_review';write_state(job)
@@ -580,12 +585,12 @@ def worker(job, cfg, original, song, drive):
                         guide_files.append(filename)
             if overlap:
                 seg['handoff_overlap_frames'] = overlap
-            seg['status']='preparing' if job['request'].get('director_schema') in (4,whole_song.VERSION) else 'rewriting'; write_state(job)
+            seg['status']='preparing' if job['request'].get('director_schema') in (4,whole_song.VERSION,whole_song.DIRECT_SCRIPT) else 'rewriting'; write_state(job)
             saved = takes.existing_file(job,i,seg.get('selected_take','original'),'prompt.txt')
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
             record=cached_clip(work,ledger,seg) if ledger is not None else None
-            if single_pass:
+            if single_pass or direct_script:
                 prompt=local_prompt(cfg,job['request'],seg,original,tail)
             elif ledger is not None and record is not None and job.get('resuming'):
                 prompt=record['clip_prompt'];seg['scene_state_debug']=record
@@ -711,9 +716,12 @@ def start(req):
         images = req.get('image_ids')
         selected = references(req, len(images) if isinstance(images, list) else 0)
         template(sys.modules[__name__], cfg, dual=len(selected) == 2)
+    if req.get('direct_script') is True:
+        req = dict(req, rewrite=False, story_plan=False)
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=whole_song.VERSION if backend.PORT==8193 and req.get('rewrite',True) else 6,
+             director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else
+                             whole_song.VERSION if backend.PORT==8193 and req.get('rewrite',True) else 6,
              story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
@@ -729,7 +737,7 @@ def start(req):
         raise ValueError('preview_zh 必須為布林值。')
     if req['preview_zh'] and not req['plan_review']:
         raise ValueError('繁中審閱翻譯僅供先搓丹方使用。')
-    if req['plan_review'] and not req.get('rewrite',True):
+    if req['plan_review'] and not req.get('rewrite',True) and req['director_schema'] != whole_song.DIRECT_SCRIPT:
         raise ValueError('先搓丹方需要開啟本地提示詞改寫。')
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
@@ -782,12 +790,15 @@ def start(req):
     output_size = output_dimensions(aspect,width)
     director_prompt(req, plan[0]['seconds'])
     seed = random.randrange(2**48) if req.get('seed') in (None,'') else int(req['seed'])
-    req = normalize_references(dict(req,prompt=str(req.get('prompt',''))[:10000]),seconds)
+    authored_prompt = str(req.get('prompt',''))
+    if req['director_schema'] not in (whole_song.DIRECT_SCRIPT, whole_song.VERSION):
+        authored_prompt = authored_prompt[:10000]
+    req = normalize_references(dict(req, prompt=authored_prompt), seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
     fallback_prompt(req['prompt'], False, '', len(images))
     images_comfy = [img['comfy_name'] for img in images]
     graph = ({'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
-              'generate':{'class_type':'TextGenerate','inputs':{}}} if req['plan_review'] else
+              'generate':{'class_type':'TextGenerate','inputs':{}}} if req['plan_review'] and req.get('rewrite',True) else
              build_workflow(images_comfy,'preflight.wav',*size,plan[0]['model_frames'],'',seed,
                             **graph_options(req,plan[0]['seconds'])))
     preflight(cfg,graph)

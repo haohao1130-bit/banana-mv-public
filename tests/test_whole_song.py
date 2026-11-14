@@ -69,3 +69,26 @@ class WholeSongTests(TestCase):
         self.assertIn('延續滑行', prompts[1])
         self.assertNotIn('滑水出發', prompts[1])
         self.assertIn('停在回頭微笑', prompts[2])
+
+    def test_manual_draft_slices_authored_times_without_9b(self):
+        self.job['request'].update(
+            director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,
+            rewrite=False, story_plan=False, audio_analysis=False, preview_zh=True,
+            prompt=("## 角色設定\n小語是 @圖片1。\n"
+                    "### CHAPTER 01｜00:00–00:08\n### 入園與戲水\n"
+                    "00:00–00:04\n小語推開園門。\n"
+                    "00:04–00:08\n小語滑入水池。\n"
+                    "### CHAPTER 02｜00:08–00:09\n### 道別\n"
+                    "00:08–00:09\n小語向售票員揮手。"),
+        )
+        self.job['segments'] = segments(9, 4)
+        self.plan()
+        self.model.assert_not_called()
+        opening, middle, ending = self.job['segments']
+        prompt = server.local_prompt(self.cfg, self.job['request'], middle, self.images, True)
+        self.assertIn('<Picture 2>', prompt)
+        self.assertIn('小語滑入水池。', prompt)
+        self.assertNotIn('小語向售票員揮手。', prompt)
+        self.assertNotIn('小語滑入水池。', opening['director_plan']['event'])
+        self.assertIn('小語向售票員揮手。', ending['director_plan']['event'])
+        self.model.assert_not_called()

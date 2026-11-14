@@ -91,12 +91,16 @@
       "sha256": "e3b8c91531b3a6b243412973f88190b615334252c10d7ca0f7430b87e3906170"
     },
     {
+      "path": "banana_mv/python_slots.py",
+      "sha256": "fa7d59e5e1aabb75fb51ddf92110262fdb84c559a2b79f4c444cc36b25385fca"
+    },
+    {
       "path": "banana_mv/scene_state.py",
       "sha256": "3eb48e11bab478053404583a528cd158cff104a8fa54dbbdff102c38d3c78676"
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "db16212ea49314d0007c13f82867dfafbd377518ce07b63548bcaa1c100fa77b"
+      "sha256": "686af26e305077cb481ab6099eab549f21a9ac14f2430a1cdb376169a338d422"
     },
     {
       "path": "banana_mv/services.py",
@@ -123,16 +127,20 @@
       "sha256": "257b0bbb066651672e165801279521bc5f70e5d16fa38049cdda3ba688109bf2"
     },
     {
+      "path": "banana_mv/timed_slots.py",
+      "sha256": "6174d8135c70c772fc89a845c205abea3cf67e60b00441af28f3835acfc9479b"
+    },
+    {
       "path": "banana_mv/web/clip_review.js",
       "sha256": "941b73d451e9ad8bc5a91bd7544236b1b1a73306741fb0bcf59dd9d9adb90b9e"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "a64157dcb3a450fa56efc8b352a091a70f81dea6fa20aa72134791ffbb1ffb25"
+      "sha256": "2971bd4f9288dcd851f2ed8ee26516ef724267791fc1fcf1b6598fbd9773b152"
     },
     {
       "path": "banana_mv/whole_song.py",
-      "sha256": "f4e7bd14ab0023c3a83109a459456b459af8c46ad7b847eae91f59282eceefaa"
+      "sha256": "4d3fac356fc70b7846fb9e23ed99929f56530f2ee9fd6f48dbe3495ed869e63e"
     },
     {
       "path": "docs/clip_review.md",
@@ -156,7 +164,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "94bd1fe7fcf25282af4ead8172bb7b4dc69880f1ad8b13a8f4db740b688d56b7"
+      "sha256": "db29fc5c443e1c32f708028d988d10993cadbadd0594d6a92ca6be23e8a5b7a4"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -284,7 +292,7 @@
     },
     {
       "path": "tests/test_whole_song.py",
-      "sha256": "cf45ba09161a10d5eab4b6b0f17aa69368ffc546aa38a484414989a013a1f275"
+      "sha256": "e86affa949bac84fdee88f10a7cfd63a901853f69583da06ca87d8640d70753a"
     },
     {
       "path": "tools/build_notebook.py",
