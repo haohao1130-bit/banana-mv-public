@@ -12,6 +12,15 @@ PLAIN_SCENE = re.compile(
     r'\s*[｜|:：]\s*', re.I
 )
 PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
+# Mirror the hand-written short film headings when MV input has explicit times.
+AUTHORED_SECTION = re.compile(
+    r'^(?:共同設定|共通設定|共用設定|全片設定|全局設定|全域設定|固定設定|全片固定設定|'
+    r'固定角色|固定場景|角色設定|人物設定|角色綁定|世界觀|場景設定|全局電影設定|電影設定|'
+    r'故事內容|故事劇情|劇情內容|劇本內容|故事大綱|劇情大綱|故事分段|劇情分段|'
+    r'分段劇情|分段腳本|分鏡時間軸|分鏡腳本|分鏡內容|拍攝段落|段落安排|演出內容|'
+    r'故事開始|正片內容|精密鏡頭時間軸|鏡頭時間軸|Shared Settings|Common Settings|'
+    r'Shot Timeline|Storyboard|subject_definitions|detailed_description)\s*[：:]?$', re.I
+)
 PLAIN_CONTROL = re.compile(
     r'^【?(?:電影導演控制|電影攝影控制|角色表演控制|角色與物件連續性|'
     r'角色語音控制|聲音與語音控制|背景音樂與音效|跨段連續性控制|'
@@ -77,8 +86,9 @@ def parse_timed_source(prompt, *, authored_intervals=False):
             continue
         heading = HEADING.match(line)
         bracket_span = False
-        if authored_intervals and line.startswith('【') and line.endswith('】'):
-            title = line[1:-1].strip()
+        bracket = re.fullmatch(r'【([^】]+)】\s*[：:]?', line) if authored_intervals else None
+        if bracket:
+            title = bracket[1].strip()
             if TIME_SPAN.fullmatch(title):
                 if current is None or 'bracket_span' in current:
                     bracket_span = True
@@ -86,11 +96,12 @@ def parse_timed_source(prompt, *, authored_intervals=False):
                     heading = HEADING.match(line)
                 else:
                     line = title
-            elif PLAIN_SECTION.fullmatch(title):
+            elif PLAIN_SECTION.fullmatch(title) or AUTHORED_SECTION.fullmatch(title):
                 line = '## ' + title
                 heading = HEADING.match(line)
         plain_scene = authored_intervals and PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
-        plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line))
+        plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line)
+                                               or AUTHORED_SECTION.fullmatch(line))
         if heading or plain_scene or plain_section:
             title = heading.group('title').strip() if heading else line
             level = len(heading.group('marks')) if heading else (3 if plain_scene else 2)

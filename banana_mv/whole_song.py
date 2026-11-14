@@ -128,13 +128,22 @@ def shot_text(shots, overlap=0, *, include_bindings=False):
 
 def direct_script_prompt(req, segment, picture_count, tail):
     """Package just this authored interval for H3 without invoking 9B."""
-    from banana_mv.core import fallback_prompt
-
-    text = '\n\n'.join(filter(None, (segment.get('fixed_reference_settings'),
-                                      segment['director_plan']['event'])))
+    setup = segment.get('fixed_reference_settings', '')
+    event = segment['director_plan']['event']
+    audio = '<Audio 1>: fully_copy. Preserve the supplied source track and its timing.'
+    values = [
+        'Use the original reference images according to the author’s bindings.',
+        setup or 'Follow the author’s instructions for this interval.',
+        audio,
+        '[Shot 1] ' + event,
+        audio,
+        'Use the supplied soundtrack.',
+    ]
+    prompt = '\n\n'.join(f'{key}:\n{value}' for key, value in zip(H3_SECTIONS, values))
     if tail:
-        text = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', text)
-    prompt = fallback_prompt(text, bool(tail), '', picture_count, scene_aware=True)
+        prompt = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', prompt)
+        prompt += '\n<Picture 1> is the supplied opening continuity frame.'
+    validate_h3_sections(prompt)
     return normalize_mv_prompt(prompt, picture_count + int(bool(tail)))
 
 

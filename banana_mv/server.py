@@ -507,7 +507,7 @@ def worker(job, cfg, original, song, drive):
                 if index and plan['version'] not in (5,whole_song.VERSION):
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
-            if job['request'].get('plan_review'):
+            if direct_script or job['request'].get('plan_review'):
                 job['plan_preview_setup']=plan.get('shared_setup','')
             job['status']='running'; write_state(job)
         if job['request'].get('plan_review') and not approved_review:
