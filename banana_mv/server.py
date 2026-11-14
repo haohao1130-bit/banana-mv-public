@@ -430,6 +430,9 @@ def export_finished_video(job,source,*,refined_version=None,upscaled_version=Non
 
 
 def worker(job, cfg, original, song, drive):
+    from banana_mv import face_refine
+
+    app = sys.modules[__name__]
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
     parts, tail, tail_frames = [], None, []
@@ -564,13 +567,14 @@ def worker(job, cfg, original, song, drive):
                     job['scene_state_summary']['committed_clips']=len(ledger['commits'])
                 parts.append(part)
                 if is_continuation(job['request']['mode']):
+                    guide = face_refine.chained_part(app, cfg, job, seg, part, original, reuse=True)
                     if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
-                        tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
+                        tail_frames = last_frames(guide, work/f'{i:02d}_last5_%02d.png')
                         shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
                         tail = tail_frames[0]
                     else:
                         tail = work/f'{i:02d}_last.png'
-                        last_frame(part,tail)
+                        last_frame(guide,tail)
                 continue
             seg['status']='preparing'; job['current']=i+1; write_state(job)
             name = f'banana_{job["id"]}_{i}.wav'
@@ -651,20 +655,24 @@ def worker(job, cfg, original, song, drive):
             else:
                 trim_video(raw,part,seg['frames'])
             parts.append(part)
-            if is_continuation(job['request']['mode']):
-                if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
-                    tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
-                    shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
-                    tail = tail_frames[0]
-                else:
-                    tail = work/f'{i:02d}_last.png'
-                    last_frame(part,tail)
             if ledger is not None:
                 if not valid_part(part,seg,job['size']):raise SceneStateError('片段未成功保存，不提交規劃狀態。')
                 commit_clip(work,ledger,seg['scene_state_debug'])
                 job['scene_state_summary']['committed_clips']=len(ledger['commits'])
             seg.pop('refresh_prompt',None)
-            seg['status']='done'; write_state(job)
+            if job.get('face_refine_chain') and not valid_part(part,seg,job['size']):
+                raise ValueError('片段未成功保存，無法交接修臉尾幀。')
+            seg['status']='done'
+            if is_continuation(job['request']['mode']):
+                guide = face_refine.chained_part(app, cfg, job, seg, part, original)
+                if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
+                    tail_frames = last_frames(guide, work/f'{i:02d}_last5_%02d.png')
+                    shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
+                    tail = tail_frames[0]
+                else:
+                    tail = work/f'{i:02d}_last.png'
+                    last_frame(guide,tail)
+            write_state(job)
             (inp/name).unlink(missing_ok=True)
             if first:
                 (inp/first).unlink(missing_ok=True)
@@ -683,7 +691,6 @@ def worker(job, cfg, original, song, drive):
         except OSError as error:
             job['export_error']=f'成品已合成，但另存 videos 資料夾失敗：{error}；仍可由前端下載。'
         if job['request'].get('face_refine') and job['id'] not in CANCEL:
-            from banana_mv import face_refine
             try:
                 face_refine.render_version(
                     sys.modules[__name__], cfg, job, parts, original, song,
@@ -821,6 +828,7 @@ def start(req):
         job_id=uuid.uuid4().hex[:12]
         (RUNS/job_id).mkdir()
         job={'id':job_id,'status':'running','created':time.time(),'request':req,
+             'face_refine_chain': bool(req.get('face_refine') and req['mode'] in ('chain', 'chain5')),
              'duration':seconds,'segments':plan,'size':size,'seed':seed,'timeline_source':'decoded_audio',
              'output_size':output_size, 'title':str(req.get('project_name') or music['name'])[:120],
              'settings_version':2,

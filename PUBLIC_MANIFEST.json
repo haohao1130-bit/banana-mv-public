@@ -52,7 +52,7 @@
     },
     {
       "path": "banana_mv/face_refine.py",
-      "sha256": "84bd35d22ace5f510a1366ef26cbe7380346a6d0d115cb50a4ce8cc97c9ff8e8"
+      "sha256": "5e3913cd8214e9ed7d34d93d2fa65f5d76412525dc5571bb85f46756372c722b"
     },
     {
       "path": "banana_mv/h3_prompt.py",
@@ -100,7 +100,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "0be24f73b8492841cfdcbd7de233a30ef5e2b6e7787c02606ddf161e9ae56735"
+      "sha256": "21133a64d7c430e4488c805f9ccd5bd8e6172cbf9625c4d63f23ce703b3db2e9"
     },
     {
       "path": "banana_mv/services.py",

@@ -122,7 +122,7 @@ def refine_clip(app, cfg, job, seg, source, part, face, prefix, target):
             face_file.unlink(missing_ok=True)
 
 
-def candidates(app, cfg, job, parts, originals, source):
+def candidates(app, cfg, job, indexed_parts, originals, source):
     import time
     from tempfile import TemporaryDirectory
 
@@ -132,7 +132,7 @@ def candidates(app, cfg, job, parts, originals, source):
     work = app.job_dir(job['id'])
     selected = references(job['request'], len(originals))
     refined = {}
-    for index, part in enumerate(parts):
+    for index, part in indexed_parts:
         if job['id'] in app.CANCEL:
             break
         seg = job['segments'][index]
@@ -145,7 +145,7 @@ def candidates(app, cfg, job, parts, originals, source):
                 candidate = part
                 for number in selected:
                     job['face_refine_progress'] = {
-                        'stage': 'clip', 'index': index, 'total': len(parts), 'reference': number,
+                        'stage': 'clip', 'index': index, 'total': len(job['segments']), 'reference': number,
                     }
                     app.write_state(job)
                     target = folder / f'face_{number}.mp4'
@@ -178,6 +178,7 @@ def candidates(app, cfg, job, parts, originals, source):
                                      'created':time.time(), 'kind':'face_refine'})
                 seg['face_refine_status'] = 'partial' if errors else 'ready'
                 seg['face_refine_references'] = completed
+                seg.pop('face_refine_error', None)
                 if errors:
                     seg['face_refine_error'] = '；'.join(errors)
                 refined[index] = take_id
@@ -188,20 +189,68 @@ def candidates(app, cfg, job, parts, originals, source):
     return refined
 
 
+def chained_part(app, cfg, job, seg, part, originals, *, reuse=False):
+    """Persist the refined take before using any of its frames as a guide."""
+    from banana_mv import takes
+
+    if not job.get('face_refine_chain'):
+        return part
+    index = seg['index']
+    base = seg.get('selected_take', 'original')
+    receipt = seg.get('face_refine_handoff', {}) if reuse else {}
+    if receipt.get('base') == base:
+        if not receipt.get('take'):
+            return part
+        try:
+            return takes.take_source(job, index, receipt['take'])
+        except ValueError:
+            # A previously used guide must not silently change during resume.
+            raise ValueError(f'第 {index+1} 段修臉接續版本遺失，請恢復該檔案。') from None
+
+    previous_status = job['status']
+    job['status'] = 'refining_faces'
+    try:
+        seg.pop('face_refine_handoff', None)
+        seg.pop('face_refine_references', None)
+        job['face_refine_progress'] = {'stage': 'clip', 'index': index, 'total': len(job['segments'])}
+        app.write_state(job)
+        selected = references(job['request'], len(originals))
+        source = template(app, cfg, dual=len(selected) == 2)
+        refined = candidates(app, cfg, job, [(index, part)], originals, source)
+        take = refined.get(index)
+        if job['id'] not in app.CANCEL:
+            seg['face_refine_handoff'] = {'base': base, 'take': take}
+        return takes.take_source(job, index, take) if take else part
+    except Exception as error:
+        seg['face_refine_status'] = 'error'
+        seg['face_refine_error'] = str(error)
+        if job['id'] not in app.CANCEL:
+            seg['face_refine_handoff'] = {'base': base, 'take': None}
+        return part
+    finally:
+        job['status'] = previous_status
+        app.write_state(job)
+
+
 def render_version(app, cfg, job, parts, originals, song=None, **assembly_options):
     from banana_mv import masters, takes
 
     job.pop('face_refine_error', None)
     job['status'] = 'refining_faces'
     job['face_refine_progress'] = {'stage': 'preparing'}
-    for segment in job['segments']:
-        segment.pop('face_refine_status', None)
-        segment.pop('face_refine_error', None)
-        segment.pop('face_refine_references', None)
-    app.write_state(job)
-    selected = references(job['request'], len(originals))
-    source = template(app, cfg, dual=len(selected) == 2)
-    refined = candidates(app, cfg, job, parts, originals, source)
+    if job.get('face_refine_chain'):
+        refined = {seg['index']: receipt['take'] for seg in job['segments']
+                   if (receipt := seg.get('face_refine_handoff', {})).get('take')
+                   and receipt.get('base') == seg.get('selected_take', 'original')}
+    else:
+        for segment in job['segments']:
+            segment.pop('face_refine_status', None)
+            segment.pop('face_refine_error', None)
+            segment.pop('face_refine_references', None)
+        app.write_state(job)
+        selected = references(job['request'], len(originals))
+        source = template(app, cfg, dual=len(selected) == 2)
+        refined = candidates(app, cfg, job, enumerate(parts), originals, source)
     if job['id'] in app.CANCEL:
         job['face_refine_error'] = '已停止修臉。'
         return
