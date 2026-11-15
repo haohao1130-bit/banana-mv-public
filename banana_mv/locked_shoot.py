@@ -1,0 +1,219 @@
+"""Python-locked vocal shot schedule and native Ref2VA assembly for 5070."""
+import copy
+import re
+import uuid
+
+from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2
+from banana_mv.direction_contract import validate_h3_sections
+from banana_mv.lyrics_reference import excerpt, vocal_timeline
+from banana_mv.scene_state import SceneStateError
+
+SHOT = re.compile(r'(?im)^\s*\[Shot\s+(\d+)\]\s*')
+STAMP = re.compile(r'^\s*(?:At\s+)?\d\d:\d\d(?:\.\d{1,3})?[,;:]?\s*', re.I)
+SINGER_VERB = re.compile(r'\b(?:sings?|singing|lip[ -]?sync(?:s|ing)?|mouth\s+(?:moves|moving))\b', re.I)
+PROPS = re.compile(r'泳圈|毛巾|車鑰匙|鑰匙|外出包|背包|吉他|手機|主機|螢幕', re.I)
+SYSTEM = (
+    'You write only expressive camera and physical acting details into numbered '
+    '[Shot N] blanks fixed by Python. Do not write timestamps, singers, spoken words, '
+    'singing, lip sync, lyrics, audio, sound effects, or six H3 sections. '
+    'Python owns singer permissions and identity. Use only <Subject 1> and '
+    '<Subject 2> for the two actors; never use <Picture N> in shot prose. '
+    'Keep the assigned shot count and story events. Develop detailed framing, '
+    'spatial continuity, light, lens perspective, expressions, body actions, '
+    'causal responses and camera movements. No future or previous story events. '
+    'Reference-image clothing is subordinate to CURRENT WARDROBE.'
+)
+
+def singer_rows(a,b,cues):
+    edges={a,b}
+    for cue in cues:
+        x=max(a,float(cue['clip_start']))
+        y=min(b,float(cue['clip_end']))
+        if y>x:
+            edges.update((x,y))
+    points=sorted(edges)
+    rows=[]
+    for x,y in zip(points,points[1:]):
+        if y-x<.001:
+            continue
+        roles=set()
+        for cue in cues:
+            if float(cue['clip_start'])<=x+.001 and float(cue['clip_end'])>=y-.001:
+                roles.update(r for r in cue.get('subjects',()) if r in ('S1','S2'))
+        who=tuple(sorted(roles))
+        if who==('S1',):
+            v='<Subject 1> (S1) ONLY lip-syncs; <Subject 2> is silent.'
+        elif who==('S2',):
+            v='<Subject 2> (S2) ONLY lip-syncs; <Subject 1> is silent.'
+        elif who==('S1','S2'):
+            v='<Subject 1> (S1) AND <Subject 2> (S2) lip-sync together.'
+        else:
+            v='No assigned visible lip-sync; use physical acting and reaction.'
+        rows.append(f'{x:.3f}–{y:.3f}s: '+v)
+    return rows
+
+def plan_slots(seconds,cues,evidence=None,dynamic=True):
+    duration=round(float(seconds),3)
+    if duration<=0:
+        raise ValueError('片段長度必須為正值。')
+    cuts=[0.0,duration]
+    # Prefer source-authored vocal role changes to invented visual beat boundaries.
+    change=sorted({round(float(cue[k]),3) for cue in cues for k in ('clip_start','clip_end')
+                   if 0<float(cue[k])<duration})
+    for t in change:
+        left=tuple(sorted({r for c in cues if float(c['clip_start'])<t
+                           and float(c['clip_end'])>=t for r in c.get('subjects',())}))
+        right=tuple(sorted({r for c in cues if float(c['clip_start'])<=t
+                            and float(c['clip_end'])>t for r in c.get('subjects',())}))
+        if left!=right and t-max(x for x in cuts if x<t)>=1.1 and duration-t>=.65:
+            cuts.append(t)
+    cuts=sorted(set(cuts))
+    music=(evidence or {}).get('music_structure',{}) if isinstance(evidence,dict) else {}
+    downbeats=music.get('downbeats_s',()) if isinstance(music,dict) else ()
+    if dynamic:
+        for a,b in list(zip(cuts,cuts[1:])):
+            if b-a>=3.6:
+                available=[float(t) for t in downbeats if isinstance(t,(int,float)) and a+1.35<float(t)<b-1.35]
+                if available:
+                    cuts.append(round(min(available,key=lambda t:abs(t-(a+b)/2)),3))
+                elif b-a>=4.8:
+                    # Missing optional beat analysis must not force a whole 10s into one static shot.
+                    cuts.append(round((a+b)/2,3))
+    cuts=sorted(set(cuts))
+    if len(cuts)>8:
+        cuts=[cuts[0]]+[t for t in cuts[1:-1] if t>=1 and duration-t>=.8][:6]+[duration]
+    return [{'number':i+1,'start':a,'end':b,'rows':singer_rows(a,b,cues)}
+            for i,(a,b) in enumerate(zip(cuts,cuts[1:]))]
+
+def _extract(raw,slots,only=None):
+    text=re.sub(r'<think>.*?</think>','',raw,flags=re.I|re.S)
+    if re.search(r'(?im)^detailed_description:',text):
+        text=re.split(r'(?im)^detailed_description:',text,maxsplit=1)[1]
+        text=re.split(r'(?im)^(?:overall_soundscape|non_diegetic_music):',text,maxsplit=1)[0]
+    found=list(SHOT.finditer(text));blocks={}
+    for i,m in enumerate(found):
+        n=int(m[1])
+        block=STAMP.sub('',text[m.end():found[i+1].start() if i+1<len(found) else len(text)],count=1).strip()
+        block=re.sub(r'(?ms)^\s*(?:overall_soundscape|non_diegetic_music):.*$','',block).strip()
+        if not block or n in blocks:
+            raise ValueError('9B 空鏡頭或重複鏡頭：'+str(n))
+        blocks[n]=block
+    expected={only} if only else {s['number'] for s in slots}
+    if set(blocks)!=expected:
+        raise ValueError('9B 必須填寫這些指定鏡頭：'+repr(sorted(expected))+'；實際：'+repr(sorted(blocks)))
+    return blocks
+
+def _errors(blocks,wardrobe):
+    problems={}
+    for n,body in blocks.items():
+        bad=[]
+        if SINGER_VERB.search(body):
+            bad.append('[ERROR][Vocal] [Shot '+str(n)+'] 9B may not write its own singing or lip-sync; Python already supplies exact voice permissions.')
+        if re.search(r'<Picture\s+\d+>',body):
+            bad.append('[ERROR][Cast] [Shot '+str(n)+'] use only <Subject 1>/<Subject 2> in acting prose.')
+        if wardrobe:
+            if 'S1' in wardrobe and _OLD_S1.search(body):
+                bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] S1 must wear a short-sleeve top and shorts, not earlier apartment clothing.')
+            if 'S2' in wardrobe and _OLD_S2.search(body):
+                bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] S2 must wear a white tie-string bikini, not earlier apartment clothing.')
+        if bad:
+            problems[n]=bad
+    return problems
+
+def _cfg(cfg,temperature):
+    c=dict(cfg);c['rewriter']=dict(cfg['rewriter'],temperature=temperature,thinking=False)
+    return c
+
+def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
+    scene='beach / shoreline' if _BEACH.search(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
+    definitions=[];retention=[]
+    for role,n in (('S1',1),('S2',2)):
+        ref=pictures[role]
+        costume=wardrobe.get(role,'the current outfit in the assigned reference unless this event explicitly changes it')
+        cast_line=next((line for line in fixed.splitlines() if re.match(r'^\s*'+role+r'\s*[=:：]',line,re.I)), '')
+        gender=('male ' if re.search(r'男主|男聲|男主唱|male',cast_line,re.I) else
+                'female ' if re.search(r'女主|女聲|女主唱|female',cast_line,re.I) else '')
+        definitions.append(f'<Subject {n}> is the adult '+gender+f'lead {role} from {ref}; identity, face and hair are preserved. CURRENT CLOTHING: {costume}. Location: {scene}.')
+        retention.append(f'<Subject {n}>: partially_preserved - identity from {ref}; current clothing is {costume}, overriding an obsolete outfit in reference images.')
+    if tail:
+        definitions.append('<Picture 1> is the preceding frame only, not a new actor or wardrobe reset.')
+    retention.append('<Audio 1>: fully_copy, including the original recorded vocals.')
+    film=[]
+    for s in slots:
+        n=s['number'];start=s['start']
+        mark=f'[Shot {n}] ' if n==1 else f'[Shot {n}] At {int(start)//60:02d}:{start%60:06.3f}, '
+        film.append(mark+' '.join(s['rows'])+' '+blocks[n])
+    output='\n\n'.join((
+        'subject_definitions:\n'+'\n'.join(definitions),
+        'summary:\nThe current event unfolds in '+scene+' through photography and physical character interaction, following existing voices in the original track.',
+        'retention_analysis:\n'+'\n'.join(retention),
+        'detailed_description:\nUse the original song from <Audio 1> unchanged (fully_copy). Assigned SRT singer permissions below are authoritative. No added vocals, spoken dialogue, text overlays or subtitles.\n'+'\n'.join(film),
+        'overall_soundscape:\nThe supplied source song plays unchanged.',
+        'non_diegetic_music:\nThe supplied source song.'
+    ))
+    validate_h3_sections(output)
+    if any(int(p)>ref_count for p in re.findall(r'<Picture (\d+)>',output)):
+        raise SceneStateError('Python H3 定裝引用了未連接圖片。')
+    return output
+
+def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs,images,rewrite,progress=None):
+    cues=vocal_timeline(excerpt(req,segment))
+    slots=plan_slots(segment['seconds'],cues,segment.get('audio_evidence'),req.get('dynamic_cuts',True))
+    story='\n'.join(x.strip()[2:] for x in event.splitlines() if x.strip().startswith('- '))
+    props='\n'.join(x for x in story.splitlines() if PROPS.search(x))
+    task=(
+        f'Target duration: {float(segment["seconds"]):.3f}s. Film THIS CURRENT EVENT ONLY:\n'+event+
+        '\nCurrent props/actions already assigned:\n'+(props or '(none beyond current commission)')+
+        '\nPython cast: S1=<Subject 1> = '+pictures['S1']+
+        '; S2=<Subject 2> = '+pictures['S2']+
+        '. Use <Subject N> only for people, never <Picture N> in shot prose.'+
+        '\nCURRENT WARDROBE (already worn; preserve hair and face from references): '+repr(wardrobe)+
+        '\nCAMERA INTENSITY: '+str(req.get('intensity','high'))+
+        '\nREQUIRED PYTHON SHOT SKELETON:\n')
+    for s in slots:
+        task+=f'[Shot {s["number"]}] {s["start"]:.3f}–{s["end"]:.3f}s\n'
+        task+='\n'.join('SINGER PERMISSION: '+x for x in s['rows'])+'\n'
+        task+='FILL: camera movement, lighting, physical action and reactions only.\n'
+    task+='\nReturn exactly these [Shot N] bodies. Python writes all six H3 sections, singer timing, costume definitions, and audio policy.'
+    images_parts=images
+    calls=0
+    def call(parts,t):
+        nonlocal calls
+        calls+=1
+        if progress:
+            progress({'stage':'rewriting','clip_index':segment['index'],'attempt':calls,'max_attempts':1+2*len(slots)})
+        return rewrite(_cfg(cfg,t),SYSTEM,parts,uuid.uuid4().hex[:8])
+    blocks=None;why=''
+    for attempt in range(3):
+        prompt=task if not why else task+'\nFORMAT REPAIR: '+why+'\nReturn every [Shot N] exactly once.'
+        try:
+            blocks=_extract(call([('text',prompt)]+images_parts,.4 if attempt==0 else .15),slots)
+            break
+        except ValueError as error:
+            why=str(error)
+    if blocks is None:
+        raise SceneStateError('9B 無法填入 Python 鏡頭骨架：'+why)
+    for attempt in range(3):
+        errors=_errors(blocks,wardrobe)
+        if not errors:
+            break
+        segment['commission_guard_errors']=[msg for messages in errors.values() for msg in messages]
+        if attempt>=2:
+            raise SceneStateError('9B 兩次局部修稿仍有衝突：'+' | '.join(segment['commission_guard_errors']))
+        for number,messages in errors.items():
+            s=slots[number-1]
+            instruction=(f'REPAIR ONLY [Shot {number}] within {s["start"]:.3f}–{s["end"]:.3f}s. '
+                         'Do NOT write any vocal or lip-sync actions; Python owns those. '
+                         'Do not write any <Picture N> tags in acting prose. '
+                         'Retain the camera, location and physical performance. '
+                         'CURRENT WARDROBE: '+repr(wardrobe)+'\nERRORS:\n'+'\n'.join(messages)+
+                         '\nPrevious body:\n'+blocks[number]+
+                         f'\nOutput ONLY [Shot {number}] corrected visual body.')
+            try:
+                blocks[number]=_extract(call([('text',instruction)]+images_parts,.15),slots,only=number)[number]
+            except ValueError as error:
+                raise SceneStateError(f'9B 第 {number} 鏡修稿格式失敗：{error}') from error
+    segment.pop('commission_guard_errors',None)
+    segment['prompt_profile']={'source':'python_locked_srt_shots','writer_calls':calls,
+                               'contract_check_calls':1+attempt,'python_shot_count':len(slots)}
+    return _native(blocks,slots,pictures,wardrobe,len(refs)>2,event,len(refs),fixed)
