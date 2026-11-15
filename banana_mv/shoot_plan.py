@@ -481,7 +481,7 @@ _STATIC_FILMING_FACT = re.compile(
 def _filming_reference_settings(fixed_setup):
     """Forward identity/style/world, never the future plot, from Python to 9B."""
     result = []
-    section = 'unknown'
+    section = 'fixed'  # Legacy unheaded setups include original supporting cast.
     for raw in fixed_setup.splitlines():
         line = re.sub(r'^\s*#{1,6}\s+', '', raw).strip().strip('* ').strip()
         title = line.rstrip('：:').strip()

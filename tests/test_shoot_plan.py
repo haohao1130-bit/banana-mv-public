@@ -163,7 +163,7 @@ class ShootPlanTests(unittest.TestCase):
             self.assertIn('0.000–1.000s: <Picture 1>', prompt)
             self.assertIn('1.000–2.000s: <Picture 2>', prompt)
             self.assertIn('2.000–3.000s: <Picture 1> and <Picture 2>', prompt)
-            self.assertIn('<Audio 1>: fully_copy', prompt)
+            self.assertIn('unchanged (fully_copy)', prompt)
 
     def test_chain_uses_fixed_original_slots_and_actual_tail_only(self):
         with tempfile.TemporaryDirectory() as tmp:
