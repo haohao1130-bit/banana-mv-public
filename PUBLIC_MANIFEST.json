@@ -64,7 +64,7 @@
     },
     {
       "path": "banana_mv/lyrics_reference.py",
-      "sha256": "4df5b8afd7ed9c46c1fdee15a1aea9797a5b9f52d7d8902214e57ec5d458b136"
+      "sha256": "22209c32fa9b1f6ab3d0cea3a78bed16cc4365ee951abea57f63ccf575854a89"
     },
     {
       "path": "banana_mv/masters.py",
@@ -92,7 +92,7 @@
     },
     {
       "path": "banana_mv/python_slots.py",
-      "sha256": "9b8dd894991a554202bc762faf1f6ef4c99fa8469e4247e32e848722939f7198"
+      "sha256": "0f20e649e88fb8a2e8169e21cc682150bedea5841763b5189ca44dc4c7cddac1"
     },
     {
       "path": "banana_mv/scene_state.py",
@@ -108,7 +108,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "90bd6b00bc716769bebf5cce32aa9d43366af345361ce06a0fd21ab118ccac2f"
+      "sha256": "2a139291dbfb10665d12dc3b6e1e91f49b7af4b7f3f2064e8b1f3bbdb2e9302c"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -220,7 +220,7 @@
     },
     {
       "path": "tests/test_music_structure.py",
-      "sha256": "5ad314695e13007f02a4b03715310168714c56bb1242b822f12c3a727440781f"
+      "sha256": "2033d9000cafdfd62366a8d873b2432568dc45d06326cfd9035a678fee2a7fb7"
     },
     {
       "path": "tests/test_mv_scope.py",
@@ -272,7 +272,7 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "6daf63aa7afb36841bb5e1cdebebdde4cc3d0e30a7ce9229b8786b59d22920c3"
+      "sha256": "2e62ba3db7178443460bad1b74f487fc10698eef78ce6ce38a12015f8b962d5c"
     },
     {
       "path": "tests/test_sound_effects.py",

@@ -94,5 +94,5 @@ class StructureTests(unittest.TestCase):
                 output=server.local_prompt(cfg,req,seg,images,None)
             lower=writer.call_args.args[2][0][1]
             context=json.loads(lower.split('Clip timing and audio context:\n',1)[1])
-            self.assertEqual(context['audio_evidence'],rows[1]['audio_evidence'])
-            self.assertIn('Write their timing into the shots',lower)
+            self.assertNotIn('audio_evidence', context)
+            self.assertIn('CURRENT_COUNTER', lower)

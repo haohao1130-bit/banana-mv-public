@@ -6,7 +6,7 @@ from pathlib import Path
 
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
-from banana_mv.lyrics_reference import excerpt, vocal_timeline
+from banana_mv.lyrics_reference import clean_lyric_output, excerpt, vocal_timeline
 from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
 
@@ -396,6 +396,48 @@ def _fixed_reference_with_python_priority(fixed_setup, event):
     return '\n'.join(output)
 
 
+def _local_event(event):
+    # A continuity frame or explicit present state already carries the result.
+    # Do not send previous actions or the source chapter title to the shot writer.
+    return re.sub(
+        r'(?m)^\s*(?:ALREADY ESTABLISHED;[^\n]*|Previously established:[^\n]*|Source chapter:[^\n]*)\n?',
+        '', event,
+    ).strip()
+
+
+def _apply_source_performance(prompt, timeline, fixed_setup):
+    bindings = {role.upper(): picture for role, picture in re.findall(
+        r'(?im)^\s*(S[12])\s*[=：:]\s*(<Picture \d+>)', fixed_setup
+    )}
+    rows = []
+    for cue in timeline:
+        subjects = cue.get('subjects', [])
+        assigned = ' and '.join(bindings.get(subject, subject) for subject in subjects)
+        if not assigned:
+            assigned = cue['voice']
+        rows.append(f"{cue['clip_start']:.3f}–{cue['clip_end']:.3f}s: {assigned}.")
+    policy = (
+        'Use the original song from <Audio 1> unchanged (fully_copy). '
+        'Only the assigned visible performer(s) lip-sync to vocals already in the track. '
+        'The following clip-local intervals are authoritative. '
+        'No spoken rendition, repeated line, new vocals or subtitles.\n' + '\n'.join(rows)
+    )
+    for field, replacement in (
+        ('overall_soundscape', 'The supplied source song plays unchanged.'),
+        ('non_diegetic_music', 'The supplied source song.'),
+    ):
+        pattern = rf'(?im)^{field}:[ \t]*[^\n]*(?:\n(?![a-z_]+:)[^\n]*)*'
+        prompt, count = re.subn(pattern, lambda _: f'{field}:\n{replacement}\n', prompt)
+        if not count:
+            prompt += f'\n\n{field}:\n{replacement}'
+    prompt = re.sub(r'(?im)^<Audio 1>:\s*(?:reference|partial(?:ly)?_copy)\b[^\n]*',
+                    '<Audio 1>: fully_copy. Preserve the supplied source song.', prompt)
+    description = re.search(r'(?im)^(?:detailed_description|integrated_multimodal_description):[ \t]*', prompt)
+    if description:
+        return prompt[:description.end()] + '\n' + policy + '\n' + prompt[description.end():]
+    return prompt + '\n\ndetailed_description:\n' + policy
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
@@ -405,19 +447,14 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
     fixed_setup=segment.get('fixed_reference_settings','')
-    context={'seconds':segment['seconds'],'primary_mode':row['mode'],
-          'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
-          'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
-          'ending':clip_ending(req,segment)}
-    vocals = vocal_timeline(context['local_srt'])
-    if vocals:
-        context['authored_vocal_timeline'] = vocals
+    event = _local_event(row['event'])
+    vocals = vocal_timeline(excerpt(req, segment))
+    context = {'authored_vocal_timeline': vocals, 'ending': clip_ending(req, segment)}
+    fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
+    fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
+    if fixed_setup:
+        context['fixed_reference_settings'] = connected(fixed_setup)
 
-    # Strip only the explicit upstream outcome block in legacy settings. No
-    # keyword blacklist: identity, scene duties and current results stay intact.
-    fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
-    fixed_setup = _fixed_reference_with_python_priority(fixed_setup, row['event'])
-    if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:
         if req.get('mode') == 'chain5':
             context['first_frame'] = (
@@ -435,19 +472,15 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         if tail and req.get('mode') == 'chain5' else ''
     )
     text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
+          f"Primary filming mode: {row['mode']}.\n"
           "Inspect the reference images labeled <Picture N> and use them according to the user's instructions.\n"
           "Choose shots that best express the original intent. "
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
           "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
           + continuation_note
-          + "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
+          + "Original prompt:\nCurrent clip script:\n"+connected(event)+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
-When audio_evidence.music_structure is supplied, use its predicted local section
-changes and selected downbeats to motivate action payoffs, camera reveals and
-performance highlights. Write their timing into the shots, not an analysis appendix.
-Keep anticipation and contrast; do not cut on every beat. Labels can be wrong and
-do not identify instruments or override vocal roles. Use loudness only as acoustic evidence.
 The current clip script alone assigns plot events. Fixed reference settings carry
 identity and scene duties, never permission to perform a future ending. If old
 fixed settings mention a whole-work outcome, perform it only when assigned here.
@@ -507,7 +540,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
-    text+='\n\nClip timing and audio context:\n'+json.dumps(context,ensure_ascii=False)
+    text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
@@ -521,6 +554,17 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             prompt=normalize_mv_prompt(_text(raw),len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
+            if vocals:
+                # Preserve camera prose while discarding an explicit speech instruction.
+                prompt = re.sub(
+                    r'(?i)\b(?:he|she|they|<Subject \d+>|<Picture \d+>)\s+'
+                    r'(?:says?|replies|speaks?|whispers?|recites?)\b[^.\n<]*'
+                    r'(<d\b[^>]*>.*?</d\s*>)[.,]?',
+                    r'\1', prompt,
+                )
+                prompt, removed = clean_lyric_output(prompt, dict(req, lyrics_reference_version=2))
+                segment['lyric_reference_cleanup'] = {'removed_spans': removed}
+                prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
             return prompt
         except ValueError as error:
             if attempt>=rewrite_retry_count(req):

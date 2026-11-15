@@ -123,7 +123,9 @@ OUTPUT_POLICY = ('SOURCE AUDIO / VISIBLE ROLE SEPARATION: <Audio 1> supplies the
 
 def clean_lyric_output(text,req):
     """Remove reference-text leakage, without judging story semantics or adding model calls."""
-    if not req.get('lyrics_reference_version') or not (req.get('lyrics') or req.get('srt_reference')):
+    if not req.get('lyrics_reference_version') or not (
+        req.get('lyrics') or req.get('srt_reference') or req.get('srt_cues')
+    ):
         return text,0
     removed=0
     # The app's lyric fields must not create speech instructions in the H3 prompt.
@@ -137,6 +139,7 @@ def clean_lyric_output(text,req):
     if cues is None:cues=parse_srt(req.get('srt_reference',''))
     lines+= [line for cue in cues for line in cue['text'].splitlines()]
     # Only exact substantial reference phrases, not a semantic singing/action classifier.
+    lines = [VOCAL_PREFIX.sub('', SUBJECT_VOCAL_PREFIX.sub('', line)).strip() for line in lines]
     phrases=sorted({line.strip() for line in lines if len(line.strip())>=4
                     and not re.fullmatch(r'\[.*\]',line.strip())},key=len,reverse=True)
     if phrases:

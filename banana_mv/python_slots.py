@@ -19,14 +19,17 @@ from banana_mv.timed_slots import allocate_authored_cues, allocate_timed_chapter
 CHAPTER = re.compile(
     r'^\s*(?:第[一二三四五六七八九十百零〇\d]+[幕段]|終幕|尾聲|'
     r'ACT\s+\d+|FINALE)\s*[|｜:：\-—]\s*(.+)$', re.I)
+CAST_BINDING = re.compile(r'^S[12]\s*[=：:]\s*(?:@(?:圖片|图片|image)\s*\d+|<Picture \d+>)', re.I)
+VOCAL_RULE = re.compile(r'^(?:依\s*SRT|\[\s*S[12](?:\s*\+\s*S[12])?\s*\])', re.I)
+WHOLE_ROUTE = re.compile(r'(?:全片|全曲|作品|MV).{0,20}[，,：:]?\s*從.{1,90}(?:出發|開始).{0,90}(?:再回|最後|最終)', re.I)
 GLOBAL_RULES = re.compile(r'^\s*(?:全曲執行原則|GLOBAL\s+RULES|全曲固定原則)\s*$', re.I)
 SENTENCES = re.compile(r'(?<=[。！？!?；;])\s*')
 
 
 # Normalize presentation syntax only when the brief has identifiable story sections.
 SECTION_PREFIX = re.compile(r'^(?:(?:\d+|[一二三四五六七八九十]+)\s*[｜|、.．:：\-—]\s*)?')
-SECTION_STORY = frozenset(('故事內容', '故事劇情', '劇情內容', '故事大綱', '劇情大綱', '劇本內容', 'MV 故事', '完整故事劇情'))
-SECTION_SETUP = frozenset(('角色設定', '人物設定', '人物介紹', '角色介紹', '人物',
+SECTION_STORY = frozenset(('故事內容', '故事劇情', '劇情內容', '故事大綱', '劇情大綱', '劇情', '故事', '劇本內容', 'MV 故事', '完整故事劇情'))
+SECTION_SETUP = frozenset(('共同設定', '整體風格', '表演原則', '角色與造型', '攝影原則', '角色設定', '人物設定', '人物介紹', '角色介紹', '人物',
                            '角色綁定', 'MV 主題', '主題', '風格', '世界觀', '場景設定',
                            '演唱與劇情安排', '演唱與攝影', '演唱安排', '劇情連續性',
                            '特殊要求', '攝影與舞蹈', '導演自由發揮', '全曲執行原則',
@@ -53,6 +56,8 @@ def _plain_source_line(original):
 
 def _source_section(line):
     title = SECTION_PREFIX.sub('', line).strip().rstrip('：:').strip()
+    if title.startswith('【') and title.endswith('】'):
+        title = title[1:-1].strip()
     if title in SECTION_STORY:
         return 'story', title
     if title in SECTION_SETUP:
@@ -94,6 +99,11 @@ def _sectioned_source(prompt):
         if not line:
             continue
         kind, title = _source_section(line)
+        if current is None and WHOLE_ROUTE.search(line):
+            continue
+        if CAST_BINDING.match(line) or VOCAL_RULE.match(line):
+            fixed.append(line)
+            continue
         if kind == 'story':
             in_story = True
             current = None
@@ -293,6 +303,13 @@ def split_source(prompt):
     for original in prompt.replace('\r\n', '\n').splitlines():
         line = original.strip()
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
+            continue
+        if current is None and WHOLE_ROUTE.search(line):
+            continue
+        if CAST_BINDING.match(line) or VOCAL_RULE.match(line):
+            rules.append(line)
+            continue
+        if _source_section(_plain_source_line(line)) == ('setup', '共同設定'):
             continue
         if (GLOBAL_RULES.fullmatch(line) or
                 _source_section(_plain_source_line(line))[1] in ('導演執行重點', '執行重點')):
