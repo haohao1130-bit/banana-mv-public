@@ -92,7 +92,7 @@
     },
     {
       "path": "banana_mv/python_slots.py",
-      "sha256": "0f20e649e88fb8a2e8169e21cc682150bedea5841763b5189ca44dc4c7cddac1"
+      "sha256": "cfb8b88538446f57bacd0c01a890820af777730eba2a3e8cab67dab07efa770f"
     },
     {
       "path": "banana_mv/scene_state.py",
@@ -108,7 +108,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "2a139291dbfb10665d12dc3b6e1e91f49b7af4b7f3f2064e8b1f3bbdb2e9302c"
+      "sha256": "f1f8824c81a2dbfed3ba79a743d65231ba51b2b054ae30055f7f0bcca815f6ac"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -272,7 +272,7 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "2e62ba3db7178443460bad1b74f487fc10698eef78ce6ce38a12015f8b962d5c"
+      "sha256": "89a09e522e06f338de073a1fb2584900d85134c3a2273099eae1cf783081a80b"
     },
     {
       "path": "tests/test_sound_effects.py",

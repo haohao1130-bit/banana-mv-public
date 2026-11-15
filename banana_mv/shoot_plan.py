@@ -400,7 +400,7 @@ def _local_event(event):
     # A continuity frame or explicit present state already carries the result.
     # Do not send previous actions or the source chapter title to the shot writer.
     return re.sub(
-        r'(?m)^\s*(?:ALREADY ESTABLISHED;[^\n]*|Previously established:[^\n]*|Source chapter:[^\n]*)\n?',
+        r'(?m)^\s*(?:ALREADY ESTABLISHED;[^\n]*|Previously established:[^\n]*|Source chapter:[^\n]*|Phase inside chapter:[^\n]*)\n?',
         '', event,
     ).strip()
 
@@ -438,6 +438,81 @@ def _apply_source_performance(prompt, timeline, fixed_setup):
     return prompt + '\n\ndetailed_description:\n' + policy
 
 
+
+# Python retains every authored story route in its saved plan. Only invariant
+# reference facts travel to the local camera model, including on resumed jobs.
+_FIXED_FILMING_HEADINGS = frozenset((
+    '共同設定', '共通設定', '共用設定', '固定設定', '全片設定',
+    '角色設定', '人物設定', '人物介紹', '角色介紹', '角色與造型',
+    '角色綁定', '世界觀', '場景設定', '固定場景', '故事背景',
+    '背景設定', '整體風格', '視覺基調', '視覺風格',
+    '攝影原則', '攝影語言測試', '演唱安排', '表演原則',
+    '攝影與舞蹈', '演唱近拍', '舞蹈編排',
+))
+_STORY_FILMING_HEADINGS = frozenset((
+    'MV 主題', '主題', '故事主題', '故事內容', '故事劇情',
+    '劇情內容', '故事大綱', '劇情大綱', '劇本內容',
+    '完整故事劇情', '劇情', '故事', '故事路線', '全片故事',
+    '劇情連續性', '服裝連續性', '演唱與劇情安排',
+    '導演自由發揮', '導演執行重點', '執行重點',
+    '特殊要求', '全曲執行原則', '全曲固定原則',
+))
+_FUTURE_FILMING = re.compile(
+    r'前半段|後半段|中段|後段|末段|後面|最後|最終|結局|謝幕|尾聲|'
+    r'第[一二三四五六七八九十\d]+[幕段]|隨著(?:歌曲|劇情|故事)|'
+    r'逐步|依序|一路推進|回家|返回|回到|再回|重返|'
+    r'→|->|⇒|'
+    r'從.{0,90}(?:出發|開始).{0,100}(?:到|再|回)|'
+    r'先.{0,75}(?:再|然後|接著)|'
+    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)',
+    re.I,
+)
+_STATIC_FILMING_FACT = re.compile(
+    r'^(?:S[12]\s*[=:：]|<Picture \d+>|@圖片\d+|'
+    r'角色|人物|男主|女主|歌手|主唱|演唱者|外貌|五官|髮型|'
+    r'服裝|開場穿著|初始服裝|初始穿著|'
+    r'全片只有|唯一|不得新增|禁止新增|不新增|'
+    r'畫面風格|攝影風格|視覺風格|整體風格|'
+    r'固定場景|固定背景|依 SRT|[\[]S[12])',
+    re.I,
+)
+
+
+def _filming_reference_settings(fixed_setup):
+    """Forward identity/style/world, never the future plot, from Python to 9B."""
+    result = []
+    section = 'unknown'
+    for raw in fixed_setup.splitlines():
+        line = re.sub(r'^\s*#{1,6}\s+', '', raw).strip().strip('* ').strip()
+        title = line.rstrip('：:').strip()
+        if title.startswith('【') and title.endswith('】'):
+            title = title[1:-1].strip()
+        if title in _FIXED_FILMING_HEADINGS:
+            section = 'fixed'
+            result.append(raw)
+            continue
+        if title in _STORY_FILMING_HEADINGS:
+            section = 'story'
+            continue
+        subfield = re.match(
+            r'^(故事背景|背景設定|整體風格|場景設定|視覺風格|固定場景)\s*[：:]\s*(.*)$',
+            line,
+        )
+        if subfield:
+            section = 'fixed'
+            if not _FUTURE_FILMING.search(subfield.group(2)):
+                result.append(raw)
+            continue
+        if not line or _FUTURE_FILMING.search(line):
+            continue
+        binding = re.match(r'^S[12]\s*[=:：]\s*<Picture \d+>', line, re.I)
+        if binding or section == 'fixed' or (
+            section == 'unknown' and _STATIC_FILMING_FACT.match(line)
+        ):
+            result.append(raw)
+    return '\n'.join(result).strip()
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
@@ -452,6 +527,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     context = {'authored_vocal_timeline': vocals, 'ending': clip_ending(req, segment)}
     fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
+    fixed_setup = _filming_reference_settings(fixed_setup)
     if fixed_setup:
         context['fixed_reference_settings'] = connected(fixed_setup)
 

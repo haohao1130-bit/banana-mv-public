@@ -385,6 +385,24 @@ class PythonSlotsTests(unittest.TestCase):
         # Input scene and film mode must remain meaningful despite state header.
         self.assertEqual(plan['segments'][7]['mode'], 'story')
 
+
+    def test_python_retains_global_story_route_for_local_slot_allocation(self):
+        text = ('【共同設定】\nS1 = @圖片1，男主唱。\nS2 = @圖片2，女主唱。\n'
+                '整首 MV 從公寓出發，到海邊，再回到公寓。\n'
+                '【劇情】\n第一段｜公寓\n男主角看手機。\n'
+                '第二段｜海邊\n女主角在海邊玩水。\n')
+        fixed, chapters = split_source(text)
+        self.assertIn('海邊', fixed)
+        self.assertEqual(len(chapters), 2)
+        slots = [{'index': i, 'start': i * 5.0, 'seconds': 5.0,
+                  'song_seconds': 10.0, 'segment_count': 2} for i in range(2)]
+        with tempfile.TemporaryDirectory() as d:
+            plan = ensure_python_slot_plan(dict(request(), prompt=text), slots,
+                [Path(d)/'a.png', Path(d)/'b.png'], d)
+        self.assertIn('海邊', plan['shared_setup'])
+        self.assertNotIn('海邊', plan['segments'][0]['event'])
+        self.assertIn('海邊', plan['segments'][1]['event'])
+
     def test_unrelated_story_has_no_invented_wardrobe_state(self):
         brief = (
             '第一幕｜控制室\n'
