@@ -6,7 +6,7 @@ from pathlib import Path
 
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
-from banana_mv.lyrics_reference import excerpt
+from banana_mv.lyrics_reference import excerpt, vocal_timeline
 from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
 
@@ -409,6 +409,10 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
+    vocals = vocal_timeline(context['local_srt'])
+    if vocals:
+        context['authored_vocal_timeline'] = vocals
+
     # Strip only the explicit upstream outcome block in legacy settings. No
     # keyword blacklist: identity, scene duties and current results stay intact.
     fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
@@ -487,6 +491,16 @@ Return only the native filming prompt, no analysis, JSON or management instructi
 """
     text+='\n'+adaptation_direction(req)
     text+='\n'+REFERENCE_PERFORMANCE
+    if vocals:
+        text += ('\nUse authored_vocal_timeline as the source of voice timing, even when '
+                 'acoustic analysis is unavailable or disagrees. Apply it only to visible '
+                 'lip-sync permitted by the current scene. Resolve subjects S1 and S2 using the explicit '
+                 'user-defined cast bindings, never picture order or gender. If a binding is absent, '
+                 'do not guess. Two subject IDs mean both assigned performers sing together. '
+                 'Duet means both assigned voices. Harmony identifies backing vocals and '
+                 'does not assign a lead singer or imply both leads sing. Untagged time '
+                 'has no explicit voice assignment. Keep the original soundtrack.')
+
     text+='\n'+AUTO_FILMING
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')

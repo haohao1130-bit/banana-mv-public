@@ -63,6 +63,35 @@ def normalize_references(req,duration):
     return dict(req,lyrics=lyrics,srt_reference=raw,srt_cues=cues,lyrics_reference_version=2)
 
 
+VOCAL_LABELS = {
+    '男聲': 'male', '女聲': 'female', '女生': 'female',
+    '合唱': 'duet', '男女合唱': 'duet', '和聲': 'harmony',
+}
+SUBJECT_VOCAL_PREFIX = re.compile(r'^\s*\[\s*(S1(?:\s*\+\s*S2)?|S2)\s*\]', re.I)
+VOCAL_PREFIX = re.compile(
+    r'^\s*(?:\[(男聲|女聲|女生|男女合唱|合唱|和聲)\]|'
+    r'【(男聲|女聲|女生|男女合唱|合唱|和聲)】|'
+    r'(男聲|女聲|女生|男女合唱|合唱|和聲)\s*[:：])'
+)
+
+
+def vocal_timeline(local_srt):
+    """Use author labels on the same clip-local clock as SRT excerpts."""
+    timeline = []
+    for cue in local_srt:
+        subjects = SUBJECT_VOCAL_PREFIX.match(cue['text'])
+        label = VOCAL_PREFIX.match(cue['text'])
+        if not (subjects or label):
+            continue
+        entry = {'clip_start': cue['clip_start'], 'clip_end': cue['clip_end']}
+        if subjects:
+            entry['subjects'] = [part.strip().upper() for part in subjects[1].split('+')]
+        else:
+            entry['voice'] = VOCAL_LABELS[next(value for value in label.groups() if value)]
+        timeline.append(entry)
+    return timeline
+
+
 def excerpt(req,segment):
     cues=req.get('srt_cues')
     if cues is None:
