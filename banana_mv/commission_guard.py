@@ -144,7 +144,7 @@ def wardrobe_errors(prompt, expected, pictures):
         if marker is None:
             continue
         actor_lines = [line for part in (definition,retention) for line in part.splitlines()
-                       if any(re.search(rf'^\s*<Subject\s+{number}>\b',line)
+                       if any(re.search(rf'^\s*<Subject\s+{number}>',line)
                               for number, actual in mapped.items() if actual == role)]
         if not actor_lines:
             errors.append(f'[ERROR][Wardrobe] {role}: missing actor definition for {label}.')

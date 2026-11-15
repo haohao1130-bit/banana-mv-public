@@ -685,6 +685,8 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             segment.pop('commission_guard_errors', None)
             return prompt
         except ValueError as error:
+            if isinstance(error, SceneStateError) and str(error).startswith('9B 拍攝稿與當段通告衝突'):
+                raise
             format_errors += 1
             if format_errors > rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error

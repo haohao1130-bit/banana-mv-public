@@ -48,6 +48,20 @@ class CommissionGuardTests(unittest.TestCase):
         self.assertTrue(any('[Wardrobe] S1' in line for line in issues))
         self.assertTrue(any('[Wardrobe] S2' in line for line in issues))
 
+    def test_valid_beach_outfit_passes(self):
+        fixed = ('S1 = <Picture 2>\\nS2 = <Picture 3>\\n'
+                 '海邊換成 S1 的輕便短袖與短褲、S2 的純白細繩綁帶比基尼。')
+        appearance = ('subject_definitions:\\n'
+                      '<Subject 1> is the male singer S1 from <Picture 2> in a short-sleeve t-shirt and shorts.\\n'
+                      '<Subject 2> is the female singer S2 from <Picture 3> in a pure white tie-string bikini.\\n'
+                      'summary:\\nA sunny beach.\\n'
+                      'retention_analysis:\\n'
+                      '<Subject 1> retains his short-sleeve t-shirt and shorts.\\n'
+                      '<Subject 2> retains her pure white tie-string bikini.\\n'
+                      'detailed_description:\\n[Shot 1] A reaction shot.\\n')
+        self.assertEqual(check_commission(appearance,[],role_pictures(self.SETUP),10,
+            wardrobe_for_clip('兩人到了海邊步道。',fixed),False),[])
+
     def test_unspecified_srt_does_not_forbid_performance(self):
         prompt = self.DEFS + '[Shot 1] <Subject 1> (S1) sings.\n'
         self.assertEqual(check_commission(prompt,[],role_pictures(self.SETUP),10.0,{},False),[])
