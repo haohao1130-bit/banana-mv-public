@@ -25,7 +25,7 @@ DEFAULTS = {
     'guides': {'ref': str(ROOT/'guides/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md')},
     'free_after_rewrite': True,
     'rewriter': {'model': 'minimax_h3_rewriter_ref2va_qwen3.5_9b_w4a8.safetensors',
-                 'thinking': False, 'mtp': 'auto', 'max_length': 8192,
+                 'thinking': True, 'mtp': 'auto', 'max_length': 8192,
                  'temperature': 0.7, 'top_p': 0.8, 'top_k': 20},
 }
 

@@ -4,6 +4,7 @@ import re
 import uuid
 from pathlib import Path
 
+from banana_mv.commission_guard import check_commission, role_pictures, wardrobe_for_clip
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
 from banana_mv.lyrics_reference import clean_lyric_output, excerpt, vocal_timeline
@@ -530,6 +531,10 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     fixed_setup = _filming_reference_settings(fixed_setup)
     if fixed_setup:
         context['fixed_reference_settings'] = connected(fixed_setup)
+    pictures = role_pictures(context.get('fixed_reference_settings', ''))
+    wardrobe = wardrobe_for_clip(event, segment.get('fixed_reference_settings', ''))
+    if wardrobe:
+        context['current_wardrobe'] = wardrobe
 
     if tail:
         if req.get('mode') == 'chain5':
@@ -610,6 +615,23 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                  'does not assign a lead singer or imply both leads sing. Untagged time '
                  'has no explicit voice assignment. Keep the original soundtrack.')
 
+    if vocals and pictures:
+        rows = []
+        for cue in vocals:
+            singer_roles = cue.get('subjects', [])
+            named = ' + '.join(role+' = '+pictures.get(role, 'UNBOUND') for role in singer_roles)
+            rows.append(f"{cue['clip_start']:.3f}–{cue['clip_end']:.3f}s: {named or 'UNASSIGNED'}")
+        text += '\nCLIP-LOCAL VOCAL AUTHORITY (precise, not a script or dialogue):\n' + '\n'.join(rows)
+        text += ('\nOnly these assigned singers perform vocals inside their intervals. '
+                 'Everyone else may smile, react and move silently. '
+                 'A camera may film reactions, but never describe an unassigned actor singing. '
+                 'Do not move vocal events between intervals.\n')
+    if wardrobe:
+        text += '\nCURRENT COSTUME AT THIS LOCATION (already changed, no repeat changing scene):\n'
+        text += '\n'.join(role+' '+pictures.get(role, '')+': '+garment for role, garment in wardrobe.items())
+        text += ('\nUse the referenced face and hairstyle, but replace prior clothing '
+                 'in ALL subject_definitions, retention_analysis and shots. '
+                 'This is current state, not an upcoming story event.\n')
     text+='\n'+AUTO_FILMING
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
@@ -620,11 +642,14 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
-    for attempt in range(rewrite_retry_count(req)+1):
+    repair_count = 0
+    format_errors = 0
+    max_attempts = rewrite_retry_count(req) + 3
+    for attempt in range(max_attempts):
         if progress:progress({'stage':'rewriting','clip_index':segment['index'],
-                              'attempt':attempt+1,'max_attempts':rewrite_retry_count(req)+1})
+                              'attempt':attempt+1,'max_attempts':max_attempts})
         segment['prompt_profile']={'source':'isolated_native_director','writer_calls':attempt+1,
-                                   'contract_check_calls':0}
+                                   'contract_check_calls':attempt+1}
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
             prompt=normalize_mv_prompt(_text(raw),len(refs))
@@ -641,9 +666,27 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                 prompt, removed = clean_lyric_output(prompt, dict(req, lyrics_reference_version=2))
                 segment['lyric_reference_cleanup'] = {'removed_spans': removed}
                 prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
+            problems = check_commission(prompt, vocals, pictures, float(segment['seconds']),
+                                        wardrobe, bool(req.get('srt_reference') or req.get('srt_cues')))
+            if problems:
+                segment['commission_guard_errors'] = problems
+                if repair_count >= 2:
+                    raise SceneStateError('9B 拍攝稿與當段通告衝突，兩次局部修稿後仍未通過：'
+                                          + ' | '.join(problems))
+                repair_count += 1
+                attempts = parts + [('text',
+                    'REPAIR THIS CLIP ONLY. The previous draft violates the explicit commission. '
+                    'Fix exactly the listed errors while retaining valid shots, camera choices, '
+                    'identities, action continuity and ending. No new lyrics or dialogue. '
+                    'Return all six native sections.\n'
+                    'CONFLICTS:\n' + '\n'.join(problems) +
+                    '\nPREVIOUS DRAFT:\n' + prompt)]
+                continue
+            segment.pop('commission_guard_errors', None)
             return prompt
         except ValueError as error:
-            if attempt>=rewrite_retry_count(req):
+            format_errors += 1
+            if format_errors > rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 
