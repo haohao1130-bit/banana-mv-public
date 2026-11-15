@@ -10,13 +10,23 @@ from banana_mv.scene_state import SceneStateError
 
 SHOT = re.compile(r'(?im)^\s*\[Shot\s+(\d+)\]\s*')
 STAMP = re.compile(r'^\s*(?:At\s+)?\d\d:\d\d(?:\.\d{1,3})?[,;:]?\s*', re.I)
-SINGER_VERB = re.compile(r'\b(?:sings?|singing|lip[ -]?sync(?:s|ing)?|mouth\s+(?:moves|moving))\b', re.I)
+# Recognize explicit *positive* singer actions without mistaking spectators.
+VOCAL_ACTION = re.compile(
+    r'(?i)(?<!\w)(?P<actor><Subject\s+[12]>|S[12]|he|she|him|her|both|they|the\s+two)'
+    r'(?!\w)(?:\s*\(S[12]\))?'
+    r'(?P<link>(?:\s+(?:is|are|was|were|has|have|been|begins?|starts?|'
+    r'started|continues?|continuing|keeps?|kept|still|visibly|clearly|'
+    r'softly|loudly|to|shown|seen)){0,5}\s+)'
+    r'(?P<verb>sing(?:s|ing)?|lip[ -]?sync(?:s|ing)?|mouth\s+(?:moves|moving))\b'
+)
 PROPS = re.compile(r'泳圈|毛巾|車鑰匙|鑰匙|外出包|背包|吉他|手機|主機|螢幕', re.I)
 SYSTEM = (
-    'You write only expressive camera and physical acting details into numbered '
-    '[Shot N] blanks fixed by Python. Do not write timestamps, singers, spoken words, '
-    'singing, lip sync, lyrics, audio, sound effects, or six H3 sections. '
-    'Python owns singer permissions and identity. Use only <Subject 1> and '
+    'Fill Python-numbered [Shot N] slots with camera and acting details. '
+    'Do not write shot timestamps, new lyrics, dialogue, sound effects, '
+    'or six H3 sections. Natural singing and lip-sync are encouraged '
+    'when that performer is authorized by the SRT schedule for this shot. '
+    'Never switch performers or invent a duet; silent characters may react. '
+    'Python owns exact singer timing and identity. Use only <Subject 1> and '
     '<Subject 2> for the two actors; never use <Picture N> in shot prose. '
     'Keep the assigned shot count and story events. Develop detailed framing, '
     'spatial continuity, light, lens perspective, expressions, body actions, '
@@ -82,7 +92,10 @@ def plan_slots(seconds,cues,evidence=None,dynamic=True):
     cuts=sorted(set(cuts))
     if len(cuts)>8:
         cuts=[cuts[0]]+[t for t in cuts[1:-1] if t>=1 and duration-t>=.8][:6]+[duration]
-    return [{'number':i+1,'start':a,'end':b,'rows':singer_rows(a,b,cues)}
+    return [{'number':i+1,'start':a,'end':b,'rows':singer_rows(a,b,cues),
+             'allowed_singers':sorted({r for cue in cues
+                 if float(cue['clip_start']) < b and float(cue['clip_end']) > a
+                 for r in cue.get('subjects',()) if r in ('S1','S2')})}
             for i,(a,b) in enumerate(zip(cuts,cuts[1:]))]
 
 def _extract(raw,slots,only=None):
@@ -103,12 +116,65 @@ def _extract(raw,slots,only=None):
         raise ValueError('9B 必須填寫這些指定鏡頭：'+repr(sorted(expected))+'；實際：'+repr(sorted(blocks)))
     return blocks
 
+def _pronoun_roles(fixed):
+    """Read the explicitly described genders; never infer from picture order."""
+    male=[];female=[]
+    for line in fixed.splitlines():
+        m=re.match(r'^\s*(S[12])\s*[=:：]\s*<Picture \d+>(.*)$',line,re.I)
+        if not m:continue
+        role,details=m[1].upper(),m[2]
+        if re.search(r'\bmale\b|\bman\b|\bboy\b|男主|男聲|男主唱',details,re.I):
+            male.append(role)
+        if re.search(r'\bfemale\b|\bwoman\b|\bgirl\b|女主|女聲|女主唱',details,re.I):
+            female.append(role)
+    roles={}
+    if len(male)==1:roles.update(he=male[0],him=male[0])
+    if len(female)==1:roles.update(she=female[0],her=female[0])
+    return roles
+
+
+def _vocal_role(actor,pronouns):
+    who=actor.lower().strip()
+    m=re.fullmatch(r'<subject\s+([12])>',who)
+    if m:return {'S'+m[1]}
+    if who in ('s1','s2'):return {who.upper()}
+    if who in ('both','they','the two'):return {'S1','S2'}
+    return {pronouns[who]} if who in pronouns else set()
+
+
+def _quiet_verb(verb):
+    low=verb.lower()
+    if low.endswith('ing'):return 'moving to the beat'
+    if low.endswith('s'):return 'moves to the beat'
+    return 'move to the beat'
+
+
+def _repair_vocals(blocks,slots,fixed):
+    """Fix only known WRONG singer verbs. Never rewrite a correct sung action.
+
+    If a shot includes a singer handoff, the timed Python rows constrain the
+    actual vocal subinterval. Unknown pronouns are not guessed.
+    """
+    pronouns=_pronoun_roles(fixed)
+    revised=dict(blocks);audit=[]
+    for slot in slots:
+        number=slot['number'];allowed=set(slot['allowed_singers'])
+        def correct(match):
+            assigned=_vocal_role(match['actor'],pronouns)
+            if not assigned or assigned <= allowed:return match[0]
+            replacement=(match[0][:match.start('verb')-match.start()]
+                         +_quiet_verb(match['verb']))
+            audit.append({'shot':number,'from':match[0],'to':replacement,
+                          'allowed_singers':sorted(allowed)})
+            return replacement
+        revised[number]=VOCAL_ACTION.sub(correct,revised[number])
+    return revised,audit
+
+
 def _errors(blocks,wardrobe):
     problems={}
     for n,body in blocks.items():
         bad=[]
-        if SINGER_VERB.search(body):
-            bad.append('[ERROR][Vocal] [Shot '+str(n)+'] 9B may not write its own singing or lip-sync; Python already supplies exact voice permissions.')
         if re.search(r'<Picture\s+\d+>',body):
             bad.append('[ERROR][Cast] [Shot '+str(n)+'] use only <Subject 1>/<Subject 2> in acting prose.')
         if wardrobe:
@@ -173,7 +239,7 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
     for s in slots:
         task+=f'[Shot {s["number"]}] {s["start"]:.3f}–{s["end"]:.3f}s\n'
         task+='\n'.join('SINGER PERMISSION: '+x for x in s['rows'])+'\n'
-        task+='FILL: camera movement, lighting, physical action and reactions only.\n'
+        task+='FILL: camera, lighting, physical action, reactions and only SRT-authorized lip-sync.\n'
     task+='\nReturn exactly these [Shot N] bodies. Python writes all six H3 sections, singer timing, costume definitions, and audio policy.'
     images_parts=images
     calls=0
@@ -193,6 +259,7 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
             why=str(error)
     if blocks is None:
         raise SceneStateError('9B 無法填入 Python 鏡頭骨架：'+why)
+    blocks,vocal_fixes=_repair_vocals(blocks,slots,fixed)
     for attempt in range(3):
         errors=_errors(blocks,wardrobe)
         if not errors:
@@ -203,7 +270,7 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
         for number,messages in errors.items():
             s=slots[number-1]
             instruction=(f'REPAIR ONLY [Shot {number}] within {s["start"]:.3f}–{s["end"]:.3f}s. '
-                         'Do NOT write any vocal or lip-sync actions; Python owns those. '
+                         'Any singing must use only the authorized performer in this shot. '
                          'Do not write any <Picture N> tags in acting prose. '
                          'Retain the camera, location and physical performance. '
                          'CURRENT WARDROBE: '+repr(wardrobe)+'\nERRORS:\n'+'\n'.join(messages)+
@@ -211,9 +278,13 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
                          f'\nOutput ONLY [Shot {number}] corrected visual body.')
             try:
                 blocks[number]=_extract(call([('text',instruction)]+images_parts,.15),slots,only=number)[number]
+                blocks,new_fixes=_repair_vocals(blocks,slots,fixed)
+                vocal_fixes.extend(new_fixes)
             except ValueError as error:
                 raise SceneStateError(f'9B 第 {number} 鏡修稿格式失敗：{error}') from error
     segment.pop('commission_guard_errors',None)
+    segment['vocal_auto_corrections']=vocal_fixes
     segment['prompt_profile']={'source':'python_locked_srt_shots','writer_calls':calls,
-                               'contract_check_calls':1+attempt,'python_shot_count':len(slots)}
+                               'contract_check_calls':1+attempt,'python_shot_count':len(slots),
+                               'vocal_auto_correction_count':len(vocal_fixes)}
     return _native(blocks,slots,pictures,wardrobe,len(refs)>2,event,len(refs),fixed)

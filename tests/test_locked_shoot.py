@@ -1,6 +1,6 @@
 """Python-owned singer cuts and 9B visual-only slot tests."""
 import unittest
-from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, write_locked_shoot_prompt
+from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, _repair_vocals, write_locked_shoot_prompt
 
 
 def cue(a,b,*roles):
@@ -42,19 +42,87 @@ class LockedShootTests(unittest.TestCase):
         self.assertNotIn('hoodie',text)
         self.assertNotIn('cardigan',text)
 
-    def test_wrong_vocal_and_clothes_cannot_pass(self):
-        blocks={1:'<Subject 1> sings into camera wearing a hoodie.'}
-        errors=_errors(blocks,{'S1':'short-sleeve top and shorts'})
-        self.assertIn('[ERROR][Vocal]',str(errors))
+    def test_correct_singing_is_not_forbidden(self):
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        body='<Subject 1> sings into camera while the camera glides forward.'
+        corrected,changes=_repair_vocals({1:body},slots,'S1 = <Picture 1>, male singer')
+        self.assertEqual(corrected[1],body)
+        self.assertEqual(changes,[])
+        self.assertEqual(_errors(corrected,{}),{})
+
+    def test_wrong_singer_replaced_in_python_but_camera_is_preserved(self):
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        body='<Subject 2> sings while the camera pans from right to left.'
+        corrected,changes=_repair_vocals({1:body},slots,
+                        'S1 = <Picture 1>, male singer\nS2 = <Picture 2>, female singer')
+        self.assertEqual(len(changes),1)
+        self.assertIn('<Subject 2> moves to the beat while the camera pans from right to left.',corrected[1])
+        self.assertNotIn('<Subject 2> sings',corrected[1])
+        self.assertEqual(_errors(corrected,{}),{})
+
+    def test_silent_reaction_watcher_and_negation_do_not_false_trigger(self):
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        fixed='S1 = <Picture 1>, male singer\nS2 = <Picture 2>, female singer'
+        bodies=[
+            'She is watching <Subject 1> singing while the camera moves.',
+            '<Subject 2> watches <Subject 1> sing, then smiles.',
+            'She watches him singing as the camera cuts wider.',
+            '<Subject 2> is not singing; she gestures with her hand.',
+            'He is singing while she watches the light shift.',
+        ]
+        for body in bodies:
+            with self.subTest(body=body):
+                corrected,changes=_repair_vocals({1:body},slots,fixed)
+                self.assertEqual(corrected[1],body)
+                self.assertEqual(changes,[])
+
+    def test_pronouns_duets_and_instrumental_tail_get_targeted_correction(self):
+        fixed='S1 = <Picture 1>, male singer\nS2 = <Picture 2>, female singer'
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        bodies=['She is lip-syncing as the camera pushes in.',
+                'Both sing and the camera follows their hands.',
+                'He sings as the camera tracks backward.']
+        for body in bodies[:2]:
+            repaired,records=_repair_vocals({1:body},slots,fixed)
+            self.assertEqual(len(records),1)
+            self.assertIn('camera',repaired[1])
+            self.assertNotIn('sing',repaired[1])
+            self.assertNotIn('lip-syncing',repaired[1])
+        repaired,records=_repair_vocals({1:bodies[2]},slots,fixed)
+        self.assertEqual(repaired[1],bodies[2])
+        self.assertFalse(records)
+        empty=plan_slots(1.208,[],{},False)
+        repaired,records=_repair_vocals({1:'<Subject 1> sings to camera.'},empty,fixed)
+        self.assertEqual(len(records),1)
+        self.assertIn('moves to the beat',repaired[1])
+
+    def test_mixed_singers_within_one_shot_keep_python_timing(self):
+        slots=plan_slots(10,[cue(0,.2,'S1'),cue(.2,9.8,'S2'),
+                             cue(9.8,10,'S1')],{},True)
+        self.assertIn('S1',slots[0]['allowed_singers'])
+        self.assertIn('S2',slots[0]['allowed_singers'])
+        revised,changes=_repair_vocals({1:'<Subject 1> sings and <Subject 2> sings.'},
+                                        slots[:1],'')
+        self.assertEqual(changes,[])
+        self.assertIn('<Subject 2> sings',revised[1])
+
+    def test_wrong_vocal_and_clothes_are_separate_concerns(self):
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        blocks={1:'<Subject 2> sings into camera while wearing a hoodie.'}
+        fixed,changes=_repair_vocals(blocks,slots,'')
+        self.assertEqual(len(changes),1)
+        self.assertNotIn('<Subject 2> sings',fixed[1])
+        errors=_errors(fixed,{'S1':'short-sleeve top and shorts'})
         self.assertIn('[ERROR][Wardrobe]',str(errors))
+        self.assertNotIn('[ERROR][Vocal]',str(errors))
         with self.assertRaises(ValueError):
             _extract('[Shot 2] Extra camera.',plan_slots(10,[],{},False))
 
     def test_only_bad_shot_is_rewritten_and_temperature_is_reduced(self):
         record=[]
         replies=[
-            '[Shot 1] <Subject 1> sings while sitting.\n[Shot 2] <Subject 2> gestures as the camera tracks left.',
-            '[Shot 1] <Subject 1> raises his hand while the camera tilts up.',
+            '[Shot 1] <Subject 1> sings while sitting in a hoodie.\n[Shot 2] <Subject 2> gestures as the camera tracks left.',
+            '[Shot 1] <Subject 1> sings while sitting in a short-sleeve top and shorts.',
         ]
         def writer(config,system,parts,job):
             record.append((config['rewriter']['temperature'],parts[0][1]))
@@ -66,7 +134,8 @@ class LockedShootTests(unittest.TestCase):
         segment={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
         result=write_locked_shoot_prompt(config,request,segment,'- S1 示意，S2 點頭。',
                    'S1 = <Picture 1>\nS2 = <Picture 2>',
-                   {'S1':'<Picture 1>','S2':'<Picture 2>'},{},
+                   {'S1':'<Picture 1>','S2':'<Picture 2>'},
+                   {'S1':'short-sleeve top and shorts'},
                    ['a','b'],[],writer)
         self.assertIn('[Shot 1]',result)
         self.assertIn('[Shot 2] At 00:05.000',result)
