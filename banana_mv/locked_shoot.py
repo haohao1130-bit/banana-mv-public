@@ -222,25 +222,83 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
         raise SceneStateError('Python H3 定裝引用了未連接圖片。')
     return output
 
+def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False):
+    """Give 9B the locked facts FIRST, this clip's action SECOND, craft LAST.
+
+    Fixed world/setup prose and previous/future script never enter this packet.
+    Picture references establish face/hairstyle; current clothing overrides
+    clothing in those pictures only when this clip has an explicit outfit lock.
+    """
+    lines=[
+        '=== 1. CURRENT CLIP HARD LOCKS — PYTHON AUTHORITY ===',
+        f'CLIP DURATION: {float(segment["seconds"]):.3f}s (all times clip-local).',
+        'CURRENT WARDROBE — use these exact present outfits where assigned:',
+    ]
+    for role,number in (('S1',1),('S2',2)):
+        ref=pictures[role]
+        if role in wardrobe:
+            lines.append(
+                f'<Subject {number}> ({role}): face and hairstyle from {ref} ONLY. '
+                f'CURRENT OUTFIT: {wardrobe[role]}. '
+                'This outfit overrides clothing visible in the reference photo.')
+        else:
+            lines.append(
+                f'<Subject {number}> ({role}): face and hairstyle from {ref}. '
+                'CURRENT OUTFIT: preserve the already-established outfit in this '
+                'clip opening/current event; do not invent a costume change.')
+    lines.extend((
+        'LOCKED SHOT SLOTS — preserve every Shot number and start/end time.',
+        'Python has assigned the exact SRT vocalist in each subinterval. '
+        'Only that vocalist lip-syncs; others may react silently.',
+    ))
+    for slot in slots:
+        lines.append(
+            f'[Shot {slot["number"]}] {slot["start"]:.3f}–{slot["end"]:.3f}s')
+        lines.extend('  VOCAL LOCK: '+row for row in slot['rows'])
+        lines.append('  FILL VISUALS: camera, expression, body movement, light and reactions.')
+    lines.append('')
+    lines.append('=== 2. CURRENT EVENT / ESTABLISHED OPENING STATE ===')
+    if continuity:
+        lines.append(
+            'OPENING CONTINUITY: <Picture 1> supplies an actual prior temporal '
+            'frame for pose, object placement, lighting and motion continuity. '
+            'It is not a new performer or the source of current clothing. '
+            'Continue the current action without narrating previous events.')
+    else:
+        lines.append(
+            'OPENING CONTINUITY: start directly with the assigned current event; '
+            'do not invent what happened in earlier clips.')
+    lines.append('THIS CLIP EVENT (film its assigned actions, no future outcome):')
+    lines.append(event)
+    props=[x.strip()[2:] for x in event.splitlines()
+           if x.strip().startswith('- ') and PROPS.search(x)]
+    if props:
+        lines.append('CURRENT PROPS / HANDLING (only established in this event):')
+        lines.extend('- '+x for x in props)
+    lines.extend((
+        '',
+        '=== 3. CINEMATOGRAPHY AND OUTPUT RULES ===',
+        'Camera energy: '+str(req.get('intensity','high'))+'.',
+        'Fill each assigned [Shot N] with specific camera placement, framing, '
+        'moving subjects, light, reactions and physical cause/effect. '
+        'Natural lip-sync is welcome only for its Python-assigned SRT singer.',
+        'Use <Subject 1>/<Subject 2> for people in shot prose. '
+        'The <Picture N> labels above identify reference assets, not actor actions.',
+        'Keep the present scene, wardrobe and object state consistent. '
+        'Do not repeat completed events, invent future scenes, swap the singer, '
+        'create new dialogue/lyrics, or change any locked Shot boundary.',
+        'Return only the numbered [Shot N] visual bodies, one per locked slot. '
+        'Python assembles the six native H3 sections, audio policy and exact '
+        'sub-shot singer timing; do not write those sections yourself.',
+    ))
+    return '\n'.join(lines)
+
+
 def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs,images,rewrite,progress=None):
     cues=vocal_timeline(excerpt(req,segment))
     slots=plan_slots(segment['seconds'],cues,segment.get('audio_evidence'),req.get('dynamic_cuts',True))
-    story='\n'.join(x.strip()[2:] for x in event.splitlines() if x.strip().startswith('- '))
-    props='\n'.join(x for x in story.splitlines() if PROPS.search(x))
-    task=(
-        f'Target duration: {float(segment["seconds"]):.3f}s. Film THIS CURRENT EVENT ONLY:\n'+event+
-        '\nCurrent props/actions already assigned:\n'+(props or '(none beyond current commission)')+
-        '\nPython cast: S1=<Subject 1> = '+pictures['S1']+
-        '; S2=<Subject 2> = '+pictures['S2']+
-        '. Use <Subject N> only for people, never <Picture N> in shot prose.'+
-        '\nCURRENT WARDROBE (already worn; preserve hair and face from references): '+repr(wardrobe)+
-        '\nCAMERA INTENSITY: '+str(req.get('intensity','high'))+
-        '\nREQUIRED PYTHON SHOT SKELETON:\n')
-    for s in slots:
-        task+=f'[Shot {s["number"]}] {s["start"]:.3f}–{s["end"]:.3f}s\n'
-        task+='\n'.join('SINGER PERMISSION: '+x for x in s['rows'])+'\n'
-        task+='FILL: camera, lighting, physical action, reactions and only SRT-authorized lip-sync.\n'
-    task+='\nReturn exactly these [Shot N] bodies. Python writes all six H3 sections, singer timing, costume definitions, and audio policy.'
+    task=_commission_text(
+        req,segment,event,pictures,wardrobe,slots,continuity=len(refs)>2)
     images_parts=images
     calls=0
     def call(parts,t):

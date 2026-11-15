@@ -1,6 +1,6 @@
 """Python-owned singer cuts and 9B visual-only slot tests."""
 import unittest
-from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, _repair_vocals, write_locked_shoot_prompt
+from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, _repair_vocals, _commission_text, write_locked_shoot_prompt
 
 
 def cue(a,b,*roles):
@@ -143,6 +143,61 @@ class LockedShootTests(unittest.TestCase):
         self.assertIn('REPAIR ONLY [Shot 1]',record[1][1])
         self.assertNotIn('REPAIR ONLY [Shot 2]',record[1][1])
         self.assertEqual(segment['prompt_profile']['writer_calls'],2)
+
+    def test_9b_commission_order_is_hard_locks_event_cinematography(self):
+        slots=plan_slots(10,[cue(0,2.3,'S1'),cue(2.3,8.76,'S2'),
+                             cue(8.76,10,'S1')],{},False)
+        text=_commission_text(
+            {'intensity':'extreme'},{'index':4,'seconds':10},
+            '- S1 帶著外出包走到海岸；S2 接住毛巾。',
+            {'S1':'<Picture 2>','S2':'<Picture 3>'},
+            {'S1':'short-sleeve top and shorts',
+             'S2':'pure-white tie-string bikini'},slots,True)
+        self.assertLess(text.index('CURRENT WARDROBE'),text.index('LOCKED SHOT SLOTS'))
+        self.assertLess(text.index('LOCKED SHOT SLOTS'),text.index('THIS CLIP EVENT'))
+        self.assertLess(text.index('THIS CLIP EVENT'),text.index('CINEMATOGRAPHY AND OUTPUT'))
+        self.assertLess(text.index('CINEMATOGRAPHY AND OUTPUT'),text.index('Return only'))
+        self.assertIn('face and hairstyle from <Picture 3> ONLY',text)
+        self.assertIn('CURRENT OUTFIT: pure-white tie-string bikini',text)
+        self.assertIn('[Shot 2] 2.300–8.760s',text)
+        self.assertIn('ONLY lip-syncs',text)
+        self.assertIn('OPENING CONTINUITY: <Picture 1>',text)
+        self.assertEqual(text.count('THIS CLIP EVENT'),1)
+        self.assertNotIn('authored_vocal_timeline',text)
+        self.assertNotIn('shared_setup',text)
+
+    def test_no_wardrobe_override_does_not_force_reference_costume(self):
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        text=_commission_text(
+            {},{'index':0,'seconds':10},'- S1 拿起吉他。',
+            {'S1':'<Picture 1>','S2':'<Picture 2>'},{},slots,False)
+        self.assertIn('already-established outfit',text)
+        self.assertNotIn('overrides clothing visible in the reference photo',text)
+        self.assertNotIn('OPENING CONTINUITY: <Picture 1> supplies',text)
+        self.assertIn('start directly with the assigned current event',text)
+
+    def test_9b_initial_request_receives_reordered_commission(self):
+        captured=[]
+        def fake_rewrite(config,system,parts,seed):
+            captured.append(parts[0][1])
+            return ('[Shot 1] <Subject 1> sings as the camera tilts up.\n'
+                    '[Shot 2] <Subject 2> gestures as the camera follows.')
+        cfg={'rewriter':{'temperature':.4,'thinking':False}}
+        req={'dynamic_cuts':False,'srt_cues':[
+            {'start':0,'end':5,'text':'[S1] first line'},
+            {'start':5,'end':10,'text':'[S2] second line'}]}
+        seg={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
+        output=write_locked_shoot_prompt(
+            cfg,req,seg,'- S1 彈奏吉他，S2 跟著節拍點頭。',
+            'S1 = <Picture 1>\nS2 = <Picture 2>',
+            {'S1':'<Picture 1>','S2':'<Picture 2>'},{},
+            ['a','b'],[],fake_rewrite)
+        self.assertEqual(len(captured),1)
+        self.assertLess(captured[0].index('LOCKED SHOT SLOTS'),
+                        captured[0].index('THIS CLIP EVENT'))
+        self.assertTrue(captured[0].rstrip().endswith(
+            'sub-shot singer timing; do not write those sections yourself.'))
+        self.assertIn('sings as the camera tilts up',output)
 
     def test_no_lip_sync_assigned_to_terminal_instrumental_tail(self):
         slots=plan_slots(1.208,[],{},False)
