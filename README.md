@@ -1,3 +1,5 @@
+**5070 FL2VA Pruned INT8 獨立實驗分支：** [說明與測速指令](docs/fl2va_pruned_int8_5070_experiment.md)。新增 FL2VA I2VA 測試，不覆蓋 PRISM Ref2VA 與一鍵啟動器。
+
 # 🍌 Banana MV｜大乘蕉宗公開煉丹房
 
 ## Colab 版本辨識
