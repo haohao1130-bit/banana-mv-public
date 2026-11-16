@@ -1247,7 +1247,7 @@ class Handler(WebHandler):
             if path=='/api/mv/rewrite-clip':
                 from banana_mv.manual_prompt import rewrite_clip
                 body=self.body_json()
-                return self.send_json(rewrite_clip(body['id'],body.get('index')),202)
+                return self.send_json(rewrite_clip(body['id'],body.get('index'),body.get('previous_take')),202)
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
