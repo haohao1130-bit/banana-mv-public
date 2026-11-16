@@ -23,9 +23,9 @@ md(f'''# 🍌 Banana MV｜大乘蕉宗公開煉丹房
 
 [使用說明](https://github.com/{REPOSITORY}#readme) · [問題回報](https://github.com/{REPOSITORY}/issues)
 
-**遠景修臉（選用）**：①預設勾選 `INSTALL_FACE_REFINE`，執行後再跑②③。開啟網頁後，在生成設定勾選實驗性修臉。首次使用可能下載人臉辨識模型，修臉會額外花時間。完成後可並排播放與下載母片及修臉版，兩支 MP4 也會另存到成品資料夾。
+**遠景修臉（選用，預設關閉）**：①安裝時若需要才勾選 `INSTALL_FACE_REFINE`，執行後再跑②③。開啟網頁後，若要啟用修臉再到生成設定手動勾選。首次使用可能下載人臉辨識模型，修臉會額外花時間。完成後可並排播放與下載母片及修臉版，兩支 MP4 也會另存到成品資料夾。
 '''),
-code('#@title ① 安裝 Banana MV、ComfyUI 與外掛（含選用修臉）\n#@markdown **預設安裝遠景修臉**。取消勾選可略過安裝。\nINSTALL_FACE_REFINE = True #@param {type:"boolean"}\n'+(ROOT/'tools/public_clone.py').read_text()+f'''
+code('#@title ① 安裝 Banana MV、ComfyUI 與外掛（含選用修臉）\n#@markdown **遠景修臉預設不安裝**。需要時才勾選；網頁生成設定也預設關閉。\nINSTALL_FACE_REFINE = False #@param {type:"boolean"}\n'+(ROOT/'tools/public_clone.py').read_text()+f'''
 PROJECT=Path('/content/banana-mv-public')
 clone_project(PROJECT,'https://github.com/{REPOSITORY}.git')
 sys.path.insert(0,str(PROJECT/'tools'))
