@@ -160,10 +160,10 @@ class LockedShootTests(unittest.TestCase):
         req={'dynamic_cuts':False,'rewrite_retries':1,'srt_cues':[
             {'start':0,'end':5,'text':'[S1] verse'},
             {'start':5,'end':10,'text':'[S2] verse'}]}
-        bad=('[Shot 1] <Subject 1> sings wearing a hoodie while camera approaches.\\n'
+        bad=('[Shot 1] <Subject 1> sings wearing a hoodie while camera approaches.\n'
              '[Shot 2] <Subject 2> gestures as the camera tracks left.')
         bad_fix='[Shot 1] <Subject 1> sings wearing a hoodie in a camera close-up.'
-        good=('[Shot 1] <Subject 1> sings in a short-sleeve top and shorts, camera approaches.\\n'
+        good=('[Shot 1] <Subject 1> sings in a short-sleeve top and shorts, camera approaches.\n'
               '[Shot 2] <Subject 2> gestures as the camera tracks left.')
         seg={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
         calls=[]
@@ -171,7 +171,7 @@ class LockedShootTests(unittest.TestCase):
             calls.append(parts)
             return [bad,bad_fix,bad_fix,good][len(calls)-1]
         result=write_locked_shoot_prompt(cfg,req,seg,'- S1 sings; S2 reacts.',
-                  'S1 = <Picture 1>\\nS2 = <Picture 2>',
+                  'S1 = <Picture 1>\nS2 = <Picture 2>',
                   {'S1':'<Picture 1>','S2':'<Picture 2>'},
                   {'S1':'short-sleeve top and shorts'},['a','b'],[],writer)
         self.assertIn('short-sleeve top and shorts',result)
@@ -190,7 +190,7 @@ class LockedShootTests(unittest.TestCase):
             return bad
         with self.assertRaisesRegex(SceneStateError,'自動重新起稿 1 次'):
             write_locked_shoot_prompt(cfg,req,seg,'- S1 sings; S2 reacts.',
-                    'S1 = <Picture 1>\\nS2 = <Picture 2>',
+                    'S1 = <Picture 1>\nS2 = <Picture 2>',
                     {'S1':'<Picture 1>','S2':'<Picture 2>'},
                     {'S1':'short-sleeve top and shorts'},['a','b'],[],fails)
         self.assertEqual(len(calls),6)
