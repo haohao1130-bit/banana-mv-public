@@ -18,6 +18,13 @@ PREVIEW_LOCK=threading.Lock()
 TERMINAL=('done','error','cancelled','interrupted')
 
 
+def continuous_5070(job):
+    """RTX 5070 Python+9B chain: a changed Take invalidates all later shots."""
+    req=job.get('request',{})
+    return req.get('director_schema')==6 and app.is_continuation(req.get('mode'))
+
+
+
 def segment(job, index):
     if isinstance(index,bool) or not isinstance(index,int) or not 0<=index<len(job['segments']):
         raise ValueError('無效的丹藥段落編號。')
@@ -219,6 +226,12 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
         job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg)
         for i in indices:segment(job,i)
         indices=sorted(set(indices))
+        if continuous_5070(job):
+            if len(indices)!=1:
+                raise ValueError('連續拍攝只能逐段修正；選用新版後請從其尾幀重新接拍後續。')
+            restart=job.get('continuation_restart')
+            if restart and indices[0]>restart['index']:
+                raise ValueError('後續片段屬於舊時間線；請先從正式採用的新版尾幀續拍。')
         notes=corrections(indices,instructions)
         overrides=manual_prompts(indices,prompts)
         if previous_takes is None:previous_takes={}
@@ -436,6 +449,14 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
         if rewrite_retries is not None:
             job['request']['rewrite_retries']=rewrite_retries
         seg=segment(job,index)
+        if continuous_5070(job) and mode!='cascade':
+            raise ValueError('5070 連續拍攝不可只換一段保留後續；請從新版尾幀重拍後段。')
+        if continuous_5070(job) and seg.get('selected_take','original')!=take_id:
+            raise ValueError('請先按「選用此丹」正式採用新版，再從它的尾幀接拍。')
+        restart=job.get('continuation_restart')
+        if continuous_5070(job) and restart and (
+                restart['index']!=index or restart['take']!=take_id):
+            raise ValueError('目前已有正式採用的待接拍版本；請從該段開始，勿混接舊時間線。')
         if seg.get('status')!='done':
             raise ValueError('請先完成這一段回爐，再選擇接續分支。')
         candidate=take_source(job,index,take_id)
@@ -469,7 +490,7 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
         from banana_mv.python_slots import refresh_stale_timed_plan
         refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
         app.restore_render_settings(job)
-        if mode=='cascade' and index+1>=len(job['segments']):
+        if mode=='cascade' and index+1>=len(job['segments']) and not continuous_5070(job):
             raise ValueError('這已是最後一段，沒有後續影片可重新接拍。')
         first=(segment(job,index+1) if mode=='cascade'
                else (seg if not done_after else segment(job,done_after[0])))
@@ -755,7 +776,7 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
 
 
 def select_take(job_id,index,take_id):
-    """Persist an audition choice only; never replace media or assemble here."""
+    """Adopt immediately for 5070 continuous shots; independent/legacy keeps pending selection."""
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
         job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg,False)
@@ -767,18 +788,15 @@ def select_take(job_id,index,take_id):
         # RTX5070 emergency-stop editing is an ACTIVE Take adoption, not
         # the old, completed-project "select now / condense later" workflow.
         # The next filming run must observe selected_take immediately.
-        emergency=(job['status'] in ('error','cancelled','interrupted')
-                   and app.is_continuation(job['request']['mode'])
-                   and job['request'].get('director_schema')==6)
+        emergency=continuous_5070(job)
         if emergency:
             lineage=_lineage(job,index,take_id)
             _adopt_branch_clips(job,lineage)
-            # Everything beyond the edited clip belongs to the OLD timeline.
-            # Keep prior files for rollback, but don't keep future pending
-            # choices in the active lineage.
-            for key in list(pending):
-                if int(key)>index:
-                    pending.pop(key,None)
+            # Pending selections are the OLD mix-and-condense workflow.
+            # Adopt one authoritative lineage; never mix pending descendants.
+            pending.clear()
+            job.pop('continuation_generation',None)
+            seg.pop('prompt_rewrite',None)
             if index+1 < len(job['segments']):
                 job['continuation_restart']={'index':index,'take':take_id,
                                              'from_index':index+1,
@@ -798,6 +816,8 @@ def condense(job_id,revision=None):
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請稍後凝丹。')
     try:
         job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg,False)
+        if continuous_5070(job):
+            raise ValueError('5070 連續拍攝已停用混選凝丹；請正式採用單段版本，再從該段尾幀重拍後續。')
         if revision is not None and revision!=job.get('selection_revision'):
             raise ValueError('選丹已有更新，請重新開啟專案核對後凝丹。')
         choices={int(i):t for i,t in job.get('pending_takes',{}).items()}
