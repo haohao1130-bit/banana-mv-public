@@ -1,6 +1,12 @@
 // Exercise the real frontend script with a tiny DOM and mocked HTTP; no npm packages.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const html=fs.readFileSync('banana_mv/web/index.html','utf8');
+assert(html.indexOf('id="final-previews"')<html.indexOf('id="clip-review"'),
+  'finished master and 1080P controls belong above the per-clip take list');
+assert(html.indexOf('id="upscale-again"')<html.indexOf('id="upscale-preview"'),
+  'upgrade action must be near the master, not at the end of the 1080P result panel');
+assert.equal(html.split('id="upscale-again"').length,2,'exactly one working upgrade button');
+
 class Element{
   constructor(){this.children=[];this.value='';this.files=[];this.checked=false;this.style={};this.events={};}
   append(...nodes){this.children.push(...nodes);}
