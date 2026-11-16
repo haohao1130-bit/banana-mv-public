@@ -18,7 +18,7 @@ class Element{
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
-const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[];let reviewJob;const approvals=[];let recipeOpened=false;
+const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[],branches=[];let reviewJob;const approvals=[];let recipeOpened=false;
 let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
 const intervals=[];
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
@@ -34,6 +34,7 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
     if(url==='api/mv/rewrite-clip'){rewrites.push(JSON.parse(options.body));return {...reviewJob};}
+    if(url==='api/mv/continue-branch'){branches.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
     if(url==='api/mv/retake'){retakes.push(JSON.parse(options.body));return {...reviewJob,status:'retaking'};}
     if(url==='api/mv/select-take'){selections.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
     if(url==='api/mv/status?id=review123')return reviewJob;
@@ -266,6 +267,24 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(els['master-list'].children[1].textContent.includes('目前版本'));
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
+  // Emergency V2 adoption becomes official immediately; the SAME clip
+  // still shows the restart button and starts from its next clip.
+  reviewJob.status='cancelled';reviewJob.request.director_schema=6;
+  reviewJob.segments[1].selected_take='abcdef123456';
+  reviewJob.continuation_restart={index:1,take:'abcdef123456',from_index:2,rewrite_next_prompt:true};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].select.value,'abcdef123456');
+  assert.equal(rows[1].branchCascade.hidden,false);
+  assert.equal(rows[1].branchCascade.disabled,false);
+  await rows[1].branchCascade.onclick();
+  assert.deepEqual(branches.at(-1),{
+    id:'review123',index:1,take:'abcdef123456',mode:'cascade'
+  });
+  assert(els['resume-project'].textContent.includes('第 3 段接拍'));
+  reviewJob.status='done';
+  reviewJob.segments[1].selected_take='original';
+  delete reviewJob.continuation_restart;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
   // Even the failed/not-yet-generated clip has its own prompt workbench.
   const missing={id:'failed123',status:'error',request:{mode:'independent'},
