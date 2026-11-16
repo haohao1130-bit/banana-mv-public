@@ -579,6 +579,77 @@ class TakeTests(unittest.TestCase):
         self.assertIn('Take',job['retake']['error'])
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
+
+    def test_emergency_select_v2_is_official_then_restarts_all_downstream_with_new_prompts(self):
+        """The displayed clip 14 is index 1; its next index 2 represents 15."""
+        self.job['request'].update(mode='chain', director_schema=6, rewrite=True)
+        self.job['status']='cancelled'
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        v2=job['segments'][1]['takes'][-1]['id']
+        selected=takes.select_take(job['id'],1,v2)
+        self.assertEqual(selected['segments'][1]['selected_take'],v2)
+        self.assertEqual(selected['segments'][1]['pending_take'],v2)
+        self.assertNotIn('1',selected.get('pending_takes',{}))
+        self.assertEqual(selected['continuation_restart'],
+                         {'index':1,'take':v2,'from_index':2,'rewrite_next_prompt':True})
+        self.assertEqual(takes.take_source(selected,1).read_bytes(),b'new')
+        app.last_frame.reset_mock()
+        with patch.object(app,'local_prompt',
+                          side_effect=lambda cfg,req,seg,originals,tail:
+                          'NEW Python commission '+str(seg['index'])) as nine_b:
+            takes.continue_from_take(job['id'],1,v2,'cascade')
+            job=self.run_background()
+        self.assertEqual(nine_b.call_count,2)
+        self.assertEqual(job['status'],'done')
+        self.assertNotIn('continuation_restart',job)
+        self.assertEqual(job['segments'][2]['takes'][-1]['previous_take'],v2)
+        self.assertEqual(app.last_frame.call_args_list[0].args[0],
+                         takes.take_file(job,1,v2,'part.mp4'))
+        self.assertEqual(takes.existing_file(
+            job,2,job['segments'][2]['selected_take'],'prompt.txt'
+        ).read_text(),'NEW Python commission 2')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|new|new')
+        self.assertEqual(takes.take_source(job,2).read_bytes(),b'new')
+        self.assertTrue((self.work/'02_part_v1.mp4').is_file(),
+                        'obsolete downstream source remains rollback-only')
+
+    def test_resume_after_emergency_adoption_uses_same_new_tail_and_forces_9b_rewrite(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.job['status']='cancelled'
+        self.cfg['rewriter']={'model':'fake'}
+        for i in (2,3):
+            self.job['segments'][i]['status']='waiting'
+            (self.work/f'{i:02d}_part.mp4').unlink()
+            # An old prompt may remain even though its film did not complete.
+            (self.work/f'{i:02d}_prompt_v1.txt').write_text('UNSAFE OLD 9B PROMPT')
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        v2=job['segments'][1]['takes'][-1]['id']
+        adopted=takes.select_take(job['id'],1,v2)
+        self.assertEqual(adopted['segments'][1]['selected_take'],v2)
+        observed=[]
+        def fresh_worker(job,cfg,originals,song,drive):
+            self.assertTrue(app.GPU_LOCK.locked())
+            observed.append((job['segments'][1]['selected_take'],
+                             job['segments'][2]['status'],
+                             job['segments'][2].get('refresh_prompt'),
+                             job['segments'][3].get('refresh_prompt')))
+            self.assertFalse(job['segments'][2].get('prompt_id'))
+            app.GPU_LOCK.release()
+        with patch.object(app,'worker',side_effect=fresh_worker) as standard:
+            started=app.resume(job['id'],rewrite_retries=2)
+            self.assertEqual(started['retake']['branch']['mode'],'cascade')
+            self.assertEqual(started['retake']['branch']['index'],1)
+            job=self.run_background()
+        standard.assert_called_once()
+        self.assertEqual(observed,[(v2,'waiting',True,True)])
+        self.assertEqual(job['request']['rewrite_retries'],2)
+        self.assertNotIn('continuation_restart',job)
+
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
