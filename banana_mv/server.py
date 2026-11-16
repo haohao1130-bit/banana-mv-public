@@ -481,7 +481,11 @@ def export_finished_video(job,source,*,refined_version=None,upscaled_version=Non
 def worker(job, cfg, original, song, drive):
     from banana_mv import face_refine
 
-    app = sys.modules[__name__]
+    # Another test or importer can temporarily remove the module key.
+    # Reuse the package's already-loaded server object rather than raising.
+    app = sys.modules.get(__name__)
+    if app is None:
+        from banana_mv import server as app
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
     parts, tail, tail_frames = [], None, []

@@ -1,10 +1,14 @@
 """Predicted musical structure; isolated from H3 and never inferred from volume."""
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import ssl
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 
 from banana_mv.audio_analysis import source_hash
 
@@ -13,6 +17,59 @@ REVISION = '566f96c3f007c783ab5eb6db0123bf3335af8f31'
 MODEL = 'harmonix-all'
 LABELS = {'start', 'end', 'intro', 'outro', 'break', 'bridge', 'inst', 'solo', 'verse', 'chorus'}
 ROOT = Path(__file__).resolve().parents[1]
+# Original Demucs download can fail if Meta's SSL certificate expires.
+# Pinned byte-identical mirror, independently checked against Demucs' registry SHA-256.
+DEMUCS_CHECKPOINT_NAME = '955717e8-8726e21a.th'
+DEMUCS_CHECKPOINT_SHA256 = '8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4'
+DEMUCS_MIRROR_URL = (
+    'https://huggingface.co/iBoostAI/Demucs-v4/resolve/'
+    '47b03c8ccb140658519302c2ce176c14406c3948/955717e8-8726e21a.th'
+)
+
+
+def _expired_download_certificate(error):
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    return isinstance(reason, ssl.SSLCertVerificationError) and 'expired' in str(reason).lower()
+
+
+def _demucs_checkpoint_target():
+    # Match demucs_infer.checkpoint_runtime.CheckpointRuntime._cache_root().
+    return Path.home() / '.cache' / 'demucs-infer' / DEMUCS_CHECKPOINT_NAME
+
+
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _restore_demucs_checkpoint():
+    """Restore only the pinned HTDemucs artifact with verified bytes and atomic write."""
+    target = _demucs_checkpoint_target()
+    if target.is_file() and _file_sha256(target) == DEMUCS_CHECKPOINT_SHA256:
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='wb', dir=target.parent,
+                                         prefix='.' + target.name + '.',
+                                         suffix='.tmp', delete=False) as output:
+            partial = Path(output.name)
+            with urllib.request.urlopen(DEMUCS_MIRROR_URL, timeout=60) as response:
+                for block in iter(lambda: response.read(1024 * 1024), b''):
+                    output.write(block)
+            output.flush()
+            os.fsync(output.fileno())
+        if _file_sha256(partial) != DEMUCS_CHECKPOINT_SHA256:
+            raise ValueError('Demucs 鏡像權重 SHA-256 不符，拒絕使用該檔案。')
+        os.replace(partial, target)
+        return target
+    finally:
+        if partial is not None:
+            partial.unlink(missing_ok=True)
+
 
 
 def number(value):
@@ -116,8 +173,18 @@ def run_model(source, output, work):
     import torch
     import allin1_infer
     torch.set_num_threads(4)
-    result = allin1_infer.analyze(source, model=MODEL, device='cpu', multiprocess=False,
-                                demix_dir=Path(work)/'demix',spec_dir=Path(work)/'spec',overwrite=True)
+    def analyze():
+        return allin1_infer.analyze(source, model=MODEL, device='cpu', multiprocess=False,
+                                  demix_dir=Path(work)/'demix',spec_dir=Path(work)/'spec',overwrite=True)
+
+    try:
+        result = analyze()
+    except (urllib.error.URLError, ssl.SSLCertVerificationError) as exc:
+        if not _expired_download_certificate(exc):
+            raise
+        print('Meta Demucs 權重下載憑證過期，從經 SHA-256 驗證的鏡像恢復後重試。', flush=True)
+        _restore_demucs_checkpoint()
+        result = analyze()
     raw = asdict(result)
     Path(output).write_text(json.dumps({k:raw[k] for k in ('bpm','beats','downbeats','segments')},allow_nan=False))
 
