@@ -32,6 +32,8 @@ def rewrite_clip(job_id,index):
         cfg=copy.deepcopy(app.backend.load_config())
         takes.require_idle(job,cfg)
         originals,_,_=app.project_inputs(job,cfg)
+        from banana_mv.python_slots import refresh_stale_timed_plan
+        refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
         if app.is_continuation(job['request']['mode']) and index:
             takes.take_source(job,index-1)
         app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},

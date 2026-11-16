@@ -487,6 +487,9 @@ def worker(job, cfg, original, song, drive):
     def rewrite_progress(info):
         job['rewrite_attempt']=info;write_state(job)
     try:
+        if job.get('resuming') and job['request'].get('director_schema')==6:
+            from banana_mv.python_slots import refresh_stale_timed_plan
+            refresh_stale_timed_plan(job,original,work)
         approved_review=bool(job['request'].get('plan_review') and job.get('plan_approved'))
         if approved_review and job['plan_approved']!=plan_revision(job):
             raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
@@ -1248,7 +1251,7 @@ class Handler(WebHandler):
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False)))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False),body.get('rebuild_prompt',False)))
             if path=='/api/mv/condense':
                 from banana_mv.takes import condense
                 body=self.body_json()

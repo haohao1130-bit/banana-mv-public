@@ -188,9 +188,10 @@ def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     return normalize_mv_prompt(_text(raw),len(refs))
 
 
-def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False):
+def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebuild_prompt=False):
     if not isinstance(indices,list) or not indices:raise ValueError('請勾選至少一顆需要回爐的丹藥。')
     if not isinstance(auto_resume,bool):raise ValueError('自動續跑參數必須為布林值。')
+    if not isinstance(rebuild_prompt,bool):raise ValueError('重配提示詞參數必須為布林值。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
         job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg)
@@ -200,6 +201,10 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False):
         overrides=manual_prompts(indices,prompts)
         if any(i in notes for i in overrides):
             raise ValueError('同一段不能同時指定手動完整提示詞與局部 9B 修稿。')
+        if rebuild_prompt and (notes or overrides):
+            raise ValueError('重新分析與手動丹方／局部修稿不能同時進行。')
+        if rebuild_prompt and (job['request'].get('director_schema') not in (5,6) or not job['request'].get('rewrite',True)):
+            raise ValueError('完整重新分析需要啟用本地 9B 導演。')
         if notes:
             if not Path(cfg.get('guides',{}).get('ref','')).is_file():
                 raise ValueError('局部修改需要本地 9B 與原生指南，請先完成 Colab 模型下載。')
@@ -225,6 +230,12 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False):
                     any(seg.get('status')!='done' for seg in job['segments'][:indices[0]])):
                 raise ValueError('自動續跑只適用於已停止的專案，從第一個未完成段落貼新稿回爐。')
         originals,song,drive=app.project_inputs(job,cfg)
+        from banana_mv.python_slots import refresh_stale_timed_plan
+        refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
+        if rebuild_prompt:
+            app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader',
+                                          'inputs':{'clip_name':cfg['rewriter']['model']}},
+                               'generate':{'class_type':'TextGenerate','inputs':{}}})
         # Retake with a user's full prompt: verify only media references,
         # not the model's creative vocabulary or arbitrary shot counts.
         from banana_mv.core import normalize_mv_prompt
@@ -254,6 +265,7 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False):
                 take_source(job,i,take['base_take'])
             if i in notes:take['correction']=notes[i]
             if i in overrides:take['manual_prompt']=overrides[i]
+            if rebuild_prompt:take['rebuild_prompt']=True
             seg.setdefault('takes',[]).append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
                    'auto_resume':auto_resume,'takes':{str(i):t['id'] for i,t in batch}})
@@ -356,6 +368,13 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 take['status']='rewriting';app.write_state(job)
                 take['base_prompt_sha256']=hashlib.sha256(prompt.encode()).hexdigest()
                 prompt=repair_prompt(cfg,job,seg,prompt,take['correction'],originals,frame if first else None,dest,prefix=f'{i:02d}_v{take["version"]}_')
+            elif take.get('rebuild_prompt'):
+                take['status']='rewriting';app.write_state(job)
+                candidate=copy.deepcopy(seg)
+                prompt=app.local_prompt(cfg,job['request'],candidate,originals,
+                                        frame if first else None)
+                take['prompt_source']='fresh_9b_from_current_commission'
+                take['prompt_profile']=candidate.get('prompt_profile',{})
             (output('prompt.txt')).write_text(prompt,encoding='utf-8')
             take['status']='generating';app.write_state(job)
             graph=app.build_workflow(job['images_comfy'],name,*job['size'],render_frames,prompt,take['seed'],first,

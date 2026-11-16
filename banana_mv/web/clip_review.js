@@ -20,7 +20,8 @@ function updateClipActions(){
   $('clips-all').disabled=clipView.locked||!clipView.rows.size;
   $('clips-clear').disabled=clipView.locked||!count;
   $('clips-retake').disabled=!clipIdle()||!count;
-  $('clips-retake').textContent=count?`將所選 ${count} 顆丹藥回爐重煉`:'將所選丹藥回爐重煉';
+  const hasNotes=[...clipView.rows.values()].some(row=>row.check.checked&&row.correction.value.trim());
+  $('clips-retake').textContent=count?(hasNotes?`將所選 ${count} 顆丹藥局部修稿回爐`:`將所選 ${count} 顆丹藥重新分析並回爐`):'將所選丹藥回爐重煉';
 }
 function showClipVersion(row){
   const take=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
@@ -137,6 +138,6 @@ $('clips-retake').onclick=()=>{
   if(!clipIdle())return;
   const indices=[...clipView.rows].filter(([,row])=>row.check.checked).map(([i])=>i);
   const instructions=Object.fromEntries(indices.map(i=>[String(i),clipView.rows.get(i).correction.value.trim()]).filter(([,text])=>text));
-  if(indices.length)return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{})});
+  if(indices.length)return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{rebuild_prompt:[5,6].includes(clipView.jobData?.request?.director_schema)&&!!clipView.jobData?.request?.rewrite})});
 };
 if(active){busy(true);poll();}
