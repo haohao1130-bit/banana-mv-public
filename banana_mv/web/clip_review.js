@@ -12,7 +12,11 @@ function updateClipActions(){
   for(const row of clipView.rows.values()){
     row.check.disabled=clipView.locked;
     if(row.check.checked)count++;
-    row.use.disabled=!clipIdle()||!row.segment.preview||row.select.value===(row.segment.pending_take||row.segment.selected_take);
+    const emergency=clipView.jobData?.request?.director_schema===6
+      &&['chain','chain5'].includes(clipView.jobData?.request?.mode)
+      &&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
+    const official=emergency?row.segment.selected_take:(row.segment.pending_take||row.segment.selected_take);
+    row.use.disabled=!clipIdle()||!row.segment.preview||row.select.value===official;
     const differentTake=row.select.value&&row.select.value!==row.segment.selected_take;
     const restart=clipView.jobData?.continuation_restart;
     const adoptedRestart=restart?.index===row.index&&restart.take===row.select.value;
