@@ -1116,10 +1116,23 @@ def resume(job_id,rewrite_retries=None):
     # "Continue" must start the 9B+H3 branch from its next clip, not the
     # ordinary legacy resumer that skips done clips and can reuse old prompts.
     prior=read_state(job_id)
+    stopped=prior.get('status') in ('error','cancelled','interrupted')
+    local_chain=(is_continuation(prior['request']['mode'])
+                 and prior['request'].get('director_schema')==6)
     restart=prior.get('continuation_restart')
-    if (restart and prior.get('status') in ('error','cancelled','interrupted')
-            and is_continuation(prior['request']['mode'])
-            and prior['request'].get('director_schema')==6):
+    if stopped and local_chain and not restart:
+        # Migration: an older 5070 build treated "選用此丹" as pending.
+        # Before continuing, adopt that explicit user choice instead of
+        # accidentally taking an old selected_take or reusing old prompts.
+        pending=prior.get('pending_takes') or {}
+        if pending:
+            if len(pending)!=1:
+                raise ValueError('停爐專案有多個待採用丹藥，請逐段選用正式版本後再續拍。')
+            from banana_mv.takes import select_take
+            key, chosen=next(iter(pending.items()))
+            prior=select_take(job_id,int(key),chosen)
+            restart=prior.get('continuation_restart')
+    if restart and stopped and local_chain:
         from banana_mv.takes import continue_from_take
         return continue_from_take(job_id,restart['index'],restart['take'],
                                   'cascade',rewrite_retries=retries)
