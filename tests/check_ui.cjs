@@ -205,19 +205,19 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['clips-retake'].disabled,true);assert.equal(rows[1].check.disabled,false);
   assert.equal(els['clip-list'].children[1].children[1],rows[1].video);assert.equal(rows[1].check.checked,true);
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);await els['clips-retake'].onclick();
-  assert.deepEqual(retakes,[{id:'review123',indices:[1,2]}]);
+  assert.deepEqual(retakes,[{id:'review123',indices:[1,2],previous_takes:{'1':'original'}}]);
   rows[1].correction.value='只把手部操作拍清楚';rows[1].correction.oninput();
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(rows[1].correction.value,'只把手部操作拍清楚');
   assert.equal(els['clip-list'].children[1].children[1],rows[1].video);
   await els['clips-retake'].onclick();
-  assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'}});
+  assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'},previous_takes:{'1':'original'}});
   // New one-clip prompt workbench: do not queue H3 when asking 9B to recompose.
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(rows[1].rewriteButton.disabled,false);
   assert(rows[1].promptEditor.value.includes('Original H3 prompt'));
   await rows[1].rewriteButton.onclick();
-  assert.deepEqual(rewrites,[{id:'review123',index:1}]);
+  assert.deepEqual(rewrites,[{id:'review123',index:1,previous_take:'original'}]);
   assert.equal(retakes.length,2,'9B text rewrite does not queue a video retake');
   reviewJob.segments[1].prompt_rewrite={status:'ready',version:1,text:'subject_definitions:\n9B rewritten clip\nsummary:\nClip changed'};
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
@@ -229,7 +229,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(rows[1].renderButton.textContent,'依此提示詞回爐這一段');
   await rows[1].renderButton.onclick();
   assert.deepEqual(retakes.at(-1),{
-    id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'}
+    id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'},previous_takes:{'1':'original'}
   });
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
