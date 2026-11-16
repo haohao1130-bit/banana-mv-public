@@ -224,15 +224,6 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.deepEqual(retakes.at(-1),{
     id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'}
   });
-  // Even the failed/not-yet-generated clip has its own prompt workbench.
-  const missing={id:'failed123',status:'error',request:{mode:'independent'},
-    segments:[{index:0,start:0,seconds:10,status:'waiting',
-      director_plan:{handoff_version:1,event:'A current event'},prompt:''}]};
-  vm.runInContext(`renderClipPreviews(${JSON.stringify(missing)})`,context);
-  const failedRow=vm.runInContext('clipView.rows.get(0)',context);
-  assert(failedRow);assert.equal(failedRow.rewriteButton.disabled,false);
-  assert.equal(failedRow.renderButton.disabled,true,'unfinished footage requires normal resume');
-  vm.runInContext(`active='review123';renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
 
@@ -251,6 +242,15 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
+  // Even the failed/not-yet-generated clip has its own prompt workbench.
+  const missing={id:'failed123',status:'error',request:{mode:'independent'},
+    segments:[{index:0,start:0,seconds:10,status:'waiting',
+      director_plan:{handoff_version:1,event:'A current event'},prompt:''}]};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(missing)})`,context);
+  const failedRow=vm.runInContext('clipView.rows.get(0)',context);
+  assert(failedRow);assert.equal(failedRow.rewriteButton.disabled,false);
+  assert.equal(failedRow.renderButton.disabled,true,'unfinished footage requires normal resume');
+
   // The same form submits either direct rendering or upstream-only planning.
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;
   await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);assert.equal(posts.at(-1).preview_zh,true);
