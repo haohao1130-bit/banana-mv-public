@@ -199,6 +199,47 @@ class LockedShootTests(unittest.TestCase):
             'sub-shot singer timing; do not write those sections yourself.'))
         self.assertIn('sings as the camera tilts up',output)
 
+    def test_repair_9b_gets_own_one_shot_format_contract_not_full_writer(self):
+        calls=[]
+        outputs=[
+            '[Shot 1] <Subject 1> sings while sitting in a hoodie.\n'
+            '[Shot 2] <Subject 2> gestures as the camera tracks left.',
+            '[Shot 1]\n<Subject 1> sings while sitting in a short-sleeve top and shorts.'
+        ]
+        def model(cfg,system,parts,job_id):
+            calls.append({'system':system,'parts':parts})
+            return outputs.pop(0)
+        cfg={'rewriter':{'temperature':.4,'thinking':False}}
+        req={'dynamic_cuts':False,'srt_cues':[
+            {'start':0,'end':5,'text':'[S1] verse'},
+            {'start':5,'end':10,'text':'[S2] verse'}]}
+        seg={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
+        fake_images=[('text','<Picture 1>:'),('image','fake-image-1'),
+                     ('text','<Picture 2>:'),('image','fake-image-2')]
+        film=write_locked_shoot_prompt(
+            cfg,req,seg,'- S1 移動身體，S2 跟著點頭。',
+            'S1 = <Picture 1>\nS2 = <Picture 2>',
+            {'S1':'<Picture 1>','S2':'<Picture 2>'},
+            {'S1':'short-sleeve top and shorts'},
+            ['a','b'],fake_images,model)
+        self.assertEqual(len(calls),2)
+        # First-shot format requirement follows all picture inputs.
+        self.assertEqual(calls[0]['parts'][:-1],fake_images)
+        self.assertEqual(calls[0]['parts'][-1][0],'text')
+        self.assertIn('LOCKED SHOT SLOTS',calls[0]['parts'][-1][1])
+        self.assertIn('CURRENT WARDROBE',calls[0]['parts'][-1][1])
+        self.assertIn('Fill Python-numbered',calls[0]['system'])
+        # Single-shot repair neither sends image placeholders at the end
+        # nor asks the model to generate the full shot list again.
+        self.assertEqual(len(calls[1]['parts']),1)
+        self.assertNotIn('<Picture 1>:',calls[1]['parts'][0][1])
+        self.assertIn('single-shot cinematic EDITOR',calls[1]['system'])
+        self.assertNotIn('Fill Python-numbered',calls[1]['system'])
+        self.assertTrue(calls[1]['parts'][0][1].endswith('[Shot 1]'))
+        self.assertIn('[Shot 1]',film)
+        self.assertIn('[Shot 2] At 00:05.000',film)
+        self.assertEqual(seg['prompt_profile']['writer_calls'],2)
+
     def test_no_lip_sync_assigned_to_terminal_instrumental_tail(self):
         slots=plan_slots(1.208,[],{},False)
         self.assertIn('No assigned visible lip-sync',slots[0]['rows'][0])

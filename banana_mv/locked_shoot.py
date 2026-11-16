@@ -34,6 +34,18 @@ SYSTEM = (
     'Reference-image clothing is subordinate to CURRENT WARDROBE.'
 )
 
+REPAIR_SYSTEM = (
+    'You are a single-shot cinematic EDITOR, not a full scene writer. '
+    'Your task is to correct the existing visual paragraph for exactly ONE '
+    'specified [Shot N] without changing its camera choice, scene or actions. '
+    'Follow the supplied current wardrobe and singer permissions. '
+    'Your entire reply must start with the exact [Shot N] header given at '
+    'the very END of the user request, followed by one corrected cinematic '
+    'paragraph. Never output multiple shots, an explanation, an apology, '
+    'JSON, markdown, or six H3 sections. '
+    'Use <Subject 1> / <Subject 2> for actors and keep correct lip-sync.'
+)
+
 def singer_rows(a,b,cues):
     edges={a,b}
     for cue in cues:
@@ -301,17 +313,19 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
         req,segment,event,pictures,wardrobe,slots,continuity=len(refs)>2)
     images_parts=images
     calls=0
-    def call(parts,t):
+    def call(parts,t,system=SYSTEM):
         nonlocal calls
         calls+=1
         if progress:
             progress({'stage':'rewriting','clip_index':segment['index'],'attempt':calls,'max_attempts':1+2*len(slots)})
-        return rewrite(_cfg(cfg,t),SYSTEM,parts,uuid.uuid4().hex[:8])
+        return rewrite(_cfg(cfg,t),system,parts,uuid.uuid4().hex[:8])
     blocks=None;why=''
     for attempt in range(3):
         prompt=task if not why else task+'\nFORMAT REPAIR: '+why+'\nReturn every [Shot N] exactly once.'
         try:
-            blocks=_extract(call([('text',prompt)]+images_parts,.4 if attempt==0 else .15),slots)
+            # Show reference images first. The FINAL input the model reads is
+            # the exact output contract, not a dangling image marker.
+            blocks=_extract(call(images_parts+[('text',prompt)],.4 if attempt==0 else .15),slots)
             break
         except ValueError as error:
             why=str(error)
@@ -327,15 +341,24 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
             raise SceneStateError('9B 兩次局部修稿仍有衝突：'+' | '.join(segment['commission_guard_errors']))
         for number,messages in errors.items():
             s=slots[number-1]
-            instruction=(f'REPAIR ONLY [Shot {number}] within {s["start"]:.3f}–{s["end"]:.3f}s. '
-                         'Any singing must use only the authorized performer in this shot. '
-                         'Do not write any <Picture N> tags in acting prose. '
-                         'Retain the camera, location and physical performance. '
-                         'CURRENT WARDROBE: '+repr(wardrobe)+'\nERRORS:\n'+'\n'.join(messages)+
-                         '\nPrevious body:\n'+blocks[number]+
-                         f'\nOutput ONLY [Shot {number}] corrected visual body.')
+            instruction=(
+                f'REPAIR ONE SHOT ONLY: [Shot {number}] '
+                f'({slot["start"]:.3f}–{slot["end"]:.3f}s, clip-local).\n'
+                'PYTHON-AUTHORIZED VOCALS:\n' + '\n'.join(slot['rows']) +
+                '\nCURRENT WARDROBE: ' + repr(wardrobe) +
+                '\nCONCRETE ERRORS TO FIX (no other edits):\n' +
+                '\n'.join(messages) +
+                '\nORIGINAL VISUAL PARAGRAPH TO EDIT:\n' + blocks[number] +
+                '\nKeep its camera framing, movement, staging, lighting and '
+                'valid singing. Fix only the specified error. '
+                'Return exactly ONE corrected shot, with no surrounding text. '
+                'The very FIRST line of your reply must be the following '
+                'heading written exactly; your next line is the corrected '
+                'cinematic visual paragraph:\n' +
+                f'[Shot {number}]'
+            )
             try:
-                blocks[number]=_extract(call([('text',instruction)]+images_parts,.15),slots,only=number)[number]
+                blocks[number]=_extract(call([('text',instruction)],.15,REPAIR_SYSTEM),slots,only=number)[number]
                 blocks,new_fixes=_repair_vocals(blocks,slots,fixed)
                 vocal_fixes.extend(new_fixes)
             except ValueError as error:
