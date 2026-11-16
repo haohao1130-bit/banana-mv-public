@@ -389,6 +389,29 @@ def _adopt_branch_clips(job, choices):
     job['final_stale']=True
 
 
+def postprocess_reassembled_master(job, cfg, originals, song):
+    """The retake/condense assembler must finish like the normal MV worker.
+
+    Only the NEW current master is used for optional face refinement and 1080P.
+    A post-processing failure preserves the finished mother video and is
+    recorded, just as in server.worker.
+    """
+    if job['id'] in app.CANCEL:
+        return
+    if job['request'].get('face_refine'):
+        from banana_mv import face_refine
+        try:
+            parts=[take_source(job,i) for i in range(len(job['segments']))]
+            face_refine.render_version(
+                app, cfg, job, parts, originals, song,
+                **({'effects':app.effects_source(job)} if job.get('effects_mix') else {}))
+        except Exception as error:
+            job['face_refine_error']=str(error)
+    if job['request'].get('upscale_1080p') and job['id'] not in app.CANCEL:
+        from banana_mv import nv_upscale
+        nv_upscale.render_version(app,cfg,job)
+
+
 def _branch_finish(job, choices, song, cfg, originals, drive):
     """Finish one of two user-selected continuation semantics under GPU lock.
 
@@ -397,6 +420,7 @@ def _branch_finish(job, choices, song, cfg, originals, drive):
     complete=all(s.get('status')=='done' for s in job['segments'])
     if complete:
         apply_takes(job,choices,song)
+        postprocess_reassembled_master(job,cfg,originals,song)
         job['status']='done'
         job['retake']['status']='done'
         for i in choices:job.setdefault('pending_takes',{}).pop(str(i),None)
@@ -827,21 +851,22 @@ def condense(job_id,revision=None):
             if not app.valid_part(take_source(job,i,t),seg,job['size']):raise ValueError('待採用毛片無效，請重新選丹。')
         if not all(seg.get('status')=='done' and app.valid_part(take_source(job,i),seg,job['size']) for i,seg in enumerate(job['segments'])):
             raise ValueError('尚有未完成片段，請先續跑完成，再確認凝丹。')
-        _,song,_=app.project_inputs(job,cfg);old_status=job['status']
+        originals,song,_=app.project_inputs(job,cfg);old_status=job['status']
         job.update(status='assembling',retake={'indices':sorted(choices),'status':'selecting','operation':'condense'},resumed=time.time())
         app.write_state(job)
-        try:threading.Thread(target=selection_worker,args=(job,choices,song,old_status),daemon=True).start()
+        try:threading.Thread(target=selection_worker,args=(job,choices,song,old_status,cfg,originals),daemon=True).start()
         except Exception:
             job['status']=old_status;app.write_state(job);raise
         return describe(job)
     except Exception:app.GPU_LOCK.release();raise
 
 
-def selection_worker(job,choices,song,old_status):
+def selection_worker(job,choices,song,old_status,cfg,originals):
     try:
         complete=apply_takes(job,choices,song)
         if not complete:raise ValueError('片段尚未齊全，保留待採用選擇。')
         job['pending_takes']={};job['selection_revision']=uuid.uuid4().hex
+        postprocess_reassembled_master(job,cfg,originals,song)
         job['status']='done';job['retake']['status']='done'
     except Exception as e:
         job['status']=old_status;job['retake'].update(status='error',error=str(e))
