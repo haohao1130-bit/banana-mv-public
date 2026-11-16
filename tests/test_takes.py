@@ -168,16 +168,20 @@ class TakeTests(unittest.TestCase):
         for i in range(4):self.assertEqual((self.work/f'{i:02d}_part.mp4').read_bytes(),f'old{i}'.encode())
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
-    def test_stop_keeps_completed_take_and_does_not_queue_remaining(self):
+    def test_stop_discards_current_even_if_comfy_returns_video_and_skips_remaining(self):
         def stop(*a):
             app.CANCEL.add(self.job['id'])
+            # The user pressed STOP while rendering: even a just-returned
+            # video must not become a ready candidate or replace the old one.
             return {'outputs':{'x':{'videos':[{'filename':'out.mp4'}]}}}
         app.wait_generation.side_effect=stop
         takes.retake(self.job['id'],[1,2]);job=self.run_background()
         self.assertEqual(app.backend.queue_prompt.call_count,1)
-        self.assertEqual(job['segments'][1]['takes'][-1]['status'],'ready')
+        self.assertEqual(job['retake']['status'],'cancelled')
+        self.assertEqual(job['segments'][1]['takes'][-1]['status'],'cancelled')
         self.assertEqual(job['segments'][2]['takes'][-1]['status'],'cancelled')
         self.assertEqual((self.work/'01_part.mp4').read_bytes(),b'old1')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
     def test_chain_selected_neighbors_use_new_previous_take(self):
         self.job['request']['mode']='chain';app.write_state(self.job)

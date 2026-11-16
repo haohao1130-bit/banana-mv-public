@@ -106,6 +106,7 @@ function renderClipPreviews(job){
     clipView.handled=stamp;
   }
   $('clip-review-status').textContent=batch?.status==='error'?`回爐未完成：${batch.error} 原版保留；已完成新版可在版本選單預覽、選用；確認凝丹才更新成片。`:
+    batch?.status==='cancelled'?'緊急停爐成功：目前未完成的候選已取消；舊片、先前完成的段落和候選都保留。可改丹方再回爐。':
     batch?.status==='done'?(batch.operation==='condense'?'凝丹完成，已另存完整新版。':'回爐完成，請逐顆預覽、選用，再確認凝丹。'):job.status==='retaking'?`回爐中：已完成 ${batch?.completed||0}／${batch?.indices?.length||0} 顆；完成後只存候選，不自動合成。`:
     job.status==='assembling'?'正在重新合成所選丹藥…':clipIdle()?'勾選需要重煉的丹藥，或選擇版本預覽與選用，再確認凝丹。':'可先預覽；請待這爐完成或停止後再回爐。';
   updateClipActions();
