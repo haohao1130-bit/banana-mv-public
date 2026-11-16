@@ -318,6 +318,26 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
 
 
 
+
+def _lineage(job,index,take_id):
+    """Get immutable generated-parent dependencies of a selected Take."""
+    chosen={index:take_id}
+    while index>0:
+        current=chosen[index]
+        row=next((t for t in segment(job,index).get('takes',[]) if t['id']==current),None)
+        parent=row.get('previous_take') if row else None
+        if parent is None:
+            break  # Legacy video: no recorded version dependency.
+        selected=segment(job,index-1).get('selected_take','original')
+        chosen[index-1]=parent
+        take_source(job,index-1,parent)
+        index-=1
+        if parent==selected:
+            # Still inspect older recorded links: these Takes may themselves be
+            # chained from a changed ancestor.
+            continue
+    return chosen
+
 def _adopt_branch_clips(job, choices):
     """Adopt only ready immutable Takes for an unfinished project.
 
@@ -421,9 +441,12 @@ def continue_from_take(job_id, index, take_id, mode):
             raise ValueError('選取版本的影片無效，原片保留。')
         if any(s.get('status')!='done' for s in job['segments'][:index]):
             raise ValueError('前面仍有未完成片段，不能從這段繼續接拍。')
-        others=[k for k in job.get('pending_takes',{}) if k!=str(index)]
-        if others:
-            raise ValueError('尚有其他段的待採用版本，請先確認或取消那些選擇。')
+        lineage=_lineage(job,index,take_id)
+        other_pending=[k for k,v in job.get('pending_takes',{}).items()
+                       if int(k)>=index or (int(k) in lineage and lineage[int(k)]!=v)
+                       or (int(k)<index and int(k) not in lineage)]
+        if other_pending:
+            raise ValueError('尚有與本次接續鏈不一致的待採用版本，請先確認或取消那些選擇。')
         if mode=='cascade' and not app.is_continuation(job['request']['mode']):
             raise ValueError('新版尾幀接拍只適用於末幀／末五幀接續模式。')
         done_after=[i for i in range(index+1,len(job['segments']))
@@ -449,7 +472,8 @@ def continue_from_take(job_id, index, take_id, mode):
         app.preflight_five_frame(cfg,job['request'],job['images_comfy'],job['size'],first,job['seed'])
         old_status=job['status']
         job['retake']={'indices':[index], 'status':'running', 'operation':'continue_branch',
-                       'branch':{'index':index,'take':take_id,'mode':mode},
+                       'branch':{'index':index,'take':take_id,'mode':mode,
+                                 'lineage':{str(i):t for i,t in lineage.items()}},
                        'completed':0}
         if mode=='cascade' and done_after:
             archive_original(job,index)
@@ -464,7 +488,7 @@ def continue_from_take(job_id, index, take_id, mode):
                        'seed':random.randrange(2**48),'created':time.time(),
                        'status':'waiting','rebuild_prompt':True}
                 child['takes'].append(taken);batch.append((i,taken))
-            job.setdefault('pending_takes',{})[str(index)]=take_id
+            job.setdefault('pending_takes',{}).update({str(i):t for i,t in lineage.items()})
             job['retake'].update(indices=done_after,takes={str(i):t['id'] for i,t in batch})
             job.update(status='retaking',resumed=time.time())
             app.CANCEL.discard(job_id);app.write_state(job)
@@ -475,7 +499,7 @@ def continue_from_take(job_id, index, take_id, mode):
             job.update(status='assembling',resumed=time.time())
             app.CANCEL.discard(job_id);app.write_state(job)
             threading.Thread(target=_branch_direct_worker,
-                             args=(job,{index:take_id},song,cfg,originals,drive,old_status),
+                             args=(job,lineage,song,cfg,originals,drive,old_status),
                              daemon=True).start()
         handed_off=True
         return describe(job)
@@ -493,6 +517,13 @@ def apply_takes(job,choices,song):
     complete=all(s.get('status')=='done' for s in job['segments'])
     try:
         for i,seg in enumerate(job['segments']):
+            selected=choices.get(i,seg.get('selected_take','original'))
+            row=next((t for t in seg.get('takes',[]) if t['id']==selected),None)
+            if i and row and row.get('previous_take'):
+                parent=choices.get(i-1,segment(job,i-1).get('selected_take','original'))
+                if parent!=row['previous_take']:
+                    raise ValueError(f'第 {i+1} 段接續版本需要第 {i} 段 Take '
+                                     +row['previous_take']+'，凝丹選擇不一致。')
             source=take_source(job,i,choices.get(i,'current'))
             if not app.valid_part(source,seg,job['size']):raise ValueError('毛片驗證失敗，保留原版。')
             chosen=choices.get(i,seg.get('selected_take','original'))
@@ -626,7 +657,8 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
         branch=job['retake'].get('branch')
         if branch and branch['mode']=='cascade':
             try:
-                selected={int(branch['index']):branch['take'],**choices}
+                selected={int(i):v for i,v in branch.get('lineage',{}).items()}
+                selected.update(choices)
                 handoff=_branch_finish(job,selected,song,cfg,originals,drive)
             except Exception as error:
                 job['retake'].update(status='error',error='接拍交接失敗：'+str(error))
