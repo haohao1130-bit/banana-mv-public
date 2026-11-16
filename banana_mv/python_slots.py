@@ -449,7 +449,7 @@ def ensure_python_slot_plan(req, segments, originals, work):
     if authored_cues:
         allocated = allocate_authored_cues(chapters, segments)
     elif timed is not None:
-        allocated = allocate_timed_chapters(chapters, segments, commission)
+        allocated = allocate_timed_chapters(chapters, segments, commission, req.get('srt_cues'))
     elif counts is not None:
         for chapter, slots in zip(chapters, counts):
             for j in range(slots):
