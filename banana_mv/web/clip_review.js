@@ -252,4 +252,5 @@ $('clips-retake').onclick=()=>{
       ...(fresh?{rebuild_prompt:true}:{})});
   }
 };
-if(active){busy(true);poll();}
+// Only resume an open page within the same server instance; restarts show a clean furnace.
+void restoreActiveProjectOnSameServer();
