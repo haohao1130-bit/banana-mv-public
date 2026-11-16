@@ -1251,7 +1251,7 @@ class Handler(WebHandler):
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False),body.get('rebuild_prompt',False)))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False),body.get('rebuild_prompt',False),body.get('previous_takes')))
             if path=='/api/mv/continue-branch':
                 from banana_mv.takes import continue_from_take
                 body=self.body_json()
