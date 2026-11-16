@@ -26,12 +26,18 @@ const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='5';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
 const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[],branches=[];let reviewJob;const approvals=[];let recipeOpened=false;
 let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
+let serverInstance='mv-service-a',restartRequestInstance='mv-service-a',reloadCount=0;
+const storage=new Map(),restartRequests=[];
 const intervals=[];
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
-  URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
-  setTimeout:()=>0,clearTimeout:()=>{},setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
+  URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},
+  localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,v)=>storage.set(key,String(v)),removeItem:key=>storage.delete(key)},
+  window:{confirm:()=>true,location:{reload:()=>{reloadCount++;}}},
+  setTimeout:(fn,ms)=>{if(ms===2000)fn();return 0;},clearTimeout:()=>{},setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
     if(url==='api/mv/restart-capability')return restartState;
+    if(url==='api/health')return {service:'banana-mv',instance:serverInstance};
+    if(url==='api/mv/restart'){restartRequests.push(JSON.parse(options.body));return {ok:true,instance:restartRequestInstance,restarting:true};}
     if(url==='api/upload'){uploads.push(options.body.name);return {id:options.body.name};}
     if(url==='api/mv/start'){const body=JSON.parse(options.body);posts.push(body);return {id:body.plan_review?'recipe123':'abcd'};}
     if(url==='api/mv/open-furnace'){approvals.push(JSON.parse(options.body));recipeOpened=true;return {id:'recipe123',status:'running'};}
@@ -427,7 +433,37 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   await els['approve-recipe'].onclick();assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
   assert.equal(els['recipe-review'].hidden,true);await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
   vm.runInContext('busy(false)',context);
-  console.log('UI checks passed: image mentions with thumbnails, caret insertion, keyboard/IME, fixed slots, saved references, chain limits, prompt review and retakes.');
+  // The same browser/server instance may restore its selected project on F5.
+  await vm.runInContext('restoreActiveProjectOnSameServer()',context);
+  storage.set('banana_mv_job','saved123');
+  await vm.runInContext('restoreActiveProjectOnSameServer()',context);
+  assert.equal(vm.runInContext('active',context),'saved123');
+  assert.equal(storage.get('banana_mv_job'),'saved123');
+  assert.equal(storage.get('banana_mv_instance'),'mv-service-a');
+
+  // A new service instance is a NEW furnace; the old project stays saved on
+  // disk and remains explicitly openable, but must not appear by itself.
+  serverInstance='mv-service-b';
+  await vm.runInContext('restoreActiveProjectOnSameServer()',context);
+  assert.equal(vm.runInContext('active',context),null);
+  assert.equal(storage.has('banana_mv_job'),false);
+  assert.equal(storage.get('banana_mv_instance'),'mv-service-b');
+  await vm.runInContext("openProject('saved123')",context);
+  assert.equal(storage.get('banana_mv_job'),'saved123');
+
+  // The actual reboot button must clear remembered selection ONLY AFTER
+  // server health confirms that a new instance is online.
+  restartState={available:true,busy:false,reason:''};
+  els['restart-5070'].disabled=false;
+  restartRequestInstance='mv-service-b';
+  serverInstance='mv-service-c';
+  await els['restart-5070'].onclick();
+  assert.deepEqual(restartRequests,[{confirm:'restart-5070'}]);
+  assert.equal(reloadCount,1);
+  assert.equal(storage.has('banana_mv_job'),false);
+  assert.equal(storage.get('banana_mv_instance'),'mv-service-c');
+  assert.equal(vm.runInContext('active',context),null);
+    console.log('UI checks passed: image mentions with thumbnails, caret insertion, keyboard/IME, fixed slots, saved references, chain limits, prompt review and retakes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
 
