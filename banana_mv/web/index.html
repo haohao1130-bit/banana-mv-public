@@ -441,7 +441,50 @@ function renderEventPlan(j){
    ...rows.map(s=>`${s.index+1}. ${s.director_plan.mode}\n${manual?originalRefs(s.director_plan.event):s.director_plan.event}`)
  ].filter(Boolean).join('\n\n');
 }
-function renderProgress(j){const segments=j.segments||[],done=segments.filter(s=>s.status==='done').length,total=segments.length;$('progress').max=Math.max(1,total);$('progress').value=done;$('progress-label').textContent=`整體完成 ${done}／${total} 段`+(total?`（${Math.round(done/total*100)}%）`:'');const ended=['done','error','cancelled','interrupted','plan_ready'].includes(j.status);$('current-activity').hidden=ended;if(ended){$('activity-text').textContent='';return;}const stages={preparing:'裁切音訊',rewriting:'9B 當段自動導演',generating:'影片採樣'};const index=segments.findIndex(s=>stages[s.status]);let text=j.status==='retaking'?`所選丹藥回爐中 · 已完成 ${j.retake?.completed||0}／${j.retake?.indices?.length||0} 顆` :j.status==='translating_review'?`正在翻譯繁中丹方 ${j.translation_progress?.done||0}／${j.translation_progress?.total||0}（僅供審閱）…`:j.status==='analyzing_audio'?'正在分析整首音樂…':j.status==='planning_story'?'9B 正在規劃全曲事件…':j.status==='planning_state'?'正在接續全曲角色、場景與事件狀態…':j.status==='assembling'?'片段已完成，正在合成原曲與影片…':index>=0?`第 ${index+1}／${total} 段 · ${stages[segments[index].status]}中…`:'任務處理中…';if(index>=0&&segments[index].status==='generating'&&j.status==='running')text+=' 本段完成後更新整體進度。';$('activity-text').textContent=text;}
+function renderProgress(j){
+ const segments=j.segments||[],total=segments.length;
+ const active=j.continuation_generation;
+ const branch=j.retake?.branch?.mode==='cascade'&&active;
+ const stages={preparing:'準備當段素材',rewriting:'9B 重新編寫當段丹方',generating:'H3 影片生成'};
+ const ended=['done','error','cancelled','interrupted','plan_ready'].includes(j.status);
+ if(branch){
+   const start=active.from_index,finished=segments.slice(start).filter(seg=>seg.status==='done').length;
+   const completed=j.status==='retaking'?Math.max(finished,j.retake?.completed||0):finished;
+   const current=Number.isInteger(j.retake?.current)&&j.status==='retaking'
+      ?j.retake.current:Math.max(start,segments.findIndex((seg,i)=>i>=start&&seg.status!=='done'));
+   const index=Math.min(total-1,Math.max(start,current));
+   const clip=segments[index]||{};
+   const takeId=j.retake?.takes?.[String(index)];
+   const candidate=clip.takes?.find(t=>t.id===takeId);
+   const stage=candidate?.status==='rewriting'?'rewriting'
+     :candidate?.status==='generating'?'generating'
+     :clip.status;
+   $('progress').max=Math.max(1,total);
+   $('progress').value=Math.min(total,start+completed);
+   $('progress-label').textContent=`從第 ${active.anchor_index+1} 段 V${active.anchor_version} 接續｜第 ${start+1}～${total} 段重新生成 · 本次完成 ${completed}／${active.total} 段`;
+   $('current-activity').hidden=ended;
+   if(ended){$('activity-text').textContent='';return;}
+   $('activity-text').textContent=j.status==='assembling'?'全新接續片段完成，正在合成影片…':
+      `第 ${index+1}／${total} 段 · ${stages[stage]||'重新取得最新尾幀並準備當段 9B 丹方'}中…`;
+   return;
+ }
+ const done=segments.filter(seg=>seg.status==='done').length;
+ $('progress').max=Math.max(1,total);
+ $('progress').value=done;
+ $('progress-label').textContent=`整體完成 ${done}／${total} 段`+(total?`（${Math.round(done/total*100)}%）`:'');
+ $('current-activity').hidden=ended;
+ if(ended){$('activity-text').textContent='';return;}
+ const index=segments.findIndex(seg=>stages[seg.status]);
+ let text=j.status==='retaking'?`所選丹藥回爐中 · 已完成 ${j.retake?.completed||0}／${j.retake?.indices?.length||0} 顆`
+   :j.status==='translating_review'?`正在翻譯繁中丹方 ${j.translation_progress?.done||0}／${j.translation_progress?.total||0}（僅供審閱）…`
+   :j.status==='analyzing_audio'?'正在分析整首音樂…'
+   :j.status==='planning_story'?'9B 正在規劃全曲事件…'
+   :j.status==='planning_state'?'正在接續全曲角色、場景與事件狀態…'
+   :j.status==='assembling'?'片段已完成，正在合成原曲與影片…'
+   :index>=0?`第 ${index+1}／${total} 段 · ${stages[segments[index].status]}中…`:'任務處理中…';
+ if(index>=0&&segments[index].status==='generating'&&j.status==='running')text+=' 本段完成後更新整體進度。';
+ $('activity-text').textContent=text;
+}
 function showSelectedPrompt(){const i=Number($('prompt-segment').value),segment=promptView.segments[i];const text=typeof segment?.prompt==='string'?segment.prompt:'';renderSceneDebug(segment);if($('rewritten-prompt').value!==text){$('rewritten-prompt').value=text;$('copy-feedback').textContent='';}$('copy-prompt').disabled=!text.trim();$('prompt-note').textContent=text?`第 ${i+1} 段 · 最後實際送入 H3 的版本（含角色身分與音訊規則）`:'這段尚未完成提示詞改寫。';}
 function renderPrompts(j){const job=j.id||active||'unknown';if(promptView.job!==job){promptView.job=job;promptView.index=null;promptView.manual=false;promptView.signature='';}const segments=j.segments||[];promptView.segments=segments;const ready=segments.map((s,i)=>typeof s.prompt==='string'&&s.prompt.trim()?i:-1).filter(i=>i>=0);const signature=segments.map((s,i)=>`${i}:${typeof s.prompt==='string'&&s.prompt.trim()?'ready':'waiting'}`).join('|');if(signature!==promptView.signature||!segments.length){$('prompt-segment').replaceChildren();for(let i=0;i<segments.length;i++){const option=document.createElement('option');option.value=String(i);option.textContent=`第 ${i+1} 段 · ${segments[i].prompt?'已有提示詞':'等待導演交稿'}`;$('prompt-segment').append(option);}promptView.signature=signature;}$('prompt-segment').disabled=!segments.length;if(!promptView.manual||promptView.index===null||promptView.index>=segments.length)promptView.index=ready.length?ready[ready.length-1]:0;$('prompt-segment').value=segments.length?String(promptView.index):'';showSelectedPrompt();}
 $('prompt-segment').onchange=()=>{promptView.manual=true;promptView.index=Number($('prompt-segment').value);showSelectedPrompt();};
