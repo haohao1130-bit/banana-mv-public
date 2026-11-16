@@ -8,7 +8,8 @@ function updateClipActions(){
     if(row.check.checked)count++;
     row.use.disabled=!clipIdle()||!row.segment.preview||row.select.value===(row.segment.pending_take||row.segment.selected_take);
     row.rewriteButton.disabled=!clipIdle()||!row.segment.director_plan||row.segment.prompt_rewrite?.status==='running';
-    row.renderButton.disabled=!clipIdle()||!row.segment.preview||!row.promptEditor.value.trim();
+    const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
+    row.renderButton.disabled=!clipIdle()||(!row.segment.preview&&!firstRender)||!row.promptEditor.value.trim();
     row.correction.disabled=clipView.locked||['retaking','assembling','refining_faces'].includes(clipView.jobData?.status);
   }
   const pending=Object.keys(clipView.jobData?.pending_takes||{}).length;
@@ -22,7 +23,7 @@ function updateClipActions(){
 function showClipVersion(row){
   const take=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
-  row.note.textContent=take?`V${take.version||1} · ${take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):(row.segment.preview?'':'這段尚無毛片，可先重配提示詞；完成前請使用原專案續跑。');
+  row.note.textContent=take?`V${take.version||1} · ${take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
   updateClipActions();
 }
 function renderClipPreviews(job){

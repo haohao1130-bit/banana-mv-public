@@ -204,11 +204,19 @@ def retake(job_id,indices,instructions=None,prompts=None):
                 raise ValueError('局部修改需要本地 9B 與原生指南，請先完成 Colab 模型下載。')
             app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
                                'generate':{'class_type':'TextGenerate','inputs':{}}})
+        first_takes=set()
         for i in indices:
             seg=segment(job,i)
-            if not app.valid_part(take_source(job,i),seg,job['size']):raise ValueError('選取段落缺少有效毛片，請先續跑完成。')
-            saved=app.job_dir(job_id)/f'{i:02d}_prompt.txt'
-            if not (seg.get('prompt') or saved.is_file()):raise ValueError('缺少原段落提示詞，無法保留劇本重拍。')
+            # A failed 9B step can leave a planned clip with no first video.
+            # A user-supplied full H3 prompt can film it as version 1.
+            if seg.get('status')!='done' and not seg.get('takes') and i in overrides:
+                first_takes.add(i)
+            else:
+                if not app.valid_part(take_source(job,i),seg,job['size']):
+                    raise ValueError('選取段落缺少有效毛片，請先提供本段完整手動提示詞。')
+                saved=app.job_dir(job_id)/f'{i:02d}_prompt.txt'
+                if not (seg.get('prompt') or saved.is_file()):
+                    raise ValueError('缺少原段落提示詞，無法保留劇本重拍。')
             if app.is_continuation(job['request']['mode']) and i>0:take_source(job,i-1)
         originals,song,drive=app.project_inputs(job,cfg)
         # Retake with a user's full prompt: verify only media references,
@@ -225,18 +233,22 @@ def retake(job_id,indices,instructions=None,prompts=None):
         app.preflight_five_frame(cfg,job['request'],job['images_comfy'],job['size'],first,job['seed'])
         old_status=job['status'];batch=[]
         for i in indices:
-            archive_original(job,i);seg=segment(job,i)
-            seeds={t['seed'] for t in seg['takes']};seed=random.randrange(2**48)
+            seg=segment(job,i)
+            if i not in first_takes:archive_original(job,i)
+            seeds={t['seed'] for t in seg.get('takes',[])};seed=random.randrange(2**48)
             while seed in seeds:seed=random.randrange(2**48)
             disk_versions=[int(m[1]) for p in app.job_dir(job_id).glob(f'{i:02d}_*_v*.*')
                            if (m:=re.search(r'_v(\d+)\.',p.name))]
-            version=max(disk_versions+[t.get('version',n) for n,t in enumerate(seg['takes'],1)])+1
+            version=max(disk_versions+[t.get('version',n) for n,t in enumerate(seg.get('takes',[]),1)]+[0])+1
             take={'id':uuid.uuid4().hex[:12],'version':version,'seed':seed,'created':time.time(),'status':'waiting'}
-            take['base_take']=job.get('pending_takes',{}).get(str(i),seg.get('selected_take','original'))
-            take_source(job,i,take['base_take'])
+            if i in first_takes:
+                take['first_render']=True
+            else:
+                take['base_take']=job.get('pending_takes',{}).get(str(i),seg.get('selected_take','original'))
+                take_source(job,i,take['base_take'])
             if i in notes:take['correction']=notes[i]
             if i in overrides:take['manual_prompt']=overrides[i]
-            seg['takes'].append(take);batch.append((i,take))
+            seg.setdefault('takes',[]).append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
                    'takes':{str(i):t['id'] for i,t in batch}})
         app.CANCEL.discard(job_id);app.write_state(job)
@@ -298,9 +310,12 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
             current=take;seg=segment(job,i);dest=work
             def output(name):return take_file(job,i,take['id'],name)
-            base=take.get('base_take',seg.get('selected_take','original'))
-            saved=existing_file(job,i,base,'prompt.txt')
-            prompt=saved.read_text(encoding='utf-8') if saved.is_file() else (seg.get('prompt') or (work/f'{i:02d}_prompt.txt').read_text(encoding='utf-8'))
+            if take.get('first_render'):
+                prompt=seg.get('prompt') or ''
+            else:
+                base=take.get('base_take',seg.get('selected_take','original'))
+                saved=existing_file(job,i,base,'prompt.txt')
+                prompt=saved.read_text(encoding='utf-8') if saved.is_file() else (seg.get('prompt') or (work/f'{i:02d}_prompt.txt').read_text(encoding='utf-8'))
             take['status']='generating';job['retake']['current']=i;app.write_state(job)
             name=f'banana_retake_{job["id"]}_{take["id"]}.wav';inp=Path(cfg['comfy_input_dir'])
             overlap=5 if job['request']['mode']=='chain5' and i>0 else 0
@@ -349,7 +364,16 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             else:
                 app.trim_video(output('raw.mp4'),output('part.mp4'),seg['frames'])
             if not app.valid_part(output('part.mp4'),seg,job['size']):raise ValueError('回爐毛片影格或尺寸不符。')
-            take['status']='ready';choices[i]=take['id'];job['retake']['completed']=len(choices);app.write_state(job)
+            take['status']='ready';choices[i]=take['id']
+            if take.get('first_render'):
+                # The first successful clip has no old film to audition.
+                # Select it as the original version for safe later resume.
+                seg['status']='done'
+                seg['selected_take']=take['id']
+                seg['prompt']=prompt
+                seg['render_seed']=take['seed']
+                seg['prompt_id']=take['prompt_id']
+            job['retake']['completed']=len(choices);app.write_state(job)
         if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
         # Candidates remain separate from adopted parts and the current master.
         job['status']=old_status

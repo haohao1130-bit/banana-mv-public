@@ -48,22 +48,26 @@ REPAIR_SYSTEM = (
 )
 
 def singer_rows(a,b,cues):
+    """Merge adjacent same-singer SRT cues, not per-subtitle vocal rows."""
     edges={a,b}
     for cue in cues:
         x=max(a,float(cue['clip_start']))
         y=min(b,float(cue['clip_end']))
-        if y>x:
-            edges.update((x,y))
-    points=sorted(edges)
-    rows=[]
+        if y>x:edges.update((x,y))
+    points=sorted(edges);intervals=[]
     for x,y in zip(points,points[1:]):
-        if y-x<.001:
-            continue
+        if y-x<.001:continue
         roles=set()
         for cue in cues:
             if float(cue['clip_start'])<=x+.001 and float(cue['clip_end'])>=y-.001:
                 roles.update(r for r in cue.get('subjects',()) if r in ('S1','S2'))
         who=tuple(sorted(roles))
+        if intervals and intervals[-1][2]==who and abs(intervals[-1][1]-x)<.001:
+            intervals[-1]=(intervals[-1][0],y,who)
+        else:
+            intervals.append((x,y,who))
+    rows=[]
+    for x,y,who in intervals:
         if who==('S1',):
             v='<Subject 1> (S1) ONLY lip-syncs; <Subject 2> is silent.'
         elif who==('S2',):
@@ -74,6 +78,22 @@ def singer_rows(a,b,cues):
             v='No assigned visible lip-sync; use physical acting and reaction.'
         rows.append(f'{x:.3f}–{y:.3f}s: '+v)
     return rows
+
+
+def _global_vocal_rows(slots):
+    """Consolidate adjacent matching vocal rows ACROSS visual shot boundaries."""
+    spans=[]
+    for shot in slots:
+        for line in shot['rows']:
+            m=re.match(r'^(\d+\.\d+)–(\d+\.\d+)s: (.+)$',line)
+            if not m:
+                raise ValueError('Unexpected shot vocal row: '+line)
+            start,end,policy=float(m[1]),float(m[2]),m[3]
+            if spans and abs(start-spans[-1][1])<.001 and policy==spans[-1][2]:
+                spans[-1]=(spans[-1][0],end,policy)
+            else:
+                spans.append((start,end,policy))
+    return [f'{a:.3f}–{b:.3f}s: {who}' for a,b,who in spans]
 
 def plan_slots(seconds,cues,evidence=None,dynamic=True):
     duration=round(float(seconds),3)
@@ -231,12 +251,16 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
     for s in slots:
         n=s['number'];start=s['start']
         mark=f'[Shot {n}] ' if n==1 else f'[Shot {n}] At {int(start)//60:02d}:{start%60:06.3f}, '
-        film.append(mark+' '.join(s['rows'])+' '+blocks[n])
+        film.append(mark+blocks[n])
     output='\n\n'.join((
         'subject_definitions:\n'+'\n'.join(definitions),
         'summary:\nThe current event unfolds in '+scene+' through photography and physical character interaction, following existing voices in the original track.',
         'retention_analysis:\n'+'\n'.join(retention),
-        'detailed_description:\nUse the original song from <Audio 1> unchanged (fully_copy). Assigned SRT singer permissions below are authoritative. No added vocals, spoken dialogue, text overlays or subtitles.\n'+'\n'.join(film),
+        'detailed_description:\nUse the original song from <Audio 1> unchanged (fully_copy). '+
+        'SRT VOCAL WINDOWS (clip-local, these are NOT camera cuts):\n'+
+        '\n'.join(_global_vocal_rows(slots))+
+        '\nNo added vocals, spoken dialogue, text overlays or subtitles.\n'+
+        '\n'.join(film),
         'overall_soundscape:\nThe supplied source song plays unchanged.',
         'non_diegetic_music:\nThe supplied source song.'
     ))
@@ -309,14 +333,15 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False)
                 'CURRENT OUTFIT: preserve the already-established outfit in this '
                 'clip opening/current event; do not invent a costume change.')
     lines.extend((
-        'LOCKED SHOT SLOTS — preserve every Shot number and start/end time.',
-        'Python has assigned the exact SRT vocalist in each subinterval. '
-        'Only that vocalist lip-syncs; others may react silently.',
+        'SRT VOCAL WINDOWS — NOT CAMERA CUT POINTS:',
+        *_global_vocal_rows(slots),
+        'LOCKED SHOT SLOTS — preserve the numbered camera slots below.',
+        'Only the singer assigned by the separate SRT vocal windows lip-syncs.',
     ))
     for slot in slots:
         lines.append(
             f'[Shot {slot["number"]}] {slot["start"]:.3f}–{slot["end"]:.3f}s')
-        lines.extend('  VOCAL LOCK: '+row for row in slot['rows'])
+        lines.append('  VOCAL LOCK: follow the single global SRT vocal window list above.')
         lines.append('  FILL VISUALS: camera, expression, body movement, light and reactions.')
     lines.append('')
     lines.append('=== 2. CURRENT EVENT / ESTABLISHED OPENING STATE ===')

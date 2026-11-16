@@ -1,6 +1,6 @@
 """Python-owned singer cuts and 9B visual-only slot tests."""
 import unittest
-from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, write_locked_shoot_prompt
+from banana_mv.locked_shoot import plan_slots, singer_rows, _global_vocal_rows, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, write_locked_shoot_prompt
 
 
 def cue(a,b,*roles):
@@ -25,6 +25,42 @@ class LockedShootTests(unittest.TestCase):
         self.assertIn('0.220–5.000s',full)
         self.assertIn('5.000–9.820s',full)
         self.assertIn('9.820–10.000s',full)
+
+    def test_consecutive_srt_labels_merge_into_single_role_windows(self):
+        cues=[cue(0,.920,'S2'),cue(.920,3.360,'S2'),cue(3.360,3.660,'S2'),
+              cue(3.660,5.400,'S2'),cue(5.400,7.920,'S2'),cue(7.920,10,'S1')]
+        slots=plan_slots(10,cues,{},True)
+        merged=_global_vocal_rows(slots)
+        self.assertEqual(len(merged),2)
+        self.assertIn('0.000–7.920s: <Subject 2> (S2)',merged[0])
+        self.assertIn('7.920–10.000s: <Subject 1> (S1)',merged[1])
+        self.assertNotIn('0.920–3.360s',' '.join(merged))
+        self.assertEqual(len(singer_rows(0,10,cues)),2)
+
+    def test_real_gap_and_duet_break_merging(self):
+        cues=[cue(0,2,'S2'),cue(2,4,'S2'),cue(4.5,6,'S2'),
+              cue(6,8,'S1','S2'),cue(8,10,'S1')]
+        rows=singer_rows(0,10,cues)
+        self.assertEqual(len(rows),5)
+        self.assertIn('0.000–4.000s: <Subject 2>',rows[0])
+        self.assertIn('4.000–4.500s: No assigned',rows[1])
+        self.assertIn('4.500–6.000s: <Subject 2>',rows[2])
+        self.assertIn('6.000–8.000s: <Subject 1> (S1) AND',rows[3])
+        self.assertIn('8.000–10.000s: <Subject 1> (S1) ONLY',rows[4])
+
+    def test_final_h3_prompt_lists_singers_once_separate_from_shots(self):
+        cues=[cue(0,3,'S2'),cue(3,5,'S2'),cue(5,10,'S1')]
+        slots=plan_slots(10,cues,{},False)
+        blocks={i['number']:f'<Subject 2> glances at the screen. Camera dolly shot {i["number"]}.'
+                for i in slots}
+        result=_native(blocks,slots,{'S1':'<Picture 1>','S2':'<Picture 2>'},
+                       {},False,'兩人在室內工作。',2)
+        detail=result.split('detailed_description:',1)[1].split('overall_soundscape:',1)[0]
+        self.assertIn('SRT VOCAL WINDOWS',detail)
+        self.assertEqual(detail.count('ONLY lip-syncs'),2)
+        self.assertIn('[Shot 1]',detail)
+        self.assertIn('[Shot 2]',detail)
+        self.assertNotIn('0.000–3.000s:',detail)
 
     def test_source_only_authorizes_roles_and_python_writes_clothes(self):
         slots=plan_slots(10,[cue(0,5,'S1'),cue(5,10,'S2')],{},False)

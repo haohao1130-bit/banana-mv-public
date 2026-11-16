@@ -249,7 +249,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext(`renderClipPreviews(${JSON.stringify(missing)})`,context);
   const failedRow=vm.runInContext('clipView.rows.get(0)',context);
   assert(failedRow);assert.equal(failedRow.rewriteButton.disabled,false);
-  assert.equal(failedRow.renderButton.disabled,true,'unfinished footage requires normal resume');
+  assert.equal(failedRow.renderButton.disabled,true,'empty prompt cannot render');
+  failedRow.promptEditor.value='subject_definitions:\nMy pasted manual prompt';
+  failedRow.promptEditor.oninput();
+  assert.equal(failedRow.renderButton.disabled,false,'complete pasted prompt can render first version');
 
   // The same form submits either direct rendering or upstream-only planning.
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;

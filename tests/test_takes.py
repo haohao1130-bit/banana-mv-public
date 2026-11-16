@@ -233,6 +233,37 @@ class TakeTests(unittest.TestCase):
         self.assertEqual((self.work/'00_part.mp4').read_bytes(),b'old0')
         self.assertEqual((self.work/'02_part.mp4').read_bytes(),b'old2')
 
+    def test_unfinished_clip_manual_prompt_film_first_version_without_original(self):
+        index=3
+        original=app.read_state(self.job['id'])
+        original['status']='error'
+        original['segments'][index]['status']='waiting'
+        original['segments'][index]['prompt']=''
+        (self.work/'03_part.mp4').unlink()
+        (self.work/'03_prompt.txt').unlink()
+        app.write_state(original)
+        prompt='subject_definitions:\nS1 stays on screen.\ndetailed_description:\n[Shot 1] S1 sings.'
+        result=takes.retake(self.job['id'],[index],prompts={'3':prompt})
+        self.assertEqual(result['retake']['indices'],[index])
+        self.assertEqual(result['segments'][index]['status'],'waiting')
+        output=self.run_background()
+        seg=output['segments'][index]
+        self.assertEqual(output['status'],'error','do not accidentally claim a complete movie')
+        self.assertEqual(seg['status'],'done')
+        self.assertEqual(seg['prompt'],prompt)
+        self.assertEqual(len(seg['takes']),1,'no fictional original take')
+        take=seg['takes'][0]
+        self.assertEqual(take['version'],1)
+        self.assertEqual(take['status'],'ready')
+        self.assertTrue(take['first_render'])
+        self.assertEqual(seg['selected_take'],take['id'])
+        self.assertEqual(takes.take_source(output,index).read_bytes(),b'new')
+        self.assertEqual((self.work/'03_prompt_v1.txt').read_text(encoding='utf-8'),prompt)
+        self.assertEqual((self.work/'00_part.mp4').read_bytes(),b'old0')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        app.backend.rewrite_local.assert_not_called()
+        self.assertEqual(app.backend.queue_prompt.call_count,1)
+
     def test_manual_prompt_keys_and_empty_content_are_rejected(self):
         for prompts in ({'2':'full prompt'},{'1':''},{'1':12},{'1':'x'*50001}):
             with self.subTest(prompts=list(prompts)),self.assertRaises(ValueError):
