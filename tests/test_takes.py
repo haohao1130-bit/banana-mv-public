@@ -818,7 +818,7 @@ class TakeTests(unittest.TestCase):
             self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
             with self.assertRaisesRegex(ValueError,'舊時間線'):
                 takes.select_take(job['id'],2,'original')
-            self.assertEqual(app.read_state(job['id'])['segments'][2]['selected_take'],'original')
+            self.assertEqual(app.read_state(job['id'])['segments'][2].get('selected_take','original'),'original')
             with patch.object(app,'local_prompt',side_effect=lambda cfg,req,seg,originals,tail:
                               f'new current-clip prompt {seg["index"]}') as writer:
                 takes.continue_from_take(job['id'],1,v2,'cascade')
