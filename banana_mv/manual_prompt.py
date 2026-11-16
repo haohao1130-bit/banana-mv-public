@@ -25,6 +25,11 @@ def rewrite_clip(job_id,index,previous_take=None):
     try:
         job=app.read_state(job_id)
         seg=_segment(job,index)
+        restart=job.get('continuation_restart')
+        if (restart and job['request'].get('director_schema')==6
+                and app.is_continuation(job['request']['mode'])
+                and index>restart['index']):
+            raise ValueError('後續是舊時間線，請先從正式採用的新版尾幀續拍，再修改新段落。')
         if job['request'].get('director_schema') not in (5,6) or not job['request'].get('rewrite',True):
             raise ValueError('本功能適用於使用本地 9B 當段導演的作品。')
         if not isinstance(seg.get('director_plan'),dict) or seg['director_plan'].get('handoff_version')!=1:
