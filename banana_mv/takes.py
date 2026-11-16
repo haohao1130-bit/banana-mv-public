@@ -359,7 +359,6 @@ def _branch_finish(job, choices, song, cfg, originals, drive):
     job.pop('error',None);job.pop('error_stage',None)
     app.CANCEL.discard(job['id'])
     app.write_state(job)
-    app.worker(job,cfg,originals,song,drive)
     return True
 
 
@@ -369,6 +368,7 @@ def _branch_direct_worker(job, choices, song, cfg, originals, drive, old_status)
         # _branch_finish calls the standard worker synchronously for incomplete
         # jobs, which releases the GPU lock in its own finally block.
         handoff=_branch_finish(job,choices,song,cfg,originals,drive)
+        if handoff:app.worker(job,cfg,originals,song,drive)
     except Exception as error:
         job['status']=old_status
         job['retake'].update(status='error',error=str(error))
