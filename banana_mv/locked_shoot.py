@@ -21,10 +21,13 @@ VOCAL_ACTION = re.compile(
 )
 PROPS = re.compile(r'泳圈|毛巾|車鑰匙|鑰匙|外出包|背包|吉他|手機|主機|螢幕', re.I)
 SYSTEM = (
-    'Fill Python-numbered [Shot N] slots with camera and acting details. '
-    'Do not write shot timestamps, new lyrics, dialogue, sound effects, '
-    'or six H3 sections. Natural singing and lip-sync are encouraged '
-    'when that performer is authorized by the SRT schedule for this shot. '
+    'You are the MiniMax H3 Ref2VA cinematic prompt rewriter. '
+    'Use the familiar SIX native Ref2VA sections: subject_definitions, summary, '
+    'retention_analysis, detailed_description, overall_soundscape, '
+    'non_diegetic_music. Only invent the visual shot bodies inside '
+    'detailed_description; Python supplies the other fixed fields. '
+    'Do not alter the supplied shot boundaries, identity or SRT singer authority. '
+    'Natural singing and lip-sync are encouraged only when SRT permits. '
     'Never switch performers or invent a duet; silent characters may react. '
     'Python owns exact singer timing and identity. Use only <Subject 1> and '
     '<Subject 2> for the two actors; never use <Picture N> in shot prose. '
@@ -35,15 +38,13 @@ SYSTEM = (
 )
 
 REPAIR_SYSTEM = (
-    'You are a single-shot cinematic EDITOR, not a full scene writer. '
-    'Your task is to correct the existing visual paragraph for exactly ONE '
-    'specified [Shot N] without changing its camera choice, scene or actions. '
-    'Follow the supplied current wardrobe and singer permissions. '
-    'Your entire reply must start with the exact [Shot N] header given at '
-    'the very END of the user request, followed by one corrected cinematic '
-    'paragraph. Never output multiple shots, an explanation, an apology, '
-    'JSON, markdown, or six H3 sections. '
-    'Use <Subject 1> / <Subject 2> for actors and keep correct lip-sync.'
+    'You are the MiniMax H3 Ref2VA prompt rewriter EDITING ONE SHOT. '
+    'Respond in the native six-section Ref2VA format shown in the user request. '
+    'Copy the provided fixed sections without inventing content. '
+    'In detailed_description, output exactly ONE corrected [Shot N] body, '
+    'using that shot number and no other shot. Keep its original cinematic '
+    'action and camera; fix only the listed costume/cast problem. '
+    'Follow the SRT singer permissions. No explanations, apologies or JSON.'
 )
 
 def singer_rows(a,b,cues):
@@ -112,6 +113,7 @@ def plan_slots(seconds,cues,evidence=None,dynamic=True):
 
 def _extract(raw,slots,only=None):
     text=re.sub(r'<think>.*?</think>','',raw,flags=re.I|re.S)
+    native_detail=bool(re.search(r'(?im)^\s*detailed_description\s*:',text))
     if re.search(r'(?im)^detailed_description:',text):
         text=re.split(r'(?im)^detailed_description:',text,maxsplit=1)[1]
         text=re.split(r'(?im)^(?:overall_soundscape|non_diegetic_music):',text,maxsplit=1)[0]
@@ -123,6 +125,11 @@ def _extract(raw,slots,only=None):
         if not block or n in blocks:
             raise ValueError('9B 空鏡頭或重複鏡頭：'+str(n))
         blocks[n]=block
+    # Native Ref2VA rewriters sometimes omit a redundant [Shot 1] on
+    # a one-shot correction. The H3 detailed_description itself then
+    # serves as the body for the single Python-owned slot.
+    if only is not None and not found and native_detail and text.strip():
+        blocks[only]=text.strip()
     expected={only} if only else {s['number'] for s in slots}
     if set(blocks)!=expected:
         raise ValueError('9B 必須填寫這些指定鏡頭：'+repr(sorted(expected))+'；實際：'+repr(sorted(blocks)))
@@ -234,6 +241,45 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
         raise SceneStateError('Python H3 定裝引用了未連接圖片。')
     return output
 
+def _native_output_template(slots,pictures,wardrobe):
+    """Native Ref2VA six-section format that the 9B SFT was trained to write.
+
+    Only shot visual bodies are creative; fixed fields in this example will be
+    authored again by Python for the final H3 generation prompt.
+    """
+    rows=[
+        'subject_definitions:',
+        '<Subject 1> (S1): the same person as '+pictures['S1']+
+        '; present outfit: '+wardrobe.get('S1','current established clothing')+'.',
+        '<Subject 2> (S2): the same person as '+pictures['S2']+
+        '; present outfit: '+wardrobe.get('S2','current established clothing')+'.',
+        '',
+        'summary:',
+        '[reference generation + audio reuse] Film the assigned current clip event.',
+        '',
+        'retention_analysis:',
+        '<Subject 1>: partially_preserved - preserve facial identity; use current outfit.',
+        '<Subject 2>: partially_preserved - preserve facial identity; use current outfit.',
+        '<Audio 1>: fully_copy - the original song and its vocals stay unchanged.',
+        '',
+        'detailed_description:',
+    ]
+    for slot in slots:
+        number=slot['number'];start=slot['start']
+        prefix=(f'[Shot {number}] ' if number==1 else
+                f'[Shot {number}] At {int(start)//60:02d}:{start%60:06.3f}, ')
+        rows.append(prefix+'Write a concrete cinematic paragraph for the assigned action.')
+    rows+=(
+        '',
+        'overall_soundscape:',
+        'The supplied original song remains unchanged.',
+        '',
+        'non_diegetic_music:',
+        'The supplied original song.',
+    )
+    return '\n'.join(rows)
+
+
 def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False):
     """Give 9B the locked facts FIRST, this clip's action SECOND, craft LAST.
 
@@ -299,9 +345,15 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False)
         'Keep the present scene, wardrobe and object state consistent. '
         'Do not repeat completed events, invent future scenes, swap the singer, '
         'create new dialogue/lyrics, or change any locked Shot boundary.',
-        'Return only the numbered [Shot N] visual bodies, one per locked slot. '
-        'Python assembles the six native H3 sections, audio policy and exact '
-        'sub-shot singer timing; do not write those sections yourself.',
+        'Use the native six-section Ref2VA format below as your OUTPUT SHAPE. '
+        'Keep fixed sections unchanged and WRITE ONLY the visual performance '
+        'and camera inside each detailed_description shot. '
+        'Do not copy the words WRITE THIS SHOT into the answer.',
+    ))
+    lines.extend((
+        '',
+        '=== NATIVE H3 REF2VA SIX-SECTION OUTPUT TEMPLATE ===',
+        _native_output_template(slots,pictures,wardrobe),
     ))
     return '\n'.join(lines)
 
@@ -321,7 +373,7 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
         return rewrite(_cfg(cfg,t),system,parts,uuid.uuid4().hex[:8])
     blocks=None;why=''
     for attempt in range(3):
-        prompt=task if not why else task+'\nFORMAT REPAIR: '+why+'\nReturn every [Shot N] exactly once.'
+        prompt=task if not why else task+'\nFORMAT REMINDER: '+why+'\nReturn the exact native six-section Ref2VA structure, with every assigned [Shot N] in detailed_description.'
         try:
             # Show reference images first. The FINAL input the model reads is
             # the exact output contract, not a dangling image marker.
@@ -343,19 +395,19 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
             s=slots[number-1]
             instruction=(
                 f'REPAIR ONE SHOT ONLY: [Shot {number}] '
-                f'({slot["start"]:.3f}–{slot["end"]:.3f}s, clip-local).\n'
-                'PYTHON-AUTHORIZED VOCALS:\n' + '\n'.join(slot['rows']) +
+                f'({s["start"]:.3f}–{s["end"]:.3f}s, clip-local).\n'
+                'PYTHON-AUTHORIZED VOCALS:\n' + '\n'.join(s['rows']) +
                 '\nCURRENT WARDROBE: ' + repr(wardrobe) +
                 '\nCONCRETE ERRORS TO FIX (no other edits):\n' +
                 '\n'.join(messages) +
                 '\nORIGINAL VISUAL PARAGRAPH TO EDIT:\n' + blocks[number] +
                 '\nKeep its camera framing, movement, staging, lighting and '
                 'valid singing. Fix only the specified error. '
-                'Return exactly ONE corrected shot, with no surrounding text. '
-                'The very FIRST line of your reply must be the following '
-                'heading written exactly; your next line is the corrected '
-                'cinematic visual paragraph:\n' +
-                f'[Shot {number}]'
+                'Copy the following H3 native SIX-SECTION structure and '
+                'replace only the detailed_description shot body. '
+                'Keep all other fixed fields and do not add other shots. '
+                'The answer must begin with subject_definitions:\n' +
+                _native_output_template([s],pictures,wardrobe)
             )
             try:
                 blocks[number]=_extract(call([('text',instruction)],.15,REPAIR_SYSTEM),slots,only=number)[number]

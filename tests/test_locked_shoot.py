@@ -1,6 +1,6 @@
 """Python-owned singer cuts and 9B visual-only slot tests."""
 import unittest
-from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, _repair_vocals, _commission_text, write_locked_shoot_prompt
+from banana_mv.locked_shoot import plan_slots, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, write_locked_shoot_prompt
 
 
 def cue(a,b,*roles):
@@ -195,8 +195,10 @@ class LockedShootTests(unittest.TestCase):
         self.assertEqual(len(captured),1)
         self.assertLess(captured[0].index('LOCKED SHOT SLOTS'),
                         captured[0].index('THIS CLIP EVENT'))
-        self.assertTrue(captured[0].rstrip().endswith(
-            'sub-shot singer timing; do not write those sections yourself.'))
+        self.assertIn('subject_definitions:',captured[0])
+        self.assertIn('detailed_description:',captured[0])
+        self.assertIn('overall_soundscape:',captured[0])
+        self.assertTrue(captured[0].rstrip().endswith('The supplied original song.'))
         self.assertIn('sings as the camera tilts up',output)
 
     def test_repair_9b_gets_own_one_shot_format_contract_not_full_writer(self):
@@ -228,17 +230,57 @@ class LockedShootTests(unittest.TestCase):
         self.assertEqual(calls[0]['parts'][-1][0],'text')
         self.assertIn('LOCKED SHOT SLOTS',calls[0]['parts'][-1][1])
         self.assertIn('CURRENT WARDROBE',calls[0]['parts'][-1][1])
-        self.assertIn('Fill Python-numbered',calls[0]['system'])
+        self.assertIn('SIX native Ref2VA sections',calls[0]['system'])
         # Single-shot repair neither sends image placeholders at the end
         # nor asks the model to generate the full shot list again.
         self.assertEqual(len(calls[1]['parts']),1)
         self.assertNotIn('<Picture 1>:',calls[1]['parts'][0][1])
-        self.assertIn('single-shot cinematic EDITOR',calls[1]['system'])
-        self.assertNotIn('Fill Python-numbered',calls[1]['system'])
-        self.assertTrue(calls[1]['parts'][0][1].endswith('[Shot 1]'))
+        self.assertIn('EDITING ONE SHOT',calls[1]['system'])
+        self.assertIn('native six-section Ref2VA format',calls[1]['system'])
+        self.assertIn('detailed_description:',calls[1]['parts'][0][1])
+        self.assertTrue(calls[1]['parts'][0][1].endswith('The supplied original song.'))
         self.assertIn('[Shot 1]',film)
         self.assertIn('[Shot 2] At 00:05.000',film)
         self.assertEqual(seg['prompt_profile']['writer_calls'],2)
+
+    def test_native_h3_six_field_model_reply_is_parsed_without_using_its_unlocked_fields(self):
+        slots=plan_slots(10,[cue(0,5,'S1'),cue(5,10,'S2')],{},False)
+        template=_native_output_template(slots,
+            {'S1':'<Picture 1>','S2':'<Picture 2>'},{})
+        self.assertEqual([x for x in (
+            'subject_definitions:','summary:','retention_analysis:',
+            'detailed_description:','overall_soundscape:',
+            'non_diegetic_music:') if x in template].__len__(),6)
+        native_reply=(
+            'subject_definitions:\nIncorrect invented clothes.\n'
+            'summary:\nWhatever.\nretention_analysis:\nIncorrect clothes.\n'
+            'detailed_description:\n'
+            '[Shot 1] <Subject 1> sings while the camera rises.\n'
+            '[Shot 2] At 00:05.000, <Subject 2> sings as the camera tracks.\n'
+            'overall_soundscape:\nInvented effects.\n'
+            'non_diegetic_music:\nInvented music.')
+        bodies=_extract(native_reply,slots)
+        self.assertEqual(sorted(bodies),[1,2])
+        final=_native(bodies,slots,
+            {'S1':'<Picture 1>','S2':'<Picture 2>'},{},False,
+            '- This clip has its existing event.',2)
+        self.assertNotIn('Incorrect invented clothes',final)
+        self.assertNotIn('Invented music.',final)
+        self.assertIn('<Subject 1> sings',final)
+
+    def test_single_shot_native_detailed_description_without_shot_label(self):
+        slots=plan_slots(10,[cue(0,10,'S1')],{},False)
+        native=('subject_definitions:\nCast.\nsummary:\nPresent clip.\n'
+                'retention_analysis:\nCast from image.\n'
+                'detailed_description:\n<Subject 1> sings while the camera arcs '
+                'around him in a medium shot and catches his expression.\n'
+                'overall_soundscape:\nSource music unchanged.\n'
+                'non_diegetic_music:\nSource track.')
+        body=_extract(native,slots,only=1)
+        self.assertEqual(sorted(body),[1])
+        self.assertIn('camera arcs',body[1])
+        with self.assertRaises(ValueError):
+            _extract('A bare unlabeled paragraph.',slots,only=1)
 
     def test_no_lip_sync_assigned_to_terminal_instrumental_tail(self):
         slots=plan_slots(1.208,[],{},False)
