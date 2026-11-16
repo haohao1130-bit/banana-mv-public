@@ -445,7 +445,8 @@ function renderProgress(j){
  const segments=j.segments||[],total=segments.length;
  const active=j.continuation_generation;
  const branch=j.retake?.branch?.mode==='cascade'&&active;
- const stages={preparing:'準備當段素材',rewriting:'9B 重新編寫當段丹方',generating:'H3 影片生成'};
+ const stages={preparing:'裁切音訊',rewriting:'9B 當段自動導演',generating:'影片採樣'};
+ const branchStages={preparing:'準備當段素材',rewriting:'9B 重新編寫當段丹方',generating:'H3 影片生成'};
  const ended=['done','error','cancelled','interrupted','plan_ready'].includes(j.status);
  if(branch){
    const start=active.from_index,finished=segments.slice(start).filter(seg=>seg.status==='done').length;
@@ -465,7 +466,7 @@ function renderProgress(j){
    $('current-activity').hidden=ended;
    if(ended){$('activity-text').textContent='';return;}
    $('activity-text').textContent=j.status==='assembling'?'全新接續片段完成，正在合成影片…':
-      `第 ${index+1}／${total} 段 · ${stages[stage]||'重新取得最新尾幀並準備當段 9B 丹方'}中…`;
+      `第 ${index+1}／${total} 段 · ${branchStages[stage]||'重新取得最新尾幀並準備當段 9B 丹方'}中…`;
    return;
  }
  const done=segments.filter(seg=>seg.status==='done').length;
