@@ -29,6 +29,57 @@ class ManualPromptTests(unittest.TestCase):
                 self.assertEqual(model.call_count,1)
                 save.assert_called_once()
 
+
+    def test_9b_rewrite_pins_an_explicit_retake_tail_not_the_current_original(self):
+        from banana_mv import takes
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            original=root/'old.mp4'
+            revised=root/'new.mp4'
+            original.write_bytes(b'old')
+            revised.write_bytes(b'new')
+            job={'id':'abcdef123456','status':'done','size':[32,32],
+                 'request':{'mode':'chain','director_schema':6,'rewrite':True},
+                 'segments':[
+                     {'index':0,'status':'done','selected_take':'original','takes':[
+                         {'id':'original','status':'ready'},
+                         {'id':'abcdefabcdef','status':'ready'}]},
+                     {'index':1,'status':'done','seconds':10,
+                      'director_plan':{'handoff_version':1},
+                      'prompt':'OLD H3 PROMPT'}]}
+            cfg={'rewriter':{'model':'dummy'}}
+            seen=[]
+            def source(state,index,take='current'):
+                seen.append((index,take))
+                return revised if take=='abcdefabcdef' else original
+            def frame(video,target):
+                target.write_bytes(video.read_bytes())
+            def writer(config,req,segment,originals,tail):
+                self.assertEqual(tail.read_bytes(),b'new')
+                return 'H3 DRAFT NEW TAIL'
+            def inline_thread(*args,**kwargs):
+                call=kwargs['target'];params=kwargs['args']
+                return Mock(start=lambda:call(*params))
+            with patch.object(app,'job_dir',return_value=root), \
+                 patch.object(app,'GPU_LOCK',threading.Lock()), \
+                 patch.object(app,'read_state',return_value=job), \
+                 patch.object(app,'write_state',Mock()), \
+                 patch.object(app,'project_inputs',return_value=([root/'photo.png'],root/'song.wav',root/'song.wav')), \
+                 patch.object(app,'preflight',Mock()), \
+                 patch.object(app,'valid_part',return_value=True), \
+                 patch.object(app,'last_frame',side_effect=frame), \
+                 patch.object(app,'local_prompt',side_effect=writer), \
+                 patch.object(takes,'take_source',side_effect=source), \
+                 patch.object(takes,'require_idle',Mock()), \
+                 patch('banana_mv.python_slots.refresh_stale_timed_plan',return_value=False), \
+                 patch.object(manual_prompt.threading,'Thread',side_effect=inline_thread):
+                result=manual_prompt.rewrite_clip(job['id'],1,previous_take='abcdefabcdef')
+            self.assertIn((0,'abcdefabcdef'),seen)
+            self.assertTrue(all(take=='abcdefabcdef' for _,take in seen))
+            self.assertEqual(job['segments'][1]['prompt'],'OLD H3 PROMPT')
+            self.assertEqual(job['segments'][1]['prompt_rewrite']['previous_take'],'abcdefabcdef')
+            self.assertEqual(job['segments'][1]['prompt_rewrite']['text'],'H3 DRAFT NEW TAIL')
+
     def test_invalid_index_is_rejected(self):
         job={'segments':[{'index':0}]}
         for value in (-1,True,3,'0'):
