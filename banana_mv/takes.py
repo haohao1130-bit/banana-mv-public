@@ -417,7 +417,7 @@ def _branch_direct_worker(job, choices, song, cfg, originals, drive, old_status)
             app.GPU_LOCK.release()
 
 
-def continue_from_take(job_id, index, take_id, mode):
+def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
     """Two explicit choices after an auditioned clip retake.
 
     only: adopt just this Take, keep existing downstream videos untouched.
@@ -433,6 +433,8 @@ def continue_from_take(job_id, index, take_id, mode):
         job=app.read_state(job_id)
         cfg=copy.deepcopy(app.backend.load_config())
         require_idle(job,cfg)
+        if rewrite_retries is not None:
+            job['request']['rewrite_retries']=rewrite_retries
         seg=segment(job,index)
         if seg.get('status')!='done':
             raise ValueError('請先完成這一段回爐，再選擇接續分支。')
