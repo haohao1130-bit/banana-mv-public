@@ -154,6 +154,47 @@ class LockedShootTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _extract('[Shot 2] Extra camera.',plan_slots(10,[],{},False))
 
+    def test_two_failed_local_shot_repairs_restart_full_draft_with_limit(self):
+        from banana_mv.scene_state import SceneStateError
+        cfg={'rewriter':{'temperature':.4,'thinking':False}}
+        req={'dynamic_cuts':False,'rewrite_retries':1,'srt_cues':[
+            {'start':0,'end':5,'text':'[S1] verse'},
+            {'start':5,'end':10,'text':'[S2] verse'}]}
+        bad=('[Shot 1] <Subject 1> sings wearing a hoodie while camera approaches.\\n'
+             '[Shot 2] <Subject 2> gestures as the camera tracks left.')
+        bad_fix='[Shot 1] <Subject 1> sings wearing a hoodie in a camera close-up.'
+        good=('[Shot 1] <Subject 1> sings in a short-sleeve top and shorts, camera approaches.\\n'
+              '[Shot 2] <Subject 2> gestures as the camera tracks left.')
+        seg={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
+        calls=[]
+        def writer(config,system,parts,seed):
+            calls.append(parts)
+            return [bad,bad_fix,bad_fix,good][len(calls)-1]
+        result=write_locked_shoot_prompt(cfg,req,seg,'- S1 sings; S2 reacts.',
+                  'S1 = <Picture 1>\\nS2 = <Picture 2>',
+                  {'S1':'<Picture 1>','S2':'<Picture 2>'},
+                  {'S1':'short-sleeve top and shorts'},['a','b'],[],writer)
+        self.assertIn('short-sleeve top and shorts',result)
+        self.assertEqual(len(calls),4)
+        self.assertIn('REPAIR ONE SHOT ONLY',calls[1][0][1])
+        self.assertNotIn('REPAIR ONE SHOT ONLY',calls[3][-1][1])
+        self.assertIn('LOCKED SHOT SLOTS',calls[3][-1][1])
+        self.assertEqual(seg['prompt_profile']['fresh_restarts'],1)
+        self.assertNotIn('commission_guard_errors',seg)
+        seg={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
+        calls.clear()
+        def fails(config,system,parts,seed):
+            calls.append(parts)
+            if 'REPAIR ONE SHOT ONLY' in parts[-1][1]:
+                return bad_fix
+            return bad
+        with self.assertRaisesRegex(SceneStateError,'自動重新起稿 1 次'):
+            write_locked_shoot_prompt(cfg,req,seg,'- S1 sings; S2 reacts.',
+                    'S1 = <Picture 1>\\nS2 = <Picture 2>',
+                    {'S1':'<Picture 1>','S2':'<Picture 2>'},
+                    {'S1':'short-sleeve top and shorts'},['a','b'],[],fails)
+        self.assertEqual(len(calls),6)
+
     def test_only_bad_shot_is_rewritten_and_temperature_is_reduced(self):
         record=[]
         replies=[
