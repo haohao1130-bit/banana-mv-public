@@ -182,7 +182,9 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertIn('一邊是夢',events[6])
         self.assertIn('原來我們都住',events[7])
         self.assertNotIn('CUDA',events[5])
-        self.assertNotIn('跳出測試畫面',events[4])
+        self.assertIn('跳出測試畫面',events[4])  # 49.820s lies inside 40–50s.
+        self.assertIn('@9.820s',events[4])
+        self.assertNotIn('跳出測試畫面',events[3])
 
     def test_saved_legacy_plan_rebuilds_only_commissions_and_archives_old_status(self):
         from banana_mv.python_slots import refresh_stale_timed_plan
