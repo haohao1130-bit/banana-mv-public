@@ -7,6 +7,13 @@ function updateClipActions(){
     row.check.disabled=clipView.locked;
     if(row.check.checked)count++;
     row.use.disabled=!clipIdle()||!row.segment.preview||row.select.value===(row.segment.pending_take||row.segment.selected_take);
+    const differentTake=row.select.value&&row.select.value!==row.segment.selected_take;
+    row.branchOnly.hidden=!differentTake;
+    row.branchOnly.disabled=!clipIdle()||!differentTake;
+    const chain=['chain','chain5'].includes(clipView.jobData?.request?.mode);
+    const hasNext=row.index+1<(clipView.jobData?.segments?.length||0);
+    row.branchCascade.hidden=!differentTake||!chain||!hasNext;
+    row.branchCascade.disabled=!clipIdle()||!differentTake||!chain||!hasNext;
     row.rewriteButton.disabled=!clipIdle()||!row.segment.director_plan||row.segment.prompt_rewrite?.status==='running';
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
     const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
@@ -45,7 +52,13 @@ function renderClipPreviews(job){
       const version=document.createElement('div');version.className='dan-version';
       const select=document.createElement('select');select.setAttribute('aria-label',`第 ${i+1} 顆丹藥的版本`);
       const use=document.createElement('button');use.type='button';use.className='secondary';use.textContent='選用此丹';
-      const note=document.createElement('p');note.className='muted';version.append(select,use);card.append(label,video,version,note);$('clip-list').append(card);
+      const branchBar=document.createElement('div');branchBar.className='dan-toolbar';
+      const branchOnly=document.createElement('button');branchOnly.type='button';branchOnly.className='secondary';branchOnly.textContent='僅改這段，保留後續';
+      const branchCascade=document.createElement('button');branchCascade.type='button';branchCascade.textContent='從新版尾幀重拍後續（9B 重寫）';
+      const note=document.createElement('p');note.className='muted';
+      const branchHint=document.createElement('p');branchHint.className='muted';branchHint.textContent='分支續跑：上方選新版後，單段替換會沿用已完成的後續影片；尾幀接拍會從下一段開始重新生成並重寫當段丹方，原版保留。';
+      branchBar.append(branchOnly,branchCascade);
+      version.append(select,use);card.append(label,video,version,branchBar,branchHint,note);$('clip-list').append(card);
       const fixLabel=document.createElement('label');fixLabel.textContent='局部修改建議（選填）';
       const correction=document.createElement('textarea');correction.rows=3;correction.maxLength=3000;
       correction.setAttribute('aria-label',`第 ${i+1} 顆丹藥的局部修改建議`);
@@ -66,9 +79,11 @@ function renderClipPreviews(job){
       buttons.append(rewriteButton,renderButton);promptLabel.append(promptEditor);
       formula.append(promptLabel,promptInfo,buttons);card.append(formula);
       row={card,check,title,video,select,use,note,correction,segment,index:i,
-        promptEditor,promptInfo,rewriteButton,renderButton,loadedVersion:null,editorLoaded:false};clipView.rows.set(i,row);
+        promptEditor,promptInfo,rewriteButton,renderButton,branchOnly,branchCascade,loadedVersion:null,editorLoaded:false};clipView.rows.set(i,row);
       check.onchange=updateClipActions;select.onchange=()=>showClipVersion(row);
       use.onclick=()=>adoptClip(row.index,row.select.value);
+      branchOnly.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'only'});
+      branchCascade.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'cascade'});
       promptEditor.oninput=updateClipActions;
       rewriteButton.onclick=()=>runClipAction('api/mv/rewrite-clip',{index:i});
       renderButton.onclick=()=>{
@@ -112,7 +127,9 @@ function renderClipPreviews(job){
     for(const [i,id] of Object.entries(batch.takes||{})){const row=clipView.rows.get(Number(i));if(row?.segment.takes.some(t=>t.id===id&&t.status==='ready'))row.check.checked=false;}
     clipView.handled=stamp;
   }
-  $('clip-review-status').textContent=batch?.status==='error'?`回爐未完成：${batch.error} 原版保留；已完成新版可在版本選單預覽、選用；確認凝丹才更新成片。`:
+  $('clip-review-status').textContent=batch?.branch&&batch.status==='running'?(batch.branch.mode==='cascade'?'新版尾幀分支：後續重新拍攝與 9B 當段重寫中。':'單段替換分支：保留現有後續。'):
+    batch?.branch&&batch.status==='done'?(job.status==='running'?'新版已採用，正在接著生成未完成段落。':'分支續跑完成；原版影片仍在版本紀錄中。'):
+    batch?.status==='error'?`回爐未完成：${batch.error} 原版保留；已完成新版可在版本選單預覽、選用；確認凝丹才更新成片。`:
     batch?.status==='cancelled'?'緊急停爐成功：目前未完成的候選已取消；舊片、先前完成的段落和候選都保留。可改丹方再回爐。':
     batch?.status==='done'&&batch.auto_resume?(job.status==='running'?
       '這段重配成功，已自動接著生成後續片段。':
