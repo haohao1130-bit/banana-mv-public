@@ -492,7 +492,7 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
         app.restore_render_settings(job)
         if mode=='cascade' and index+1>=len(job['segments']) and not continuous_5070(job):
             raise ValueError('這已是最後一段，沒有後續影片可重新接拍。')
-        first=(segment(job,index+1) if mode=='cascade'
+        first=(segment(job,index+1) if mode=='cascade' and index+1<len(job['segments'])
                else (seg if not done_after else segment(job,done_after[0])))
         graph=app.build_workflow(job['images_comfy'],'preflight.wav',*job['size'],first['model_frames'],'',
                                  job['seed'],**app.graph_options(job['request'],first['seconds'],first))
