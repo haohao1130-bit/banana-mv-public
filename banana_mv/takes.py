@@ -804,7 +804,11 @@ def select_take(job_id,index,take_id):
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
         job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg,False)
-        seg=segment(job,index);source=take_source(job,index,take_id)
+        seg=segment(job,index)
+        restart=job.get('continuation_restart')
+        if continuous_5070(job) and restart and index>restart['index']:
+            raise ValueError('這段屬於舊時間線；請先從已正式採用的新版尾幀重拍後續。')
+        source=take_source(job,index,take_id)
         if take_id=='current':raise ValueError('請選擇明確的丹藥版本。')
         if not app.valid_part(source,seg,job['size']):raise ValueError('此版本毛片無效，保留原版。')
         archive_original(job,index)
