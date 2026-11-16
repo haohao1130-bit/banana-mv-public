@@ -724,6 +724,43 @@ class TakeTests(unittest.TestCase):
                          [takes.take_file(job,1,v2,'part.mp4'),
                           takes.take_file(job,2,job['segments'][2]['selected_take'],'part.mp4')])
 
+
+    def test_second_stop_resumes_after_last_new_clip_not_obsolete_old_clip(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.job['status']='cancelled'
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        v2=job['segments'][1]['takes'][-1]['id']
+        takes.select_take(job['id'],1,v2)
+        takes.retake(job['id'],[2],previous_takes={'2':v2})
+        job=self.run_background()
+        new_15=job['segments'][2]['takes'][-1]['id']
+        job['segments'][2]['selected_take']=new_15
+        job['segments'][2]['status']='done'
+        job['segments'][3]['status']='generating'
+        job['continuation_generation']={
+            'anchor_index':1,'anchor_take':v2,'anchor_version':2,
+            'from_index':2,'total':2,'started_at':123.}
+        job.pop('continuation_restart',None)
+        job['pending_takes']={}
+        app.write_state(job)
+        observed=[]
+        def resume_worker(state,cfg,originals,song,drive):
+            observed.append((state['segments'][2]['selected_take'],
+                             state['segments'][3]['status'],
+                             state['segments'][3].get('refresh_prompt')))
+            app.GPU_LOCK.release()
+        with patch.object(app,'worker',side_effect=resume_worker):
+            response=app.resume(job['id'])
+            self.assertEqual(response['retake']['branch']['index'],2,
+                             'continue from new clip 15, not the old 14 V2 anchor')
+            self.assertEqual(response['status'],'assembling')
+            self.run_background()
+        self.assertEqual(observed,[(new_15,'waiting',True)])
+        self.assertEqual(takes.take_source(job,2,new_15).read_bytes(),b'new')
+
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
