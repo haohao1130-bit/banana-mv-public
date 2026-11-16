@@ -445,8 +445,10 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
             raise ValueError('前面仍有未完成片段，不能從這段繼續接拍。')
         lineage=_lineage(job,index,take_id)
         other_pending=[k for k,v in job.get('pending_takes',{}).items()
-                       if int(k)>=index or (int(k) in lineage and lineage[int(k)]!=v)
-                       or (int(k)<index and int(k) not in lineage)]
+                       if int(k)>index
+                       or (int(k)==index and v!=take_id)
+                       or (int(k)<index and
+                           (int(k) not in lineage or lineage[int(k)]!=v))]
         if other_pending:
             raise ValueError('尚有與本次接續鏈不一致的待採用版本，請先確認或取消那些選擇。')
         if mode=='cascade' and not app.is_continuation(job['request']['mode']):
@@ -467,7 +469,10 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
         from banana_mv.python_slots import refresh_stale_timed_plan
         refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
         app.restore_render_settings(job)
-        first=seg if not done_after else segment(job,done_after[0])
+        if mode=='cascade' and index+1>=len(job['segments']):
+            raise ValueError('這已是最後一段，沒有後續影片可重新接拍。')
+        first=(segment(job,index+1) if mode=='cascade'
+               else (seg if not done_after else segment(job,done_after[0])))
         graph=app.build_workflow(job['images_comfy'],'preflight.wav',*job['size'],first['model_frames'],'',
                                  job['seed'],**app.graph_options(job['request'],first['seconds'],first))
         app.preflight(cfg,graph)
