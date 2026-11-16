@@ -471,6 +471,9 @@ def continue_from_take(job_id, index, take_id, mode):
         app.preflight(cfg,graph)
         app.preflight_five_frame(cfg,job['request'],job['images_comfy'],job['size'],first,job['seed'])
         old_status=job['status']
+        # Once the user starts the requested branch, it must not replay on a
+        # later generic resume or silently pick a stale former continuation.
+        job.pop('continuation_restart',None)
         job['retake']={'indices':[index], 'status':'running', 'operation':'continue_branch',
                        'branch':{'index':index,'take':take_id,'mode':mode,
                                  'lineage':{str(i):t for i,t in lineage.items()}},
@@ -718,8 +721,30 @@ def select_take(job_id,index,take_id):
         if not app.valid_part(source,seg,job['size']):raise ValueError('此版本毛片無效，保留原版。')
         archive_original(job,index)
         pending=job.setdefault('pending_takes',{})
-        if take_id==seg.get('selected_take','original'):pending.pop(str(index),None)
-        else:pending[str(index)]=take_id
+        # RTX5070 emergency-stop editing is an ACTIVE Take adoption, not
+        # the old, completed-project "select now / condense later" workflow.
+        # The next filming run must observe selected_take immediately.
+        emergency=(job['status'] in ('error','cancelled','interrupted')
+                   and app.is_continuation(job['request']['mode'])
+                   and job['request'].get('director_schema')==6)
+        if emergency:
+            lineage=_lineage(job,index,take_id)
+            _adopt_branch_clips(job,lineage)
+            # Everything beyond the edited clip belongs to the OLD timeline.
+            # Keep prior files for rollback, but don't keep future pending
+            # choices in the active lineage.
+            for key in list(pending):
+                if int(key)>index:
+                    pending.pop(key,None)
+            if index+1 < len(job['segments']):
+                job['continuation_restart']={'index':index,'take':take_id,
+                                             'from_index':index+1,
+                                             'rewrite_next_prompt':True}
+            else:
+                job.pop('continuation_restart',None)
+        else:
+            if take_id==seg.get('selected_take','original'):pending.pop(str(index),None)
+            else:pending[str(index)]=take_id
         job['selection_revision']=uuid.uuid4().hex
         app.write_state(job);return describe(job)
     finally:app.GPU_LOCK.release()
