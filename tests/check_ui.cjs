@@ -89,6 +89,30 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['open-help'].onclick();assert.equal(els['help-dialog'].scrollTop,0);els['close-help'].onclick();assert.equal(els['help-dialog'].open,false);
   assert.equal(els.prompt.value,originalPrompt);assert.equal(posts.length,0);
 
+  // The AI handoff teaches user-facing controls, never transmits project
+  // media or pretends an AI can directly press buttons in this browser.
+  assert(html.includes('id="copy-ai-guide"'));
+  assert(html.includes('5070 連續模式：重拍 V2 後怎麼接？'));
+  await els['copy-ai-guide'].onclick();
+  const aiGuide=copied.at(-1);
+  for(const phrase of ['BANANAMV','@圖片1','先搓丹方','直接煉丹',
+                       '正式採用此版本','從本段尾幀續拍第 N+1 段',
+                       '合成正式新版全片','確認凝丹']){
+    assert(aiGuide.includes(phrase),'AI player guide is missing '+phrase);
+  }
+  assert(aiGuide.includes('不要提供 GitHub、API、程式碼'));
+  assert(aiGuide.includes('不能直接操作我的網頁'));
+  assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
+  assert.equal(els['ai-guide-fallback-box'].hidden,true);
+  const originalClipboard=context.navigator.clipboard;
+  context.navigator.clipboard=null;
+  await els['copy-ai-guide'].onclick();
+  assert.equal(els['ai-guide-fallback-box'].hidden,false);
+  assert.equal(els['ai-guide-fallback'].value,aiGuide);
+  assert.equal(els['ai-guide-fallback'].selected,true);
+  assert(els['ai-guide-copy-status'].textContent.includes('自行複製'));
+  context.navigator.clipboard=originalClipboard;
+
   for(const [job,state] of [
     [{status:'analyzing_audio'},'planning'],[{status:'planning_story'},'planning'],
     [{status:'running',segments:[{status:'rewriting'}]},'planning'],
