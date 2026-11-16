@@ -113,7 +113,7 @@ def plan_slots(seconds,cues,evidence=None,dynamic=True,scene_cuts=None):
     # Film an authored location cut even without a singer handoff.
     for t in scene_cuts or ():
         t = round(float(t), 3)
-        if .35 <= t <= duration - .35 and all(abs(t-c) >= .10 for c in cuts):
+        if .35 <= t <= duration - .35 and all(abs(t-c) >= .002 for c in cuts):
             cuts.append(t)
     cuts=sorted(set(cuts))
     music=(evidence or {}).get('music_structure',{}) if isinstance(evidence,dict) else {}
@@ -129,7 +129,14 @@ def plan_slots(seconds,cues,evidence=None,dynamic=True,scene_cuts=None):
                     cuts.append(round((a+b)/2,3))
     cuts=sorted(set(cuts))
     if len(cuts)>8:
-        cuts=[cuts[0]]+[t for t in cuts[1:-1] if t>=1 and duration-t>=.8][:6]+[duration]
+        # A source-authored LOCATION change outranks optional musical inserts.
+        # Never truncate the apartment cut merely because earlier downbeats
+        # filled the maximum number of visual shots.
+        required={round(float(t),3) for t in scene_cuts or ()}
+        candidates=[t for t in cuts[1:-1] if .35<=t<=duration-.35]
+        forced=[t for t in candidates if t in required][:6]
+        optional=[t for t in candidates if t not in required and t>=1 and duration-t>=.8]
+        cuts=[cuts[0]]+sorted(forced+optional[:max(0,6-len(forced))])+[duration]
     return [{'number':i+1,'start':a,'end':b,'rows':singer_rows(a,b,cues),
              'allowed_singers':sorted({r for cue in cues
                  if float(cue['clip_start']) < b and float(cue['clip_end']) > a
