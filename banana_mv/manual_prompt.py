@@ -18,7 +18,7 @@ def _segment(job,index):
     return job['segments'][index]
 
 
-def rewrite_clip(job_id,index):
+def rewrite_clip(job_id,index,previous_take=None):
     from banana_mv import takes
     if not app.GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 或 9B 工作進行中，請稍後再重配丹方。')
@@ -34,28 +34,39 @@ def rewrite_clip(job_id,index):
         originals,_,_=app.project_inputs(job,cfg)
         from banana_mv.python_slots import refresh_stale_timed_plan
         refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
+        source_take=None
         if app.is_continuation(job['request']['mode']) and index:
-            takes.take_source(job,index-1)
+            source_take=(previous_take if previous_take is not None else
+                         job.get('pending_takes',{}).get(str(index-1),
+                         job['segments'][index-1].get('selected_take','original')))
+            if not isinstance(source_take,str) or not source_take:
+                raise ValueError('上一段接續版本無效，請選擇完整的丹藥版本。')
+            previous=takes.take_source(job,index-1,source_take)
+            if not app.valid_part(previous,job['segments'][index-1],job['size']):
+                raise ValueError('上一段選定丹藥無效，不能用錯誤尾幀重配丹方。')
+        elif previous_take is not None:
+            raise ValueError('獨立模式／第一段沒有上一段尾幀。')
         app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
                            'generate':{'class_type':'TextGenerate','inputs':{}}})
         prev=seg.get('prompt_rewrite') or {}
         version=max(int(prev.get('version') or 0),int(prev.get('pending_version') or 0))+1
-        seg['prompt_rewrite']={**prev,'status':'running','pending_version':version,'error':''}
+        seg['prompt_rewrite']={**prev,'status':'running','pending_version':version,
+                               'previous_take':source_take,'error':''}
         app.write_state(job)
-        threading.Thread(target=_worker,args=(job,cfg,index,originals,version),daemon=True).start()
+        threading.Thread(target=_worker,args=(job,cfg,index,originals,version,source_take),daemon=True).start()
         return takes.describe(job)
     except Exception:
         app.GPU_LOCK.release()
         raise
 
 
-def _worker(job,cfg,index,originals,version):
+def _worker(job,cfg,index,originals,version,previous_take=None):
     seg=job['segments'][index];work=app.job_dir(job['id'])
     try:
         tail=None
         if app.is_continuation(job['request']['mode']) and index:
             from banana_mv import takes
-            previous=takes.take_source(job,index-1)
+            previous=takes.take_source(job,index-1,previous_take or job.get('pending_takes',{}).get(str(index-1),'current'))
             if job['request']['mode']=='chain5':
                 frames=app.last_frames(previous,work/f'{index:02d}_manual_rewrite_tail_%02d.png')
                 tail=frames[0]
@@ -73,7 +84,8 @@ def _worker(job,cfg,index,originals,version):
         tmp.replace(file)
         seg['prompt_rewrite']={
             'status':'ready','version':version,'text':result,'file':file.name,
-            'created':time.time(),'writer_calls':candidate.get('prompt_profile',{}).get('writer_calls'),
+            'created':time.time(),'previous_take':previous_take,
+            'writer_calls':candidate.get('prompt_profile',{}).get('writer_calls'),
             'error':'',
         }
     except Exception as error:
