@@ -171,10 +171,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext("renderEventPlan({segments:[{index:0,director_plan:{mode:'story',event:'<b>plain text</b>'}}]})",context);assert.equal(els['event-plan-text'].textContent,'1. story\n<b>plain text</b>');assert.equal(els['event-plan-details'].hidden,false);assert.equal(vm.runInContext("eventPreview('x'.repeat(800)).length",context),101);
   assert.equal(els['event-plan-details'].open,true,'new event plans should be visible without extra click');
   els['event-plan-details'].open=false;
-  vm.runInContext("renderEventPlan({id:'preview',segments:[{index:0,director_plan:{mode:'story',event:'First event'}}]})",context);
+  vm.runInContext("renderEventPlan({id:'project-a',segments:[{index:0,director_plan:{mode:'story',event:'First event'}}]})",context);
   assert.equal(els['event-plan-details'].open,true,'new project should expand its event plan');
   els['event-plan-details'].open=false;
-  vm.runInContext("renderEventPlan({id:'preview',segments:[{index:0,director_plan:{mode:'story',event:'Updated event'}}]})",context);
+  vm.runInContext("renderEventPlan({id:'project-a',segments:[{index:0,director_plan:{mode:'story',event:'Updated event'}}]})",context);
   assert.equal(els['event-plan-details'].open,false,'polling must respect manual collapse');
   vm.runInContext("renderEventPlan({id:'next-project',segments:[{index:0,director_plan:{mode:'action',event:'Next event'}}]})",context);
   assert.equal(els['event-plan-details'].open,true,'opening another project expands its own events');
