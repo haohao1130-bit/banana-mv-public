@@ -801,6 +801,51 @@ class TakeTests(unittest.TestCase):
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|new|new')
         self.assertTrue((self.work/'02_part_v1.mp4').exists())
 
+    def test_5070_middle_take_rebuilds_only_compatible_later_takes_and_master(self):
+        """A replacement shot must never silently reuse the old following shot."""
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        outputs=iter([b'shot-4-v2',b'shot-5-new-tail',b'shot-6-new-tail'])
+        with patch.object(app.backend,'comfy_download',
+                          side_effect=lambda cfg,entry,dest:dest.write_bytes(next(outputs))):
+            takes.retake(self.job['id'],[1])
+            job=self.run_background()
+            v2=job['segments'][1]['takes'][-1]['id']
+            adopted=takes.select_take(job['id'],1,v2)
+            self.assertTrue(adopted['final_stale'])
+            self.assertEqual(adopted['segments'][1]['selected_take'],v2)
+            self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+            with self.assertRaisesRegex(ValueError,'舊時間線'):
+                takes.select_take(job['id'],2,'original')
+            self.assertEqual(app.read_state(job['id'])['segments'][2]['selected_take'],'original')
+            with patch.object(app,'local_prompt',side_effect=lambda cfg,req,seg,originals,tail:
+                              f'new current-clip prompt {seg["index"]}') as writer:
+                takes.continue_from_take(job['id'],1,v2,'cascade')
+                done=self.run_background()
+        writer.assert_called()
+        self.assertEqual(writer.call_count,2)
+        self.assertEqual(done['status'],'done')
+        self.assertNotIn('final_stale',done)
+        self.assertEqual((self.work/'final.mp4').read_bytes(),
+                         b'old0|shot-4-v2|shot-5-new-tail|shot-6-new-tail')
+        self.assertEqual((self.work/'final_v001.mp4').read_bytes(),b'old master')
+        current=done['final_versions'][-1]
+        self.assertEqual(current['version'],done['current_master'])
+        self.assertEqual(current['takes'],{
+            str(i):seg.get('selected_take','original')
+            for i,seg in enumerate(done['segments'])})
+        self.assertEqual(current['takes']['1'],v2)
+        fifth=current['takes']['2'];sixth=current['takes']['3']
+        self.assertNotEqual(fifth,'original')
+        self.assertNotEqual(sixth,'original')
+        self.assertEqual(next(row for row in done['segments'][2]['takes']
+                              if row['id']==fifth)['previous_take'],v2)
+        self.assertEqual(next(row for row in done['segments'][3]['takes']
+                              if row['id']==sixth)['previous_take'],fifth)
+        self.assertEqual((self.work/'02_part_v1.mp4').read_bytes(),b'old2')
+        self.assertEqual((self.work/'03_part_v1.mp4').read_bytes(),b'old3')
+
     def test_5070_last_segment_adopt_and_assemble_without_old_condense(self):
         self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
         self.cfg['rewriter']={'model':'fake'}
