@@ -748,6 +748,9 @@ def worker(job, cfg, original, song, drive):
         assemble(parts,song,work/'final.mp4',job['duration'],job['output_size'],**({'effects':effects_source(job)} if job.get('effects_mix') else {}))
         master=masters.archive(job,work,work/'final.mp4','resume' if job.get('current_master') else 'original')
         job['current_master']=master['version']
+        # A successful NEW master ends the obsolete-timeline state, even if
+        # optional face refinement or 1080p processing subsequently fails.
+        job.pop('final_stale',None)
         try:
             export_finished_video(job,work/'final.mp4')
         except OSError as error:
