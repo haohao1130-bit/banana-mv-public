@@ -284,6 +284,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(els['output-location'].textContent.includes('/job/final.mp4'));
   assert.equal(els['master-list'].children.length,2);assert.equal(els['master-list'].children[0].href,'/old-v1');
   assert(els['master-list'].children[1].textContent.includes('目前版本'));
+  vm.runInContext("renderOutputLocation({final_stale:true,video:'/old-master',final_video:'/job/final.mp4',current_master:2,final_versions:[{version:2,download:'/old-master'}],segments:[]})",context);
+  assert.equal(els['final-previews'].hidden,true,'obsolete full MV cannot be shown as current');
+  assert.equal(els['output-location'].hidden,true,'obsolete export path cannot be called the current result');
+  assert(els['master-list'].children[0].textContent.includes('舊時間線備份'));
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
   // A stopped project created by the old build can have a V2 that was
@@ -294,6 +298,12 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(rows[1].select.value,'abcdef123456');
   assert.equal(rows[1].use.disabled,false,'old pending V2 is not yet an official adopted take');
+  assert.equal(els['clip-legacy-toolbar'].hidden,true,'the batch/condense UI is retired in 5070 chain');
+  assert.equal(rows[1].branchOnly.hidden,true,'cannot replace one shot and keep obsolete successors');
+  assert.equal(rows[1].checkLabel.hidden,true);
+  assert.equal(rows[1].correctionLabel.hidden,true);
+  assert.equal(els['clips-condense'].disabled,true);
+  assert.equal(els['clips-retake'].disabled,true);
   delete reviewJob.pending_takes;
   delete reviewJob.segments[1].pending_take;
   // Emergency V2 adoption becomes official immediately; the SAME clip
@@ -305,6 +315,11 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(rows[1].select.value,'abcdef123456');
   assert.equal(rows[1].branchCascade.hidden,false);
   assert.equal(rows[1].branchCascade.disabled,false);
+  assert(rows[1].branchCascade.textContent.includes('第 3 段'));
+  assert(rows[2].title.textContent.includes('舊時間線'));
+  assert.equal(rows[2].use.disabled,true);
+  assert.equal(rows[2].rewriteButton.disabled,true);
+  assert.equal(rows[2].renderButton.disabled,true);
   await rows[1].branchCascade.onclick();
   assert.deepEqual(branches.at(-1),{
     id:'review123',index:1,take:'abcdef123456',mode:'cascade'
@@ -325,13 +340,20 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   reviewJob.segments[1].selected_take='original';
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   rows[1].select.value='abcdef123456';rows[1].select.onchange();
-  assert.equal(rows[1].branchCascade.hidden,false,'unadopted chosen V2 must remain selectable for continuation');
+  assert.equal(rows[1].branchCascade.hidden,true,'unadopted candidate cannot start a new storyline');
+  assert.equal(rows[1].use.disabled,false,'candidate must be adopted first');
   rows[1].select.value='original';rows[1].select.onchange();
   assert.equal(rows[1].branchCascade.hidden,true,'plain unmodified original has no new-tail restart');
   rows[1].select.value='abcdef123456';rows[1].select.onchange();
   reviewJob.status='done';
   reviewJob.segments[1].selected_take='original';
   delete reviewJob.continuation_restart;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  reviewJob.segments[3].selected_take='abcdef123456';
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[3].branchCascade.hidden,false,'last adopted clip must permit final reassembly');
+  assert(rows[3].branchCascade.textContent.includes('合成正式新版全片'));
+  reviewJob.segments[3].selected_take='original';
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
   // Even the failed/not-yet-generated clip has its own prompt workbench.
