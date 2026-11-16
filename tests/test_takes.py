@@ -528,35 +528,6 @@ class TakeTests(unittest.TestCase):
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
 
-class PreviewHTTPTests(unittest.TestCase):
-    def test_condense_http_route_is_explicit_and_passes_selection_revision(self):
-        handler=object.__new__(app.Handler)
-        handler.path='/api/mv/condense';handler.body_json=Mock(return_value={'id':'abc','revision':'selected'})
-        handler.send_json=Mock()
-        with patch.object(takes,'condense',return_value={'id':'abc','status':'assembling'}) as confirm:
-            handler.do_POST();confirm.assert_called_once_with('abc','selected')
-        self.assertEqual(handler.send_json.call_args.args[0]['status'],'assembling')
-
-    def test_script_launcher_and_take_routes_share_the_same_server_locks(self):
-        import os
-        import subprocess
-        import sys
-        script='''import runpy, sys
-from unittest.mock import patch
-def check():
-    from banana_mv import takes
-    server=sys.modules['banana_mv.server']
-    assert takes.app is server
-    assert takes.app.GPU_LOCK is server.GPU_LOCK
-with patch('http.server.ThreadingHTTPServer') as http:
-    http.return_value.serve_forever.side_effect=check
-    runpy.run_path(SERVER_PATH,run_name='__main__')
-'''.replace('SERVER_PATH',repr(app.__file__))
-        with tempfile.TemporaryDirectory() as tmp:
-            result=subprocess.run([sys.executable,'-c',script],env={**os.environ,'BANANA_DATA':tmp},capture_output=True,text=True)
-            self.assertEqual(result.returncode,0,result.stderr)
-
-
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
@@ -636,6 +607,36 @@ with patch('http.server.ThreadingHTTPServer') as http:
         with self.assertRaisesRegex(ValueError,'選擇'):
             takes.continue_from_take(self.job['id'],1,'original','wrong')
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+
+
+class PreviewHTTPTests(unittest.TestCase):
+    def test_condense_http_route_is_explicit_and_passes_selection_revision(self):
+        handler=object.__new__(app.Handler)
+        handler.path='/api/mv/condense';handler.body_json=Mock(return_value={'id':'abc','revision':'selected'})
+        handler.send_json=Mock()
+        with patch.object(takes,'condense',return_value={'id':'abc','status':'assembling'}) as confirm:
+            handler.do_POST();confirm.assert_called_once_with('abc','selected')
+        self.assertEqual(handler.send_json.call_args.args[0]['status'],'assembling')
+
+    def test_script_launcher_and_take_routes_share_the_same_server_locks(self):
+        import os
+        import subprocess
+        import sys
+        script='''import runpy, sys
+from unittest.mock import patch
+def check():
+    from banana_mv import takes
+    server=sys.modules['banana_mv.server']
+    assert takes.app is server
+    assert takes.app.GPU_LOCK is server.GPU_LOCK
+with patch('http.server.ThreadingHTTPServer') as http:
+    http.return_value.serve_forever.side_effect=check
+    runpy.run_path(SERVER_PATH,run_name='__main__')
+'''.replace('SERVER_PATH',repr(app.__file__))
+        with tempfile.TemporaryDirectory() as tmp:
+            result=subprocess.run([sys.executable,'-c',script],env={**os.environ,'BANANA_DATA':tmp},capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+
 
     def test_raw_audio_preview_real_ffmpeg_range_head_and_safe_routes(self):
         import urllib.request
