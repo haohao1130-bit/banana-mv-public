@@ -210,7 +210,7 @@ def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     return normalize_mv_prompt(_text(raw),len(refs))
 
 
-def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebuild_prompt=False):
+def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebuild_prompt=False,previous_takes=None):
     if not isinstance(indices,list) or not indices:raise ValueError('請勾選至少一顆需要回爐的丹藥。')
     if not isinstance(auto_resume,bool):raise ValueError('自動續跑參數必須為布林值。')
     if not isinstance(rebuild_prompt,bool):raise ValueError('重配提示詞參數必須為布林值。')
@@ -221,6 +221,24 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
         indices=sorted(set(indices))
         notes=corrections(indices,instructions)
         overrides=manual_prompts(indices,prompts)
+        if previous_takes is None:previous_takes={}
+        if not isinstance(previous_takes,dict):
+            raise ValueError('上一段來源版本必須依段落指定。')
+        resolved={}
+        for key,take_id in previous_takes.items():
+            if (not isinstance(key,str) or key not in {str(i) for i in indices}
+                    or not isinstance(take_id,str) or not take_id):
+                raise ValueError('上一段版本只能指定本次回爐的段落。')
+            i=int(key)
+            if i==0 or not app.is_continuation(job['request']['mode']):
+                raise ValueError('第一段或獨立模式沒有上一段尾幀。')
+            preceding=segment(job,i-1)
+            source=take_source(job,i-1,take_id)
+            if not app.valid_part(source,preceding,job['size']):
+                raise ValueError('上一段的選定 Take 已經損壞，停止回爐。')
+            resolved[i]=take_id
+        if any(i-1 in indices for i in resolved):
+            raise ValueError('前段也在這批重新生成時，尾幀必須採用那個新版本，不可指定舊版。')
         if any(i in notes for i in overrides):
             raise ValueError('同一段不能同時指定手動完整提示詞與局部 9B 修稿。')
         if rebuild_prompt and (notes or overrides):
@@ -288,6 +306,7 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
             if i in notes:take['correction']=notes[i]
             if i in overrides:take['manual_prompt']=overrides[i]
             if rebuild_prompt:take['rebuild_prompt']=True
+            if i in resolved:take['previous_take_override']=resolved[i]
             seg.setdefault('takes',[]).append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
                    'auto_resume':auto_resume,'takes':{str(i):t['id'] for i,t in batch}})
@@ -533,7 +552,8 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             app.audio_window(drive,inp/name,seg['start']-overlap/app.FPS,render_frames/app.FPS)
             first=None;guide_files=[]
             if app.is_continuation(job['request']['mode']) and i>0:
-                previous=choices.get(i-1,job.get('pending_takes',{}).get(str(i-1),'current'))
+                previous=choices.get(i-1,take.get('previous_take_override',
+                    job.get('pending_takes',{}).get(str(i-1),'current')))
                 source=take_source(job,i-1,previous)
                 frame=output('opening.png')
                 app.last_frame(source,frame)
