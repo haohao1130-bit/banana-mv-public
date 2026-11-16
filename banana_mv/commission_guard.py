@@ -177,3 +177,52 @@ def wardrobe_errors(prompt, expected, pictures):
 
 def check_commission(prompt, cues, pictures, seconds, expected_wardrobe, has_srt):
     return vocal_errors(prompt, cues, pictures, seconds, has_srt) + wardrobe_errors(prompt, expected_wardrobe, pictures)
+
+
+_HOME = re.compile(r'公寓|客廳|玄關|工作區|電腦桌|沙發|回家|apartment|living.room|entryway|at home', re.I)
+_CLIP_SCENE = re.compile(
+    r'USER-SPECIFIED SONG TIME[^\n]*?active time inside THIS clip is '
+    r'(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)s\.', re.I
+)
+
+
+def scene_wardrobe_schedule(event, fixed_setup, pictures, seconds):
+    """Clip-local beach-to-home hard cut. No wardrobe transition is filmed.
+
+    Time windows come exclusively from Python's already allocated current
+    interval, not from the entire screenplay or a guessed SRT camera cut.
+    Other scenes retain existing clothing behavior.
+    """
+    anchors = list(_CLIP_SCENE.finditer(event))
+    scoped = []
+    for n, anchor in enumerate(anchors):
+        a, b = float(anchor[1]), float(anchor[2])
+        if b <= a or a < 0 or b > float(seconds) + 0.02:
+            continue
+        body = event[anchor.end():anchors[n + 1].start() if n + 1 < len(anchors) else len(event)]
+        # Chapter headings determine location, not dialogue about another place.
+        heading = body.splitlines()[0:3]
+        label = ' '.join(heading)
+        if _BEACH.search(label):
+            scene = 'beach / shoreline'
+        elif _HOME.search(label):
+            scene = 'nighttime apartment'
+        else:
+            continue
+        scoped.append({'start':round(a, 3), 'end':round(b, 3), 'scene':scene})
+    # A home reference-outfit restoration is authorized only for an actual
+    # chronological beach -> home scene transition within this clip.
+    switch = next((i for i, row in enumerate(scoped)
+                   if i and row['scene']=='nighttime apartment'
+                   and scoped[i - 1]['scene']=='beach / shoreline'), None)
+    if switch is None:
+        return []
+    for row in scoped:
+        if row['scene']=='beach / shoreline':
+            row['wardrobe'] = wardrobe_for_clip('CURRENT_SCENE: beach / shoreline', fixed_setup)
+        else:
+            row['wardrobe'] = {
+                role: 'the dry original outfit shown in ' + picture
+                for role, picture in pictures.items() if role in ('S1', 'S2')
+            }
+    return scoped
