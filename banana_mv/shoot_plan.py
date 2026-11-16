@@ -662,13 +662,17 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
     repair_count = 0
-    format_errors = 0
-    max_attempts = rewrite_retry_count(req) + 3
+    fresh_retries = 0
+    retry_limit = rewrite_retry_count(req)
+    # Each fresh draft gets at most two local commission repairs. An exhausted
+    # repair chain starts a NEW draft with the original clip-only commission.
+    max_attempts = (retry_limit + 1) * 3
     for attempt in range(max_attempts):
         if progress:progress({'stage':'rewriting','clip_index':segment['index'],
                               'attempt':attempt+1,'max_attempts':max_attempts})
         segment['prompt_profile']={'source':'isolated_native_director','writer_calls':attempt+1,
-                                   'contract_check_calls':attempt+1}
+                                   'contract_check_calls':attempt+1,
+                                   'fresh_restarts':fresh_retries}
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
             prompt=normalize_mv_prompt(_text(raw),len(refs))
@@ -690,8 +694,14 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             if problems:
                 segment['commission_guard_errors'] = problems
                 if repair_count >= 2:
-                    raise SceneStateError('9B 拍攝稿與當段通告衝突，兩次局部修稿後仍未通過：'
-                                          + ' | '.join(problems))
+                    if fresh_retries >= retry_limit:
+                        raise SceneStateError(
+                            f'9B 拍攝稿與當段通告衝突；局部修稿兩輪後重新起稿 {fresh_retries} 次仍未通過：'
+                            + ' | '.join(problems))
+                    fresh_retries += 1
+                    repair_count = 0
+                    attempts = parts  # no failed draft or unrelated story history
+                    continue
                 repair_count += 1
                 attempts = parts + [('text',
                     'REPAIR THIS CLIP ONLY. The previous draft violates the explicit commission. '
@@ -706,9 +716,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
         except ValueError as error:
             if isinstance(error, SceneStateError) and str(error).startswith('9B 拍攝稿與當段通告衝突'):
                 raise
-            format_errors += 1
-            if format_errors > rewrite_retry_count(req):
+            if fresh_retries >= retry_limit:
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
+            fresh_retries += 1
+            repair_count = 0
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 
 
