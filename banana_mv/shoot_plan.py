@@ -527,6 +527,10 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     event = _local_event(row['event'])
     vocals = vocal_timeline(excerpt(req, segment))
     context = {'authored_vocal_timeline': vocals, 'ending': clip_ending(req, segment)}
+    # Keep Colab's older schema-5 music evidence handoff intact. The new
+    # Python-slot schema-6 does not receive the extra legacy evidence block.
+    if req.get('director_schema')==5 and segment.get('audio_evidence'):
+        context['audio_evidence']=segment['audio_evidence']
     fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
     fixed_setup = _filming_reference_settings(fixed_setup)
@@ -657,6 +661,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
+    if req.get('director_schema')==5 and context.get('audio_evidence'):
+        text += ('\nMusic-structure cues are optional, not a vocal assignment. '
+                 'Write their timing into the shots only when the assigned '
+                 'current action visibly supports it; never invent lyrics.')
     text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
