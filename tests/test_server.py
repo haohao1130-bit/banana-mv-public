@@ -42,8 +42,11 @@ class ServerIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);inp=root/'input';inp.mkdir()
             (root/'config.json').write_text(json.dumps({'comfy_input_dir':str(inp)}))
-            sys.modules.pop('banana_mv.server',None)
             from banana_mv import server as app
+            # The worker retrieves the already imported server module from
+            # sys.modules. Removing it here breaks every later test and
+            # crashes this test's background thread before it can finish.
+            self.assertIs(sys.modules.get('banana_mv.server'),app)
             data_patch=patch.object(app.backend,'DATA',root);data_patch.start();self.addCleanup(data_patch.stop)
             library_patch=patch.object(app.backend,'LIBRARY',root/'library');library_patch.start();self.addCleanup(library_patch.stop)
             runs_patch=patch.object(app,'RUNS',root/'banana_mv');runs_patch.start();self.addCleanup(runs_patch.stop)
