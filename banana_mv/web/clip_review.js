@@ -25,8 +25,16 @@ function updateClipActions(){
     row.branchOnly.disabled=!clipIdle()||!branchChoice;
     const chain=['chain','chain5'].includes(clipView.jobData?.request?.mode);
     const hasNext=row.index+1<(clipView.jobData?.segments?.length||0);
-    row.branchCascade.hidden=!branchChoice||!chain||!hasNext;
-    row.branchCascade.disabled=!clipIdle()||!branchChoice||!chain||!hasNext;
+    // After "選用此丹", V2 IS the selected take. A new-tail continuation
+    // must stay available even if old jobs have no continuation_restart
+    // marker (or the job was previously completed).
+    const selectedReady=(row.segment.takes||[]).some(t=>
+      t.id===row.select.value&&t.status==='ready');
+    const adoptedRetake=row.select.value===row.segment.selected_take
+      &&row.select.value!=='original'&&selectedReady&&row.segment.status==='done';
+    const cascadeReady=branchChoice||adoptedRetake;
+    row.branchCascade.hidden=!cascadeReady||!chain||!hasNext;
+    row.branchCascade.disabled=!clipIdle()||!cascadeReady||!chain||!hasNext;
     row.rewriteButton.disabled=!clipIdle()||!row.segment.director_plan||row.segment.prompt_rewrite?.status==='running';
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
     const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
@@ -159,8 +167,15 @@ function renderClipPreviews(job){
     clipView.handled=stamp;
   }
   const restart=job.continuation_restart;
+  const adoptedSource=[...clipView.rows.values()].find(row=>
+    row.select.value===row.segment.selected_take
+    &&row.select.value!=='original'&&row.segment.status==='done'
+    &&['chain','chain5'].includes(job.request?.mode)
+    &&row.index+1<job.segments.length);
   $('clip-review-status').textContent=restart&&clipIdle()?
     `已正式採用第 ${restart.index+1} 段新版；按本段「從新版尾幀重拍後續」，或上方「繼續跑」，就會從第 ${restart.from_index+1} 段重新寫 9B 丹方並續拍。`:
+    adoptedSource&&clipIdle()&&['error','cancelled','interrupted'].includes(job.status)?
+    `第 ${adoptedSource.index+1} 段已選用正式新版；按本段「從新版尾幀重拍後續」，從第 ${adoptedSource.index+2} 段重新交給 9B 寫咒接拍。`:
     batch?.branch&&batch.status==='running'?(batch.branch.mode==='cascade'?'新版尾幀分支：後續重新拍攝與 9B 當段重寫中。':'單段替換分支：保留現有後續。'):
     batch?.branch&&batch.status==='done'?(job.status==='running'?'新版已採用，正在接著生成未完成段落。':'分支續跑完成；原版影片仍在版本紀錄中。'):
     batch?.status==='error'?`回爐未完成：${batch.error} 原版保留；已完成新版可在版本選單預覽、選用；確認凝丹才更新成片。`:
