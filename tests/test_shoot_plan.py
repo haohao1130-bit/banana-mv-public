@@ -44,6 +44,44 @@ class ShootPlanTests(unittest.TestCase):
                         {'start':5,'end':6,'text':'CURRENT_CUE'}])
         return images,cfg,req
 
+    def test_9b_fresh_restart_does_not_inherit_rejected_draft(self):
+        from banana_mv.scene_state import SceneStateError, rewrite_retry_count
+        self.assertEqual(rewrite_retry_count({}),5)
+        self.assertEqual(rewrite_retry_count({'rewrite_retries':0}),0)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            req['rewrite_retries']=1
+            seg=dict(timeline()[1],director_plan={
+                'handoff_version':1,'mode':'action',
+                'event':'CURRENT_ONLY: the hero protects the shield at the port.'})
+            writer=Mock(return_value=native_prompt(1))
+            with patch.object(server.backend,'rewrite_local',writer),patch(
+                'banana_mv.shoot_plan.check_commission',
+                side_effect=[['[ERROR] wrong singer']]*3+[[]]) as guard:
+                result=server.local_prompt(cfg,req,seg,images,None)
+            self.assertEqual(result,native_prompt(1))
+            self.assertEqual(writer.call_count,4)
+            self.assertEqual(guard.call_count,4)
+            self.assertIn('REPAIR THIS CLIP ONLY',writer.call_args_list[1].args[2][-1][1])
+            self.assertEqual(len(writer.call_args_list[3].args[2]),
+                             len(writer.call_args_list[0].args[2]))
+            self.assertIn('CURRENT_ONLY',writer.call_args_list[3].args[2][0][1])
+            self.assertNotIn('PREVIOUS DRAFT',writer.call_args_list[3].args[2][0][1])
+            self.assertEqual(seg['prompt_profile']['fresh_restarts'],1)
+            self.assertNotIn('commission_guard_errors',seg)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);images,cfg,req=self.fixture(root)
+            req['rewrite_retries']=1
+            seg=dict(timeline()[1],director_plan={
+                'handoff_version':1,'mode':'action','event':'CURRENT_ONLY'})
+            writer=Mock(return_value=native_prompt(1))
+            with patch.object(server.backend,'rewrite_local',writer),patch(
+                'banana_mv.shoot_plan.check_commission',
+                return_value=['[ERROR] wrong singer']):
+                with self.assertRaisesRegex(SceneStateError,'重新起稿 1 次仍未通過'):
+                    server.local_prompt(cfg,req,seg,images,None)
+            self.assertEqual(writer.call_count,6)
+
     def test_once_allocated_then_native_director_only_sees_current_brief(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root)
