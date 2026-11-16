@@ -267,6 +267,16 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(els['master-list'].children[1].textContent.includes('目前版本'));
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
+  // A stopped project created by the old build can have a V2 that was
+  // selected but not yet adopted; its adoption button must be enabled.
+  reviewJob.status='cancelled';reviewJob.request.director_schema=6;
+  reviewJob.segments[1].pending_take='abcdef123456';
+  reviewJob.pending_takes={'1':'abcdef123456'};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].select.value,'abcdef123456');
+  assert.equal(rows[1].use.disabled,false,'old pending V2 is not yet an official adopted take');
+  delete reviewJob.pending_takes;
+  delete reviewJob.segments[1].pending_take;
   // Emergency V2 adoption becomes official immediately; the SAME clip
   // still shows the restart button and starts from its next clip.
   reviewJob.status='cancelled';reviewJob.request.director_schema=6;
