@@ -324,6 +324,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(rows[1].branchCascade.disabled,false);
   reviewJob.segments[1].selected_take='original';
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  rows[1].select.value='abcdef123456';rows[1].select.onchange();
   assert.equal(rows[1].branchCascade.hidden,false,'unadopted chosen V2 must remain selectable for continuation');
   rows[1].select.value='original';rows[1].select.onchange();
   assert.equal(rows[1].branchCascade.hidden,true,'plain unmodified original has no new-tail restart');
