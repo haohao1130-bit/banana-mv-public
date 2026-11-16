@@ -136,6 +136,85 @@ class PythonSlotsTests(unittest.TestCase):
             self.assertEqual(plan['segments'][-1]['index'],27)
 
 
+    def test_chinese_next_line_times_and_srt_keep_future_duet_in_its_own_clip(self):
+        from banana_mv.timed_slots import parse_timed_source
+        text=(
+            '【共同設定】\n同一間公寓，S1 男聲，S2 女聲。\n'
+            '【劇情內容】\n'
+            '第1段｜裝置開始運作\n時間：00:00–00:38\n'
+            '場景：公寓。電腦啟動。S1 開始整理電源線。\n'
+            '第2段｜差一點才成功\n時間：00:38–01:16.680\n'
+            '場景：公寓客廳。\n'
+            'S1 唱「只是差一點 真的差一點」。\n'
+            'S2 看向螢幕，唱「你說的差一點 是昨天還是前年」。\n'
+            'S2 想起旅行，唱「我都快忘記海水到底有多甜」。\n'
+            '第一次唱到「我蓋了一座小小的丹爐」時，電腦終於跳出測試畫面。\n'
+            'S1 指向畫面，唱「想把腦海的夢全部留住」「從一張照片到一場演出」。\n'
+            'S2 看向吉他與泳圈。\n'
+            'S2 唱「一邊是夢 一邊是幸福」。\n'
+            '兩人合唱「原來我們都住在這座小丹爐」。\n'
+            '第3段｜更新驅動\n時間：01:16.680–01:30\n'
+            '場景：公寓工作區。\nS1 回到主機旁，開啟 CUDA。\n'
+        )
+        parsed=parse_timed_source(text)
+        self.assertIsNotNone(parsed)
+        self.assertEqual([(round(c['start'],3),round(c['end'],3)) for c in parsed[1]],
+                         [(0,38),(38,76.68),(76.68,90)])
+        cues=[(37.92,40.22,'S1','只是差一點 真的差一點'),
+              (42.26,46.02,'S2','你說的差一點 是昨天還是前年'),
+              (46.02,49.82,'S2','我都快忘記海水到底有多甜'),
+              (49.82,52.93,'S1','我蓋了一座小小的丹爐'),
+              (52.93,55.06,'S1','想把腦海的夢全部留住'),
+              (55.06,57.34,'S1','從一張照片到一場演出'),
+              (67.88,72.44,'S2','一邊是夢 一邊是幸福'),
+              (72.44,76.68,'S1+S2','原來我們都住在這座小丹爐')]
+        req=dict(request(),prompt=text,srt_cues=[
+            {'start':start,'end':end,'text':f'[{role}] {lyrics}'}
+            for start,end,role,lyrics in cues])
+        segs=[{'index':i,'start':i*10.,'seconds':10.,
+               'song_seconds':90.,'segment_count':9} for i in range(9)]
+        with tempfile.TemporaryDirectory() as d:
+            plan=ensure_python_slot_plan(req,segs,[Path(d)/'male.png',Path(d)/'female.png'],d)
+        self.assertEqual(plan['source_timing'],'explicit_markdown')
+        events=[x['event'] for x in plan['segments']]
+        self.assertNotIn('一邊是夢','\n'.join(events[:6]))
+        self.assertNotIn('原來我們都住','\n'.join(events[:7]))
+        self.assertIn('一邊是夢',events[6])
+        self.assertIn('原來我們都住',events[7])
+        self.assertNotIn('CUDA',events[5])
+        self.assertNotIn('跳出測試畫面',events[4])
+
+    def test_saved_legacy_plan_rebuilds_only_commissions_and_archives_old_status(self):
+        from banana_mv.python_slots import refresh_stale_timed_plan
+        text=('【劇情內容】\n第1段｜工作\n時間：00:00–00:20\n'
+              'S1 查看主機。S1 拿起紙張。\n'
+              '第2段｜結果\n時間：00:20–00:40\n'
+              'S2 對嘴唱「一邊是夢 一邊是幸福」。兩人看著螢幕。\n')
+        cue={'start':31,'end':35,'text':'[S2] 一邊是夢 一邊是幸福'}
+        req=dict(request(),prompt=text,srt_cues=[cue])
+        segs=[{'index':i,'start':i*10.,'seconds':10.,
+               'song_seconds':40.,'segment_count':4,'status':'done' if i<2 else 'waiting',
+               'prompt':'OLD FILMED' if i<2 else 'OLD UNFILMED'} for i in range(4)]
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);work=root/'abcdef123456';work.mkdir()
+            from banana_mv import python_slots
+            with patch.object(python_slots,'parse_timed_source',return_value=None):
+                old=ensure_python_slot_plan(req,segs,[root/'male.png'],work)
+            self.assertEqual(old['source_timing'],'legacy_ordered')
+            job={'id':'abcdef123456','request':req,'segments':segs,'status':'cancelled'}
+            with patch.object(server,'RUNS',root):
+                server.write_state(job)
+                self.assertTrue(refresh_stale_timed_plan(job,[root/'male.png'],work))
+            self.assertTrue((work/job['timing_repair']['backup']).is_file())
+            self.assertTrue((work/job['timing_repair']['status_backup']).is_file())
+            self.assertEqual(job['segments'][0]['prompt'],'OLD FILMED')
+            self.assertEqual(job['segments'][1]['status'],'done')
+            self.assertNotIn('refresh_prompt',job['segments'][1])
+            self.assertTrue(job['segments'][2]['refresh_prompt'])
+            self.assertTrue(job['segments'][3]['refresh_prompt'])
+            self.assertIn('explicit_markdown',(work/'director_plan.json').read_text())
+            self.assertFalse(refresh_stale_timed_plan(job,[root/'male.png'],work))
+
     def test_timed_markdown_five_chapters_fill_nine_5s_slots(self):
         from banana_mv.timed_slots import parse_timed_source
         prompt = (

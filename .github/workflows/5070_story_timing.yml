@@ -1,0 +1,21 @@
+name: RTX5070 authored song timing
+on:
+  push:
+    branches:
+      - experiment/rtx5070-480p-local
+  workflow_dispatch:
+jobs:
+  story-timing:
+    runs-on: ubuntu-latest
+    env:
+      BANANA_DATA: /tmp/banana-timing-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install Pillow numpy
+      - run: python -m unittest discover -s tests -p test_python_slots.py -v
+      - run: python -m unittest discover -s tests -p test_commission_guard.py -v
+      - run: python -m unittest discover -s tests -p test_locked_shoot.py -v
+      - run: python -m compileall -q banana_mv

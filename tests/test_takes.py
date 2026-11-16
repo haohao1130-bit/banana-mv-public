@@ -216,6 +216,27 @@ class TakeTests(unittest.TestCase):
         self.assertEqual(self.assemble.call_count,2)
         app.backend.rewrite_local.assert_not_called()
 
+    def test_explicit_rebuild_rewrites_current_commission_then_films_candidate(self):
+        project=app.read_state(self.job['id'])
+        project['request'].update({'director_schema':6,'rewrite':True})
+        for seg in project['segments']:
+            seg['director_plan']={'handoff_version':1,'mode':'performance','event':'CURRENT'}
+        app.write_state(project)
+        self.cfg['rewriter']={'model':'local-9b-test'}
+        new='subject_definitions:\nS1 kept.\ndetailed_description:\n[Shot 1] Current event.'
+        with patch.object(app,'local_prompt',return_value=new) as director:
+            takes.retake(self.job['id'],[2],rebuild_prompt=True)
+            result=self.run_background()
+        director.assert_called_once()
+        take=result['segments'][2]['takes'][-1]
+        self.assertEqual(take['status'],'ready')
+        self.assertEqual(take['prompt_source'],'fresh_9b_from_current_commission')
+        self.assertEqual((self.work/'02_prompt_v2.txt').read_text(),new)
+        self.assertEqual(result['segments'][2]['prompt'],'fixed story 2')
+        self.assertEqual((self.work/'02_part.mp4').read_bytes(),b'old2')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        self.assertEqual(app.backend.queue_prompt.call_count,1)
+
     def test_manual_text_retake_only_selected_clip_and_never_calls_9b(self):
         custom=('subject_definitions:\n<Subject 1> keeps the reference face.\n'
                 'summary:\nA different camera angle.\nretention_analysis:\nKeep identity.\n'

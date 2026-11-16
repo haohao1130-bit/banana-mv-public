@@ -62,6 +62,14 @@ class CommissionGuardTests(unittest.TestCase):
         self.assertEqual(check_commission(appearance,[],role_pictures(self.SETUP),10,
             wardrobe_for_clip('兩人到了海邊步道。',fixed),False),[])
 
+    def test_mentioning_seawater_does_not_trigger_beach_wardrobe(self):
+        from banana_mv.commission_guard import scene_is_beach
+        mention='場景：白天公寓工作室與客廳。\n她唱「我都快忘記海水到底有多甜」。'
+        self.assertFalse(scene_is_beach(mention))
+        self.assertEqual(wardrobe_for_clip(mention,
+            'S1 穿短袖短褲、S2 穿純白細繩綁帶比基尼'),{})
+        self.assertTrue(scene_is_beach('場景：白天海邊，兩人沿浪線玩水。'))
+
     def test_unspecified_srt_does_not_forbid_performance(self):
         prompt = self.DEFS + '[Shot 1] <Subject 1> (S1) sings.\n'
         self.assertEqual(check_commission(prompt,[],role_pictures(self.SETUP),10.0,{},False),[])
