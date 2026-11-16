@@ -765,6 +765,72 @@ class TakeTests(unittest.TestCase):
         self.assertEqual(observed,[(new_15,'waiting',True)])
         self.assertEqual(takes.take_source(job,2,new_15).read_bytes(),b'new')
 
+
+    def test_5070_completed_project_uses_single_official_take_not_pending_condense(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        candidate=job['segments'][1]['takes'][-1]['id']
+        with self.assertRaisesRegex(ValueError,'正式採用'):
+            takes.continue_from_take(job['id'],1,candidate,'cascade')
+        adopted=takes.select_take(job['id'],1,candidate)
+        self.assertEqual(adopted['segments'][1]['selected_take'],candidate)
+        self.assertEqual(adopted.get('pending_takes'),{})
+        self.assertEqual(adopted['continuation_restart']['from_index'],2)
+        self.assertTrue(adopted['final_stale'])
+        self.assertNotIn('video',adopted)
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        with self.assertRaisesRegex(ValueError,'停用混選凝丹'):
+            takes.condense(job['id'])
+        with self.assertRaisesRegex(ValueError,'不可只換一段'):
+            takes.continue_from_take(job['id'],1,candidate,'only')
+        with self.assertRaisesRegex(ValueError,'只能逐段修正'):
+            takes.retake(job['id'],[1,2])
+        with self.assertRaisesRegex(ValueError,'舊時間線'):
+            takes.retake(job['id'],[2])
+        self.assertFalse(app.GPU_LOCK.locked())
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        with patch.object(app,'local_prompt',side_effect=lambda cfg,req,seg,originals,tail:
+                          f'new film prompt {seg["index"]}') as rewrite:
+            takes.continue_from_take(job['id'],1,candidate,'cascade')
+            result=self.run_background()
+        self.assertEqual(rewrite.call_count,2)
+        self.assertEqual(result['status'],'done')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|new|new')
+        self.assertTrue((self.work/'02_part_v1.mp4').exists())
+
+    def test_5070_last_segment_adopt_and_assemble_without_old_condense(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[3])
+        job=self.run_background()
+        candidate=job['segments'][3]['takes'][-1]['id']
+        adopted=takes.select_take(job['id'],3,candidate)
+        self.assertEqual(adopted['segments'][3]['selected_take'],candidate)
+        self.assertNotIn('continuation_restart',adopted)
+        result=takes.continue_from_take(job['id'],3,candidate,'cascade')
+        self.assertEqual(result['status'],'assembling')
+        completed=self.run_background()
+        self.assertEqual(completed['status'],'done')
+        self.assertNotIn('final_stale',completed)
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|old1|old2|new')
+        self.assertEqual(app.backend.queue_prompt.call_count,1,
+                         'final assembly must not reshoot an already adopted final clip')
+
+    def test_5070_manual_rewrite_rejects_old_future_after_adoption(self):
+        from banana_mv import manual_prompt
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1]);job=self.run_background()
+        candidate=job['segments'][1]['takes'][-1]['id']
+        takes.select_take(job['id'],1,candidate)
+        with self.assertRaisesRegex(ValueError,'舊時間線'):
+            manual_prompt.rewrite_clip(job['id'],2)
+        self.assertFalse(app.GPU_LOCK.locked())
+
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
