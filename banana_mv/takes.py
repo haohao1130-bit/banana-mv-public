@@ -478,6 +478,22 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
         app.preflight(cfg,graph)
         app.preflight_five_frame(cfg,job['request'],job['images_comfy'],job['size'],first,job['seed'])
         old_status=job['status']
+        # The current job timeline changes immediately: all successors are
+        # newly pending, even if older Takes or root files still exist.
+        # The archived video bytes stay intact for rollback only.
+        if mode=='cascade':
+            job['continuation_generation']={
+                'anchor_index':index,'anchor_take':take_id,
+                'anchor_version':take_version(job,index,take_id),
+                'from_index':index+1,'total':len(job['segments'])-index-1,
+                'started_at':time.time(),
+            }
+            for child in job['segments'][index+1:]:
+                child['status']='waiting'
+                child['refresh_prompt']=True
+                child.pop('prompt_id',None)
+                child.pop('interrupted_render',None)
+                child.pop('scene_state_prompt_sha256',None)
         # Once the user starts the requested branch, it must not replay on a
         # later generic resume or silently pick a stale former continuation.
         job.pop('continuation_restart',None)
@@ -584,7 +600,10 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 base=take.get('base_take',seg.get('selected_take','original'))
                 saved=existing_file(job,i,base,'prompt.txt')
                 prompt=saved.read_text(encoding='utf-8') if saved.is_file() else (seg.get('prompt') or (work/f'{i:02d}_prompt.txt').read_text(encoding='utf-8'))
-            take['status']='generating';job['retake']['current']=i;app.write_state(job)
+            take['status']='generating';job['retake']['current']=i
+            if job['retake'].get('branch',{}).get('mode')=='cascade':
+                seg['status']='preparing'
+            app.write_state(job)
             name=f'banana_retake_{job["id"]}_{take["id"]}.wav';inp=Path(cfg['comfy_input_dir'])
             overlap=5 if job['request']['mode']=='chain5' and i>0 else 0
             render_frames=(app.align_frames(max(124,seg['frames']+overlap))
@@ -619,14 +638,20 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 take['base_prompt_sha256']=hashlib.sha256(prompt.encode()).hexdigest()
                 prompt=repair_prompt(cfg,job,seg,prompt,take['correction'],originals,frame if first else None,dest,prefix=f'{i:02d}_v{take["version"]}_')
             elif take.get('rebuild_prompt'):
-                take['status']='rewriting';app.write_state(job)
+                take['status']='rewriting'
+                if job['retake'].get('branch',{}).get('mode')=='cascade':
+                    seg['status']='rewriting'
+                app.write_state(job)
                 candidate=copy.deepcopy(seg)
                 prompt=app.local_prompt(cfg,job['request'],candidate,originals,
                                         frame if first else None)
                 take['prompt_source']='fresh_9b_from_current_commission'
                 take['prompt_profile']=candidate.get('prompt_profile',{})
             (output('prompt.txt')).write_text(prompt,encoding='utf-8')
-            take['status']='generating';app.write_state(job)
+            take['status']='generating'
+            if job['retake'].get('branch',{}).get('mode')=='cascade':
+                seg['status']='generating'
+            app.write_state(job)
             graph=app.build_workflow(job['images_comfy'],name,*job['size'],render_frames,prompt,take['seed'],first,
                                      guide_frames=guide_files or None,
                                      **app.graph_options(job['request'],seg['seconds'],seg))
@@ -648,6 +673,17 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 app.trim_video(output('raw.mp4'),output('part.mp4'),seg['frames'])
             if not app.valid_part(output('part.mp4'),seg,job['size']):raise ValueError('回爐毛片影格或尺寸不符。')
             take['status']='ready';choices[i]=take['id']
+            if job['retake'].get('branch',{}).get('mode')=='cascade':
+                # Commit each successful newly filmed segment as this run's
+                # continuation source; never let an interrupted run silently
+                # use the former selected take as if it were the new result.
+                seg['status']='done'
+                seg['selected_take']=take['id']
+                seg['prompt']=prompt
+                seg['render_seed']=take['seed']
+                seg['prompt_id']=take['prompt_id']
+                seg.pop('refresh_prompt',None)
+                seg.pop('interrupted_render',None)
             if take.get('first_render'):
                 # The first successful clip has no old film to audition.
                 # Select it as the original version for safe later resume.
