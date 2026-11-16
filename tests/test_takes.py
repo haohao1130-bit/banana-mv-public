@@ -268,6 +268,68 @@ class TakeTests(unittest.TestCase):
         app.backend.rewrite_local.assert_not_called()
         self.assertEqual(app.backend.queue_prompt.call_count,1)
 
+    def test_manual_first_render_auto_continues_without_second_resume_click(self):
+        index=2
+        project=app.read_state(self.job['id'])
+        project['status']='cancelled'
+        project['segments'][index]['status']='waiting'
+        project['segments'][index]['prompt']='STALE'
+        project['segments'][index]['interrupted_render']=True
+        (self.work/'02_part.mp4').unlink()
+        app.write_state(project)
+        fresh='subject_definitions:\nS1 original face.\ndetailed_description:\n[Shot 1] New action.'
+        handoffs=[]
+        def resume_in_same_worker(job,cfg,originals,song,drive):
+            handoffs.append((job,cfg,originals,song,drive))
+            self.assertTrue(app.GPU_LOCK.locked())
+            self.assertEqual(job['segments'][index]['prompt'],fresh)
+            self.assertEqual(job['segments'][index]['status'],'done')
+            self.assertEqual(job['status'],'running')
+            self.assertTrue(job['resuming'])
+            self.assertEqual(job['retake']['status'],'done')
+            self.assertEqual(job['retake']['auto_resume_status'],'running')
+            self.assertNotIn('interrupted_render',job['segments'][index])
+            app.GPU_LOCK.release()
+        with patch.object(app,'worker',side_effect=resume_in_same_worker) as follow:
+            result=takes.retake(self.job['id'],[index],prompts={str(index):fresh},auto_resume=True)
+            self.assertEqual(result['retake']['auto_resume'],True)
+            output=self.run_background()
+            follow.assert_called_once()
+        self.assertEqual(output['segments'][0]['status'],'done')
+        self.assertEqual(output['segments'][1]['status'],'done')
+        self.assertEqual(output['segments'][index]['selected_take'],output['segments'][index]['takes'][0]['id'])
+        self.assertEqual((self.work/'01_part.mp4').read_bytes(),b'old1')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        self.assertEqual(app.backend.queue_prompt.call_count,1,'only the replaced clip was filmed in this step')
+        self.assertEqual(len(handoffs),1)
+
+    def test_auto_continue_only_for_unfinished_first_render_with_previous_clips_done(self):
+        with self.assertRaisesRegex(ValueError,'自動續跑只適用'):
+            takes.retake(self.job['id'],[2],prompts={'2':'valid prompt'},auto_resume=True)
+        self.assertFalse(app.GPU_LOCK.locked())
+        project=app.read_state(self.job['id']);project['status']='cancelled'
+        project['segments'][1]['status']='waiting'
+        project['segments'][2]['status']='waiting'
+        (self.work/'02_part.mp4').unlink()
+        app.write_state(project)
+        with self.assertRaisesRegex(ValueError,'自動續跑只適用'):
+            takes.retake(self.job['id'],[2],prompts={'2':'valid prompt'},auto_resume=True)
+        self.assertFalse(app.GPU_LOCK.locked())
+
+    def test_auto_continue_does_not_start_if_first_render_fails(self):
+        idx=3;project=app.read_state(self.job['id']);project['status']='cancelled'
+        project['segments'][idx]['status']='waiting'
+        (self.work/'03_part.mp4').unlink()
+        app.write_state(project)
+        app.wait_generation.side_effect=RuntimeError('H3 failed')
+        with patch.object(app,'worker') as follow:
+            takes.retake(self.job['id'],[idx],prompts={'3':'valid new prompt'},auto_resume=True)
+            outcome=self.run_background()
+            follow.assert_not_called()
+        self.assertEqual(outcome['retake']['status'],'error')
+        self.assertEqual(outcome['status'],'cancelled')
+        self.assertNotEqual(outcome['segments'][idx]['status'],'done')
+
     def test_manual_prompt_keys_and_empty_content_are_rejected(self):
         for prompts in ({'2':'full prompt'},{'1':''},{'1':12},{'1':'x'*50001}):
             with self.subTest(prompts=list(prompts)),self.assertRaises(ValueError):

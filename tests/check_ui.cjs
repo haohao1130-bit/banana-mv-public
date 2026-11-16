@@ -253,6 +253,13 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   failedRow.promptEditor.value='subject_definitions:\nMy pasted manual prompt';
   failedRow.promptEditor.oninput();
   assert.equal(failedRow.renderButton.disabled,false,'complete pasted prompt can render first version');
+  vm.runInContext("active='failed123'",context);
+  await failedRow.renderButton.onclick();
+  assert.deepEqual(retakes.at(-1),{
+    id:'failed123',indices:[0],
+    prompts:{'0':'subject_definitions:\nMy pasted manual prompt'},
+    auto_resume:true
+  },'an unfinished clip must auto-continue after manual first render');
 
   // The same form submits either direct rendering or upstream-only planning.
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;

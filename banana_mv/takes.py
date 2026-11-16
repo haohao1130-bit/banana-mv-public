@@ -188,8 +188,9 @@ def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     return normalize_mv_prompt(_text(raw),len(refs))
 
 
-def retake(job_id,indices,instructions=None,prompts=None):
+def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False):
     if not isinstance(indices,list) or not indices:raise ValueError('請勾選至少一顆需要回爐的丹藥。')
+    if not isinstance(auto_resume,bool):raise ValueError('自動續跑參數必須為布林值。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
         job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg)
@@ -218,6 +219,11 @@ def retake(job_id,indices,instructions=None,prompts=None):
                 if not (seg.get('prompt') or saved.is_file()):
                     raise ValueError('缺少原段落提示詞，無法保留劇本重拍。')
             if app.is_continuation(job['request']['mode']) and i>0:take_source(job,i-1)
+        if auto_resume:
+            if (len(indices)!=1 or indices[0] not in first_takes or
+                    job['status'] not in ('error','cancelled','interrupted') or
+                    any(seg.get('status')!='done' for seg in job['segments'][:indices[0]])):
+                raise ValueError('自動續跑只適用於已停止的專案，從第一個未完成段落貼新稿回爐。')
         originals,song,drive=app.project_inputs(job,cfg)
         # Retake with a user's full prompt: verify only media references,
         # not the model's creative vocabulary or arbitrary shot counts.
@@ -250,7 +256,7 @@ def retake(job_id,indices,instructions=None,prompts=None):
             if i in overrides:take['manual_prompt']=overrides[i]
             seg.setdefault('takes',[]).append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
-                   'takes':{str(i):t['id'] for i,t in batch}})
+                   'auto_resume':auto_resume,'takes':{str(i):t['id'] for i,t in batch}})
         app.CANCEL.discard(job_id);app.write_state(job)
         threading.Thread(target=retake_worker,args=(job,cfg,song,drive,batch,old_status,originals),daemon=True).start()
         return describe(job)
@@ -305,6 +311,7 @@ def apply_takes(job,choices,song):
 
 def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
     work=app.job_dir(job['id']);choices={};temporary=[];current=None
+    handoff=False
     try:
         for i,take in batch:
             if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
@@ -380,11 +387,26 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 seg['prompt']=prompt
                 seg['render_seed']=take['seed']
                 seg['prompt_id']=take['prompt_id']
+                seg.pop('interrupted_render',None)
             job['retake']['completed']=len(choices);app.write_state(job)
         if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
-        # Candidates remain separate from adopted parts and the current master.
-        job['status']=old_status
+        # Completed clips remain separate candidates in the usual audition
+        # path. Only a user's FIRST render of an interrupted clip is adopted
+        # automatically, then the already-running GPU worker owns the handoff.
         job['retake']['status']='done'
+        job['status']=old_status
+        if job['retake'].get('auto_resume'):
+            try:
+                app.repair_unstarted_timeline(job,song)
+                app.restore_render_settings(job)
+                job.update(status='running',resuming=True,resumed=time.time())
+                job.pop('error',None);job.pop('error_stage',None)
+                job.pop('video',None)
+                job['retake']['auto_resume_status']='running'
+                handoff=True
+            except Exception as error:
+                job['retake']['auto_resume_status']='error'
+                job['retake']['auto_resume_error']=str(error)
     except Exception as e:
         cancelled=job['id'] in app.CANCEL or isinstance(e,InterruptedError)
         if current and current['status']!='ready':
@@ -399,7 +421,22 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
         for p in temporary:p.unlink(missing_ok=True)
         app.CANCEL.discard(job['id'])
         try:app.write_state(job)
-        finally:app.GPU_LOCK.release()
+        finally:
+            if not handoff:app.GPU_LOCK.release()
+    if handoff:
+        # Run in the same background worker under the existing GPU lock:
+        # no new user click, no stale prompt, no queue handoff race.
+        # app.worker releases that lock when finished (or interrupted).
+        try:
+            app.worker(job,cfg,originals,song,drive)
+        except Exception as error:
+            job['status']='error'
+            job['error']='回爐成功，但自動續跑交接失敗：'+str(error)
+            job['retake']['auto_resume_status']='error'
+            job['retake']['auto_resume_error']=str(error)
+            try:app.write_state(job)
+            finally:
+                if app.GPU_LOCK.locked():app.GPU_LOCK.release()
 
 
 
