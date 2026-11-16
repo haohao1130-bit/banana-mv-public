@@ -528,6 +528,57 @@ class TakeTests(unittest.TestCase):
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
 
+
+    def test_retake_uses_explicit_9b_previous_take_for_actual_h3_frame(self):
+        self.job['request']['mode']='chain'
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        parent=job['segments'][1]['takes'][-1]['id']
+        app.last_frame.reset_mock()
+        takes.retake(job['id'],[2],prompts={'2':'H3 draft from revised clip 2'},
+                     previous_takes={'2':parent})
+        job=self.run_background()
+        child=job['segments'][2]['takes'][-1]
+        self.assertEqual(child['previous_take'],parent)
+        self.assertEqual(app.last_frame.call_args.args[0],
+                         takes.take_file(job,1,parent,'part.mp4'))
+        self.assertEqual(takes.existing_file(job,2,child['id'],'prompt.txt').read_text(),
+                         'H3 draft from revised clip 2')
+        self.assertEqual(takes.take_source(job,1).read_bytes(),b'old1')
+
+    def test_branch_adopts_parent_lineage_that_was_used_to_generate_child(self):
+        self.job['request']['mode']='chain'
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        parent=job['segments'][1]['takes'][-1]['id']
+        takes.retake(job['id'],[2],previous_takes={'2':parent})
+        job=self.run_background()
+        child=job['segments'][2]['takes'][-1]['id']
+        takes.continue_from_take(job['id'],2,child,'only')
+        job=self.run_background()
+        self.assertEqual(job['segments'][1]['selected_take'],parent)
+        self.assertEqual(job['segments'][2]['selected_take'],child)
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|new|old3')
+
+    def test_condense_rejects_child_without_its_generated_parent_take(self):
+        self.job['request']['mode']='chain'
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        parent=job['segments'][1]['takes'][-1]['id']
+        takes.retake(job['id'],[2],previous_takes={'2':parent})
+        job=self.run_background()
+        child=job['segments'][2]['takes'][-1]['id']
+        takes.select_take(job['id'],2,child)
+        job=app.read_state(job['id'])
+        takes.condense(job['id'],job.get('selection_revision'))
+        job=self.run_background()
+        self.assertEqual(job['retake']['status'],'error')
+        self.assertIn('Take',job['retake']['error'])
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
