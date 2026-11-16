@@ -119,6 +119,110 @@ def vocal_errors(prompt, cues, pictures, seconds, has_srt=True):
     return problems
 
 
+def scene_is_beach(event):
+    """Recognize beach staging, not a lyric mentioning the sea."""
+    direct=re.search(r'(?im)^\s*(?:-\s*(?:@\d+(?:\.\d+)?s\s*)?)?'
+                     r'(?:場景|CURRENT_SCENE|LOCATION)\s*[：:]\s*(.+)
+    """Promote already-current beach wardrobe, without leaking later plot to 9B."""
+    if not scene_is_beach(event):
+        return {}
+    combined = fixed_setup + '\n' + event
+    result = {}
+    if re.search(r'S1.{0,45}短袖.{0,25}短褲|S1.{0,45}short.sleeve.{0,25}shorts', combined, re.I):
+        result['S1'] = 'short-sleeve top and shorts'
+    if re.search(r'S2.{0,55}(?:純白.{0,15})?(?:細繩|綁帶).{0,15}比基尼|S2.{0,55}white.{0,25}(?:string|tie).{0,20}bikini', combined, re.I):
+        result['S2'] = 'pure-white tie-string bikini'
+    return result
+
+
+def wardrobe_errors(prompt, expected, pictures):
+    if not expected:
+        return []
+    mapped, _ = _subject_roles(prompt, pictures)
+    definition = prompt.split('subject_definitions:',1)[-1].split('summary:',1)[0]
+    retention = prompt.split('retention_analysis:',1)[-1].split('detailed_description:',1)[0]
+    errors = []
+    for role, label in expected.items():
+        marker = _OLD_S1 if role == 'S1' and 'shorts' in label else _OLD_S2 if role == 'S2' and 'bikini' in label else None
+        if marker is None:
+            continue
+        actor_lines = [line for part in (definition,retention) for line in part.splitlines()
+                       if any(re.search(rf'^\s*<Subject\s+{number}>',line)
+                              for number, actual in mapped.items() if actual == role)]
+        if not actor_lines:
+            errors.append(f'[ERROR][Wardrobe] {role}: missing actor definition for {label}.')
+            continue
+        stale = [line.strip()[:160] for line in actor_lines if marker.search(line)]
+        if stale:
+            errors.append(f'[ERROR][Wardrobe] {role}: previous-scene clothing remains in subject_definitions/retention_analysis ({stale[0]}). Current outfit MUST be {label}.')
+        descriptor = '\n'.join(actor_lines).lower()
+        if role == 'S1' and (not re.search(r'short.sleeve|t-shirt|短袖',descriptor,re.I)
+                             or not re.search(r'\bshorts\b|短褲',descriptor,re.I)):
+            errors.append('[ERROR][Wardrobe] S1: subject/retention must describe short-sleeve top AND shorts for the current beach scene.')
+        if role == 'S2' and (not re.search(r'white|白色|純白',descriptor,re.I)
+                             or not re.search(r'bikini|比基尼',descriptor,re.I)
+                             or not re.search(r'tie|strap|string|綁帶|細繩',descriptor,re.I)):
+            errors.append('[ERROR][Wardrobe] S2: current beach appearance requires a pure-white tie-string bikini.')
+    return errors
+
+
+def check_commission(prompt, cues, pictures, seconds, expected_wardrobe, has_srt):
+    return vocal_errors(prompt, cues, pictures, seconds, has_srt) + wardrobe_errors(prompt, expected_wardrobe, pictures)
+,event)
+    if direct:
+        return bool(_BEACH.search(direct.group(1)))
+    chapter=re.search(r'(?im)^(?:Source chapter:|PYTHON-OWNED CURRENT EVENT — scene)\s*(.+)
+    """Promote already-current beach wardrobe, without leaking later plot to 9B."""
+    if not _BEACH.search(event):
+        return {}
+    combined = fixed_setup + '\n' + event
+    result = {}
+    if re.search(r'S1.{0,45}短袖.{0,25}短褲|S1.{0,45}short.sleeve.{0,25}shorts', combined, re.I):
+        result['S1'] = 'short-sleeve top and shorts'
+    if re.search(r'S2.{0,55}(?:純白.{0,15})?(?:細繩|綁帶).{0,15}比基尼|S2.{0,55}white.{0,25}(?:string|tie).{0,20}bikini', combined, re.I):
+        result['S2'] = 'pure-white tie-string bikini'
+    return result
+
+
+def wardrobe_errors(prompt, expected, pictures):
+    if not expected:
+        return []
+    mapped, _ = _subject_roles(prompt, pictures)
+    definition = prompt.split('subject_definitions:',1)[-1].split('summary:',1)[0]
+    retention = prompt.split('retention_analysis:',1)[-1].split('detailed_description:',1)[0]
+    errors = []
+    for role, label in expected.items():
+        marker = _OLD_S1 if role == 'S1' and 'shorts' in label else _OLD_S2 if role == 'S2' and 'bikini' in label else None
+        if marker is None:
+            continue
+        actor_lines = [line for part in (definition,retention) for line in part.splitlines()
+                       if any(re.search(rf'^\s*<Subject\s+{number}>',line)
+                              for number, actual in mapped.items() if actual == role)]
+        if not actor_lines:
+            errors.append(f'[ERROR][Wardrobe] {role}: missing actor definition for {label}.')
+            continue
+        stale = [line.strip()[:160] for line in actor_lines if marker.search(line)]
+        if stale:
+            errors.append(f'[ERROR][Wardrobe] {role}: previous-scene clothing remains in subject_definitions/retention_analysis ({stale[0]}). Current outfit MUST be {label}.')
+        descriptor = '\n'.join(actor_lines).lower()
+        if role == 'S1' and (not re.search(r'short.sleeve|t-shirt|短袖',descriptor,re.I)
+                             or not re.search(r'\bshorts\b|短褲',descriptor,re.I)):
+            errors.append('[ERROR][Wardrobe] S1: subject/retention must describe short-sleeve top AND shorts for the current beach scene.')
+        if role == 'S2' and (not re.search(r'white|白色|純白',descriptor,re.I)
+                             or not re.search(r'bikini|比基尼',descriptor,re.I)
+                             or not re.search(r'tie|strap|string|綁帶|細繩',descriptor,re.I)):
+            errors.append('[ERROR][Wardrobe] S2: current beach appearance requires a pure-white tie-string bikini.')
+    return errors
+
+
+def check_commission(prompt, cues, pictures, seconds, expected_wardrobe, has_srt):
+    return vocal_errors(prompt, cues, pictures, seconds, has_srt) + wardrobe_errors(prompt, expected_wardrobe, pictures)
+,event)
+    if chapter and re.search(r'到了海邊|海邊遊玩|沙灘|beach|shoreline',chapter.group(1),re.I):
+        return True
+    return bool(re.search(r'走到沙灘|走向沙灘|站在沙灘|沿著浪線|沿浪線|走進淺水|踩上細沙|走到海水邊|已經到了海邊',event))
+
+
 def wardrobe_for_clip(event, fixed_setup):
     """Promote already-current beach wardrobe, without leaking later plot to 9B."""
     if not _BEACH.search(event):

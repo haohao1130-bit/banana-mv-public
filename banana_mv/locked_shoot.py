@@ -3,7 +3,7 @@ import copy
 import re
 import uuid
 
-from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2
+from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, scene_is_beach
 from banana_mv.direction_contract import validate_h3_sections
 from banana_mv.lyrics_reference import excerpt, vocal_timeline
 from banana_mv.scene_state import SceneStateError
@@ -234,7 +234,7 @@ def _cfg(cfg,temperature):
     return c
 
 def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
-    scene='beach / shoreline' if _BEACH.search(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
+    scene='beach / shoreline' if scene_is_beach(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
     definitions=[];retention=[]
     for role,n in (('S1',1),('S2',2)):
         ref=pictures[role]
