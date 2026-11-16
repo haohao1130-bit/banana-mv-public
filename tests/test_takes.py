@@ -556,6 +556,87 @@ with patch('http.server.ThreadingHTTPServer') as http:
             result=subprocess.run([sys.executable,'-c',script],env={**os.environ,'BANANA_DATA':tmp},capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
 
+
+    def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
+        self.job['request']['mode']='chain'
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        candidate=job['segments'][1]['takes'][-1]['id']
+        job=takes.continue_from_take(job['id'],1,candidate,'only')
+        self.assertEqual(job['retake']['branch']['mode'],'only')
+        job=self.run_background()
+        self.assertEqual(job['status'],'done')
+        self.assertEqual(takes.take_source(job,1).read_bytes(),b'new')
+        self.assertEqual(takes.take_source(job,2).read_bytes(),b'old2')
+        self.assertEqual(takes.take_source(job,3).read_bytes(),b'old3')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|old2|old3')
+        self.assertTrue((self.work/'01_part_v1.mp4').is_file())
+
+    def test_cascade_branch_rewrites_subsequent_clips_using_new_tails(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        candidate=job['segments'][1]['takes'][-1]['id']
+        app.last_frame.reset_mock()
+        with patch.object(app,'local_prompt',side_effect=lambda cfg,req,seg,originals,tail:
+                          'fresh clip '+str(seg['index'])) as rewrite:
+            job=takes.continue_from_take(job['id'],1,candidate,'cascade')
+            self.assertEqual(job['retake']['indices'],[2,3])
+            job=self.run_background()
+        self.assertEqual(job['status'],'done')
+        self.assertEqual(rewrite.call_count,2)
+        child2=job['segments'][2]['selected_take']
+        child3=job['segments'][3]['selected_take']
+        self.assertEqual(job['segments'][2]['takes'][-1]['previous_take'],candidate)
+        self.assertEqual(job['segments'][3]['takes'][-1]['previous_take'],child2)
+        self.assertEqual(takes.existing_file(job,2,child2,'prompt.txt').read_text(),'fresh clip 2')
+        self.assertEqual(takes.existing_file(job,3,child3,'prompt.txt').read_text(),'fresh clip 3')
+        self.assertEqual([c.args[0] for c in app.last_frame.call_args_list],
+                         [takes.take_file(job,1,candidate,'part.mp4'),
+                          takes.take_file(job,2,child2,'part.mp4')])
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old0|new|new|new')
+        self.assertTrue((self.work/'02_part_v1.mp4').is_file())
+        self.assertTrue((self.work/'03_part_v1.mp4').is_file())
+
+    def test_cascade_with_unfinished_tail_adopts_new_chain_before_resume(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.cfg['rewriter']={'model':'fake'}
+        self.job['status']='error'
+        self.job['segments'][3]['status']='waiting'
+        (self.work/'03_part.mp4').unlink()
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        candidate=job['segments'][1]['takes'][-1]['id']
+        observed=[]
+        def resume_worker(state,cfg,originals,song,drive):
+            observed.append({
+                'source2':takes.take_source(state,2).read_bytes(),
+                'selected1':state['segments'][1]['selected_take'],
+                'new2':state['segments'][2]['selected_take'],
+                'waiting3':state['segments'][3]['status'],
+                'refresh3':state['segments'][3].get('refresh_prompt'),
+            })
+            app.GPU_LOCK.release()
+        with patch.object(app,'local_prompt',return_value='fresh subsequent'),patch.object(
+                app,'worker',side_effect=resume_worker) as worker:
+            takes.continue_from_take(job['id'],1,candidate,'cascade')
+            job=self.run_background()
+        self.assertEqual(worker.call_count,1)
+        self.assertEqual(observed[0]['selected1'],candidate)
+        self.assertEqual(observed[0]['source2'],b'new')
+        self.assertEqual(observed[0]['waiting3'],'waiting')
+        self.assertTrue(observed[0]['refresh3'])
+        self.assertTrue((self.work/'02_part_v1.mp4').is_file())
+
+    def test_branch_refuses_unsupported_mode_without_touching_files(self):
+        with self.assertRaisesRegex(ValueError,'選擇'):
+            takes.continue_from_take(self.job['id'],1,'original','wrong')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+
     def test_raw_audio_preview_real_ffmpeg_range_head_and_safe_routes(self):
         import urllib.request
         import urllib.error
