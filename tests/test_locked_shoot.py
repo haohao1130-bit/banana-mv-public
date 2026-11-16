@@ -1,6 +1,6 @@
 """Python-owned singer cuts and 9B visual-only slot tests."""
 import unittest
-from banana_mv.locked_shoot import plan_slots, singer_rows, _global_vocal_rows, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, write_locked_shoot_prompt
+from banana_mv.locked_shoot import plan_slots, singer_rows, _global_vocal_rows, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, _errors, write_locked_shoot_prompt
 
 
 def cue(a,b,*roles):
@@ -319,6 +319,58 @@ class LockedShootTests(unittest.TestCase):
         self.assertEqual(full[1],body[1])
         with self.assertRaises(ValueError):
             _extract('A bare unlabeled paragraph.',slots,only=1)
+
+
+    def test_clip14_beach_to_apartment_restores_dry_reference_wardrobe(self):
+        from banana_mv.commission_guard import scene_wardrobe_schedule
+        fixed=('S1 = <Picture 2>, adult male lead\n'
+               'S2 = <Picture 3>, adult female lead\n'
+               '海邊換成 S1 的輕便短袖與短褲、S2 的純白細繩綁帶比基尼。')
+        event=(
+            'USER-SPECIFIED SONG TIME — this chapter is assigned to 120.000–139.260s source time; '
+            'its active time inside THIS clip is 0.000–9.260s. Follow its action order.\n'
+            'PYTHON-OWNED CURRENT EVENT — scene 第十三段｜海邊玩水\n'
+            'Current interval actions:\n- 兩人沿浪線散步，一起自拍。\n\n'
+            'USER-SPECIFIED SONG TIME — this chapter is assigned to 139.260–140.000s source time; '
+            'its active time inside THIS clip is 9.260–10.000s. Follow its action order.\n'
+            'PYTHON-OWNED CURRENT EVENT — scene 第十四段｜夜晚回到公寓\n'
+            'Current interval actions:\n- 兩人已換好原始居家服裝，女主角收好泳圈。\n'
+        )
+        pictures={'S1':'<Picture 2>','S2':'<Picture 3>'}
+        schedule=scene_wardrobe_schedule(event,fixed,pictures,10)
+        self.assertEqual([(row['start'],row['end']) for row in schedule],
+                         [(0.0,9.26),(9.26,10.0)])
+        self.assertEqual(schedule[0]['wardrobe']['S2'],'pure-white tie-string bikini')
+        self.assertEqual(schedule[1]['wardrobe']['S1'],
+                         'the dry original outfit shown in <Picture 2>')
+        self.assertEqual(schedule[1]['wardrobe']['S2'],
+                         'the dry original outfit shown in <Picture 3>')
+        slots=plan_slots(10,[cue(0,4.1,'S1'),cue(4.1,9.26,'S1','S2'),
+                              cue(9.26,10,'S2')],{},False,scene_cuts=[9.26])
+        self.assertIn(9.26,[slot['start'] for slot in slots])
+        blocks={slot['number']:'<Subject 1> and <Subject 2> interact with their surroundings.'
+                for slot in slots}
+        final=_native(blocks,slots,pictures,{},True,event,3,fixed,schedule)
+        self.assertIn('9.260–10.000s: the dry original outfit shown in <Picture 2>',final)
+        self.assertIn('9.260–10.000s: the dry original outfit shown in <Picture 3>',final)
+        self.assertIn('Scene: nighttime apartment.',final)
+        self.assertIn('Scene: beach / shoreline.',final)
+        last=next(slot for slot in slots if slot['start']==9.26)
+        self.assertIn('already wears the dry original outfit',final.split(
+            '[Shot '+str(last['number'])+']',1)[1])
+        self.assertIn('[ERROR][Wardrobe]',str(_errors(
+            {last['number']:'<Subject 2> is wearing a white bikini in the apartment.'},
+            {},schedule,slots)))
+
+    def test_reference_clothes_do_not_reset_on_ordinary_beach_or_apartment_clip(self):
+        from banana_mv.commission_guard import scene_wardrobe_schedule
+        fixed='S1 = <Picture 2>\nS2 = <Picture 3>'
+        pictures={'S1':'<Picture 2>','S2':'<Picture 3>'}
+        one='USER-SPECIFIED SONG TIME — active time inside THIS clip is 0.000–10.000s.\n'
+        self.assertEqual(scene_wardrobe_schedule(
+            one+'PYTHON-OWNED CURRENT EVENT — scene 海邊',fixed,pictures,10),[])
+        self.assertEqual(scene_wardrobe_schedule(
+            one+'PYTHON-OWNED CURRENT EVENT — scene 公寓',fixed,pictures,10),[])
 
     def test_no_lip_sync_assigned_to_terminal_instrumental_tail(self):
         slots=plan_slots(1.208,[],{},False)
