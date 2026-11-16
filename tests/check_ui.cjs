@@ -310,6 +310,24 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
     id:'review123',index:1,take:'abcdef123456',mode:'cascade'
   });
   assert(els['resume-project'].textContent.includes('第 3 段接拍'));
+  // Persisted V2 can have NO restart marker (old client / finished job).
+  // It remains the authoritative tail for a newly requested cascade.
+  delete reviewJob.continuation_restart;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].branchCascade.hidden,false,'official V2 must retain the continue button without a restart marker');
+  assert.equal(rows[1].branchCascade.disabled,false);
+  await rows[1].branchCascade.onclick();
+  assert.deepEqual(branches.at(-1),{id:'review123',index:1,take:'abcdef123456',mode:'cascade'});
+  reviewJob.status='done';
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].branchCascade.hidden,false,'completed official V2 can still re-film its downstream');
+  assert.equal(rows[1].branchCascade.disabled,false);
+  reviewJob.segments[1].selected_take='original';
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].branchCascade.hidden,false,'unadopted chosen V2 must remain selectable for continuation');
+  rows[1].select.value='original';rows[1].select.onchange();
+  assert.equal(rows[1].branchCascade.hidden,true,'plain unmodified original has no new-tail restart');
+  rows[1].select.value='abcdef123456';rows[1].select.onchange();
   reviewJob.status='done';
   reviewJob.segments[1].selected_take='original';
   delete reviewJob.continuation_restart;
