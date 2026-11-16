@@ -220,6 +220,9 @@ class ServerIntegration(unittest.TestCase):
                             (work/'01_part_v1.mp4').unlink();(work/'final.mp4').unlink()
                             previous['segments'][1]['status']='generating'
                             previous['segments'][1].pop('prompt_id',None)
+                            # A newly adopted timeline can have no current
+                            # master until its unfinished tail is rendered.
+                            previous['final_stale']=True
                             previous.update(status='interrupted',error='simulated restart')
                             app.write_state(previous)
                             with patch.object(app.backend,'comfy',return_value={'queue_pending':['busy']}):
@@ -232,6 +235,8 @@ class ServerIntegration(unittest.TestCase):
                                 if resumed['status'] in ('done','error'):break
                                 time.sleep(.1)
                             self.assertEqual(resumed['status'],'done',resumed.get('error'))
+                            self.assertNotIn('final_stale',resumed,
+                                            'successful tail assembly must expose the NEW master')
                             self.assertEqual(resumed['request']['rewrite_retries'],2)
                             self.assertEqual(len(captured),1)
                             self.assertIn('attention_backend',captured[0])
