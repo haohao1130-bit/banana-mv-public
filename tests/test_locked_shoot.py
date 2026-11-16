@@ -1,6 +1,6 @@
 """Python-owned singer cuts and 9B visual-only slot tests."""
 import unittest
-from banana_mv.locked_shoot import plan_slots, singer_rows, _global_vocal_rows, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, _errors, write_locked_shoot_prompt
+from banana_mv.locked_shoot import plan_slots, singer_rows, _global_vocal_rows, _extract, _errors, _native, _native_output_template, _repair_vocals, _commission_text, write_locked_shoot_prompt
 
 
 def cue(a,b,*roles):
