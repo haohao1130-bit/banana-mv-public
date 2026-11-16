@@ -128,7 +128,7 @@ def scene_is_beach(event):
     chapter=re.search(r'(?im)^(?:Source chapter:|PYTHON-OWNED CURRENT EVENT — scene)\s*(.+)$',event)
     if chapter and re.search(r'到了海邊|海邊遊玩|沙灘|beach|shoreline',chapter.group(1),re.I):
         return True
-    return bool(re.search(r'走到沙灘|走向沙灘|站在沙灘|沿著浪線|沿浪線|走進淺水|踩上細沙|走到海水邊|已經到了海邊',event))
+    return bool(re.search(r'走到沙灘|走向沙灘|站在沙灘|沿著浪線|沿浪線|走進淺水|踩上細沙|走到海水邊|到了海邊',event))
 
 
 def wardrobe_for_clip(event, fixed_setup):

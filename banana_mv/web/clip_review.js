@@ -138,6 +138,7 @@ $('clips-retake').onclick=()=>{
   if(!clipIdle())return;
   const indices=[...clipView.rows].filter(([,row])=>row.check.checked).map(([i])=>i);
   const instructions=Object.fromEntries(indices.map(i=>[String(i),clipView.rows.get(i).correction.value.trim()]).filter(([,text])=>text));
-  if(indices.length)return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{rebuild_prompt:[5,6].includes(clipView.jobData?.request?.director_schema)&&!!clipView.jobData?.request?.rewrite})});
+  const fresh=!Object.keys(instructions).length&&[5,6].includes(clipView.jobData?.request?.director_schema)&&!!clipView.jobData?.request?.rewrite;
+  if(indices.length)return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{}),...(fresh?{rebuild_prompt:true}:{})});
 };
 if(active){busy(true);poll();}
