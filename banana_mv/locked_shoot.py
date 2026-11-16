@@ -6,7 +6,7 @@ import uuid
 from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, scene_is_beach, scene_wardrobe_schedule
 from banana_mv.direction_contract import validate_h3_sections
 from banana_mv.lyrics_reference import excerpt, vocal_timeline
-from banana_mv.scene_state import SceneStateError
+from banana_mv.scene_state import SceneStateError, rewrite_retry_count
 
 SHOT = re.compile(r'(?im)^\s*\[Shot\s+(\d+)\]\s*')
 STAMP = re.compile(r'^\s*(?:At\s+)?\d\d:\d\d(?:\.\d{1,3})?[,;:]?\s*', re.I)
@@ -450,59 +450,78 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
         scene_schedule=scene_schedule)
     images_parts=images
     calls=0
+    retry_limit=rewrite_retry_count(req)
+    max_calls=(retry_limit+1)*(3+2*len(slots))
     def call(parts,t,system=SYSTEM):
         nonlocal calls
         calls+=1
         if progress:
-            progress({'stage':'rewriting','clip_index':segment['index'],'attempt':calls,'max_attempts':1+2*len(slots)})
+            progress({'stage':'rewriting','clip_index':segment['index'],
+                      'attempt':calls,'max_attempts':max_calls})
         return rewrite(_cfg(cfg,t),system,parts,uuid.uuid4().hex[:8])
-    blocks=None;why=''
-    for attempt in range(3):
-        prompt=task if not why else task+'\nFORMAT REMINDER: '+why+'\nReturn the exact native six-section Ref2VA structure, with every assigned [Shot N] in detailed_description.'
-        try:
-            # Show reference images first. The FINAL input the model reads is
-            # the exact output contract, not a dangling image marker.
-            blocks=_extract(call(images_parts+[('text',prompt)],.4 if attempt==0 else .15),slots)
-            break
-        except ValueError as error:
-            why=str(error)
-    if blocks is None:
-        raise SceneStateError('9B 無法填入 Python 鏡頭骨架：'+why)
-    blocks,vocal_fixes=_repair_vocals(blocks,slots,fixed)
-    for attempt in range(3):
-        errors=_errors(blocks,wardrobe,scene_schedule,slots)
-        if not errors:
-            break
-        segment['commission_guard_errors']=[msg for messages in errors.values() for msg in messages]
-        if attempt>=2:
-            raise SceneStateError('9B 兩次局部修稿仍有衝突：'+' | '.join(segment['commission_guard_errors']))
-        for number,messages in errors.items():
-            s=slots[number-1]
-            instruction=(
-                f'REPAIR ONE SHOT ONLY: [Shot {number}] '
-                f'({s["start"]:.3f}–{s["end"]:.3f}s, clip-local).\n'
-                'PYTHON-AUTHORIZED VOCALS:\n' + '\n'.join(s['rows']) +
-                '\nCURRENT WARDROBE: ' + repr(wardrobe) +
-                '\nCONCRETE ERRORS TO FIX (no other edits):\n' +
-                '\n'.join(messages) +
-                '\nORIGINAL VISUAL PARAGRAPH TO EDIT:\n' + blocks[number] +
-                '\nKeep its camera framing, movement, staging, lighting and '
-                'valid singing. Fix only the specified error. '
-                'Copy the following H3 native SIX-SECTION structure and '
-                'replace only the detailed_description shot body. '
-                'Keep all other fixed fields and do not add other shots. '
-                'The answer must begin with subject_definitions:\n' +
-                _native_output_template([s],pictures,wardrobe)
-            )
+    # Two focused repairs per draft; if the director still contradicts the
+    # Python-locked shots, discard the rejected draft and ask 9B to reshoot
+    # its prose from the SAME current-clip commission (never the whole song).
+    for restart in range(retry_limit+1):
+        blocks=None;why=''
+        for attempt in range(3):
+            prompt=task if not why else task+'\nFORMAT REMINDER: '+why+'\nReturn the exact native six-section Ref2VA structure, with every assigned [Shot N] in detailed_description.'
             try:
-                blocks[number]=_extract(call([('text',instruction)],.15,REPAIR_SYSTEM),slots,only=number)[number]
-                blocks,new_fixes=_repair_vocals(blocks,slots,fixed)
-                vocal_fixes.extend(new_fixes)
+                blocks=_extract(call(images_parts+[('text',prompt)],.4 if attempt==0 else .15),slots)
+                break
             except ValueError as error:
-                raise SceneStateError(f'9B 第 {number} 鏡修稿格式失敗：{error}') from error
-    segment.pop('commission_guard_errors',None)
-    segment['vocal_auto_corrections']=vocal_fixes
-    segment['prompt_profile']={'source':'python_locked_srt_shots','writer_calls':calls,
-                               'contract_check_calls':1+attempt,'python_shot_count':len(slots),
-                               'vocal_auto_correction_count':len(vocal_fixes)}
-    return _native(blocks,slots,pictures,wardrobe,len(refs)>2,event,len(refs),fixed,scene_schedule)
+                why=str(error)
+        if blocks is None:
+            failure=SceneStateError('9B 無法填入 Python 鏡頭骨架：'+why)
+            if restart<retry_limit:
+                continue
+            raise failure
+        blocks,vocal_fixes=_repair_vocals(blocks,slots,fixed)
+        failure=None
+        for attempt in range(3):
+            errors=_errors(blocks,wardrobe,scene_schedule,slots)
+            if not errors:
+                break
+            segment['commission_guard_errors']=[msg for messages in errors.values() for msg in messages]
+            if attempt>=2:
+                failure=SceneStateError('9B 兩次局部修稿仍有衝突：'+' | '.join(segment['commission_guard_errors']))
+                break
+            for number,messages in errors.items():
+                shot=slots[number-1]
+                instruction=(
+                    f'REPAIR ONE SHOT ONLY: [Shot {number}] '
+                    f'({shot["start"]:.3f}–{shot["end"]:.3f}s, clip-local).\n'
+                    'PYTHON-AUTHORIZED VOCALS:\n' + '\n'.join(shot['rows']) +
+                    '\nCURRENT WARDROBE: ' + repr(wardrobe) +
+                    '\nCONCRETE ERRORS TO FIX (no other edits):\n' +
+                    '\n'.join(messages) +
+                    '\nORIGINAL VISUAL PARAGRAPH TO EDIT:\n' + blocks[number] +
+                    '\nKeep its camera framing, movement, staging, lighting and '
+                    'valid singing. Fix only the specified error. '
+                    'Copy the following H3 native SIX-SECTION structure and '
+                    'replace only the detailed_description shot body. '
+                    'Keep all other fixed fields and do not add other shots. '
+                    'The answer must begin with subject_definitions:\n' +
+                    _native_output_template([shot],pictures,wardrobe)
+                )
+                try:
+                    blocks[number]=_extract(call([('text',instruction)],.15,REPAIR_SYSTEM),slots,only=number)[number]
+                    blocks,new_fixes=_repair_vocals(blocks,slots,fixed)
+                    vocal_fixes.extend(new_fixes)
+                except ValueError as error:
+                    failure=SceneStateError(f'9B 第 {number} 鏡修稿格式失敗：{error}')
+                    break
+            if failure is not None:
+                break
+        if failure is not None:
+            if restart<retry_limit:
+                continue
+            raise SceneStateError(
+                f'9B 自動重新起稿 {restart} 次後仍未通過：{failure}') from failure
+        segment.pop('commission_guard_errors',None)
+        segment['vocal_auto_corrections']=vocal_fixes
+        segment['prompt_profile']={'source':'python_locked_srt_shots','writer_calls':calls,
+                                   'contract_check_calls':1+attempt,'python_shot_count':len(slots),
+                                   'vocal_auto_correction_count':len(vocal_fixes),
+                                   'fresh_restarts':restart}
+        return _native(blocks,slots,pictures,wardrobe,len(refs)>2,event,len(refs),fixed,scene_schedule)
