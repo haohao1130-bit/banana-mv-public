@@ -1112,6 +1112,17 @@ def restore_render_settings(job):
 
 def resume(job_id,rewrite_retries=None):
     retries=rewrite_retry_count({'rewrite_retries':rewrite_retries}) if rewrite_retries is not None else None
+    # The selected emergency-stop retake defines a NEW shooting timeline.
+    # "Continue" must start the 9B+H3 branch from its next clip, not the
+    # ordinary legacy resumer that skips done clips and can reuse old prompts.
+    prior=read_state(job_id)
+    restart=prior.get('continuation_restart')
+    if (restart and prior.get('status') in ('error','cancelled','interrupted')
+            and is_continuation(prior['request']['mode'])
+            and prior['request'].get('director_schema')==6):
+        from banana_mv.takes import continue_from_take
+        return continue_from_take(job_id,restart['index'],restart['take'],
+                                  'cascade',rewrite_retries=retries)
     if not GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 執行中，不能重複續跑。')
     try:
