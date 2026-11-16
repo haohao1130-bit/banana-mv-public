@@ -27,7 +27,7 @@ class InitialSceneStateTests(unittest.TestCase):
 
     def test_configurable_retry_budget_and_progress_do_not_invalidate_saved_state(self):
         from banana_mv.scene_state import rewrite_retry_count
-        self.assertEqual(rewrite_retry_count({}),3)
+        self.assertEqual(rewrite_retry_count({}),5)
         for value in (-1,6,True,1.5,'3'):
             with self.subTest(value=value),self.assertRaises(ValueError):rewrite_retry_count({'rewrite_retries':value})
         with tempfile.TemporaryDirectory() as temp:
