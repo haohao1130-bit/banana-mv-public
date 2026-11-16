@@ -179,6 +179,7 @@ def check_commission(prompt, cues, pictures, seconds, expected_wardrobe, has_srt
     return vocal_errors(prompt, cues, pictures, seconds, has_srt) + wardrobe_errors(prompt, expected_wardrobe, pictures)
 
 
+_SCENE_BEACH = re.compile(r'海邊|海岸|海灘|沙灘|浪線|淺水|beach|shore|surf', re.I)
 _HOME = re.compile(r'公寓|客廳|玄關|工作區|電腦桌|沙發|回家|apartment|living.room|entryway|at home', re.I)
 _CLIP_SCENE = re.compile(
     r'USER-SPECIFIED SONG TIME[^\n]*?active time inside THIS clip is '
@@ -203,7 +204,7 @@ def scene_wardrobe_schedule(event, fixed_setup, pictures, seconds):
         # Chapter headings determine location, not dialogue about another place.
         heading = body.splitlines()[0:3]
         label = ' '.join(heading)
-        if _BEACH.search(label):
+        if _SCENE_BEACH.search(label):
             scene = 'beach / shoreline'
         elif _HOME.search(label):
             scene = 'nighttime apartment'
