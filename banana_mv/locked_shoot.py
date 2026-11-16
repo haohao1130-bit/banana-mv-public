@@ -3,7 +3,7 @@ import copy
 import re
 import uuid
 
-from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, scene_is_beach
+from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, scene_is_beach, scene_wardrobe_schedule
 from banana_mv.direction_contract import validate_h3_sections
 from banana_mv.lyrics_reference import excerpt, vocal_timeline
 from banana_mv.scene_state import SceneStateError
@@ -95,7 +95,7 @@ def _global_vocal_rows(slots):
                 spans.append((start,end,policy))
     return [f'{a:.3f}–{b:.3f}s: {who}' for a,b,who in spans]
 
-def plan_slots(seconds,cues,evidence=None,dynamic=True):
+def plan_slots(seconds,cues,evidence=None,dynamic=True,scene_cuts=None):
     duration=round(float(seconds),3)
     if duration<=0:
         raise ValueError('片段長度必須為正值。')
@@ -109,6 +109,11 @@ def plan_slots(seconds,cues,evidence=None,dynamic=True):
         right=tuple(sorted({r for c in cues if float(c['clip_start'])<=t
                             and float(c['clip_end'])>t for r in c.get('subjects',())}))
         if left!=right and t-max(x for x in cuts if x<t)>=1.1 and duration-t>=.65:
+            cuts.append(t)
+    # Film an authored location cut even without a singer handoff.
+    for t in scene_cuts or ():
+        t = round(float(t), 3)
+        if .35 <= t <= duration - .35 and all(abs(t-c) >= .10 for c in cuts):
             cuts.append(t)
     cuts=sorted(set(cuts))
     music=(evidence or {}).get('music_structure',{}) if isinstance(evidence,dict) else {}
@@ -214,7 +219,7 @@ def _repair_vocals(blocks,slots,fixed):
     return revised,audit
 
 
-def _errors(blocks,wardrobe):
+def _errors(blocks,wardrobe,scene_schedule=None,slots=None):
     problems={}
     for n,body in blocks.items():
         bad=[]
@@ -225,20 +230,40 @@ def _errors(blocks,wardrobe):
                 bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] S1 must wear a short-sleeve top and shorts, not earlier apartment clothing.')
             if 'S2' in wardrobe and _OLD_S2.search(body):
                 bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] S2 must wear a white tie-string bikini, not earlier apartment clothing.')
+        # During a return-home scene, swimwear must not survive as
+        # the actor's CURRENT worn clothing. Beach props may still be carried.
+        if scene_schedule and slots:
+            shot = next((row for row in slots if row['number']==n), None)
+            scene = _active_scene(scene_schedule, shot['start']) if shot else None
+            if scene and scene['scene']=='nighttime apartment':
+                if re.search(r'\b(?:wearing|in|dressed in)\s+(?:a\s+|the\s+)?(?:white\s+|tie.string\s+|wet\s+)*(?:bikini|swimsuit|swimwear)\b',body,re.I):
+                    bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] apartment scene requires dry original reference outfits, not worn beach swimwear.')
         if bad:
             problems[n]=bad
     return problems
+
+def _active_scene(schedule, time):
+    return next((row for row in schedule
+                 if row['start']-0.002 <= time < row['end']-0.002), None)
 
 def _cfg(cfg,temperature):
     c=dict(cfg);c['rewriter']=dict(cfg['rewriter'],temperature=temperature,thinking=False)
     return c
 
-def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
+def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_schedule=None):
+    scene_schedule = scene_schedule or []
     scene='beach / shoreline' if scene_is_beach(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
+    if scene_schedule:
+        scene='beach / shoreline, followed by a cut to the nighttime apartment'
     definitions=[];retention=[]
     for role,n in (('S1',1),('S2',2)):
         ref=pictures[role]
         costume=wardrobe.get(role,'the current outfit in the assigned reference unless this event explicitly changes it')
+        if scene_schedule:
+            costume='; '.join(
+                f"{row['start']:.3f}–{row['end']:.3f}s: "
+                + row['wardrobe'].get(role, costume)
+                for row in scene_schedule)
         cast_line=next((line for line in fixed.splitlines() if re.match(r'^\s*'+role+r'\s*[=:：]',line,re.I)), '')
         gender=('male ' if re.search(r'男主|男聲|男主唱|male',cast_line,re.I) else
                 'female ' if re.search(r'女主|女聲|女主唱|female',cast_line,re.I) else '')
@@ -251,6 +276,14 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed=''):
     for s in slots:
         n=s['number'];start=s['start']
         mark=f'[Shot {n}] ' if n==1 else f'[Shot {n}] At {int(start)//60:02d}:{start%60:06.3f}, '
+        scene_row=_active_scene(scene_schedule,start) if scene_schedule else None
+        if scene_row:
+            # This is a starting condition at the shot cut, not a costume
+            # change animation or an invitation for 9B to restage the beach.
+            clothes='; '.join(
+                f'<Subject {k}> already wears {scene_row["wardrobe"][role]}'
+                for k,role in ((1,'S1'),(2,'S2')) if role in scene_row['wardrobe'])
+            mark+=f"Scene: {scene_row['scene']}. "+(clothes+'. ' if clothes else '')
         film.append(mark+blocks[n])
     output='\n\n'.join((
         'subject_definitions:\n'+'\n'.join(definitions),
@@ -308,7 +341,8 @@ def _native_output_template(slots,pictures,wardrobe):
     return '\n'.join(rows)
 
 
-def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False):
+def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False,scene_schedule=None):
+    scene_schedule=scene_schedule or []
     """Give 9B the locked facts FIRST, this clip's action SECOND, craft LAST.
 
     Fixed world/setup prose and previous/future script never enter this packet.
@@ -341,6 +375,13 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False)
     for slot in slots:
         lines.append(
             f'[Shot {slot["number"]}] {slot["start"]:.3f}–{slot["end"]:.3f}s')
+        scene_row=_active_scene(scene_schedule,slot['start']) if scene_schedule else None
+        if scene_row:
+            lines.append('  SCENE LOCK: '+scene_row['scene']
+                         +' — this scene starts here; do not reenact a costume change.')
+            for role in ('S1','S2'):
+                if role in scene_row['wardrobe']:
+                    lines.append('  '+role+' CURRENT OUTFIT: '+scene_row['wardrobe'][role])
         lines.append('  VOCAL LOCK: follow the single global SRT vocal window list above.')
         lines.append('  FILL VISUALS: camera, expression, body movement, light and reactions.')
     lines.append('')
@@ -389,9 +430,17 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False)
 
 def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs,images,rewrite,progress=None):
     cues=vocal_timeline(excerpt(req,segment))
-    slots=plan_slots(segment['seconds'],cues,segment.get('audio_evidence'),req.get('dynamic_cuts',True))
+    scene_schedule=scene_wardrobe_schedule(event,fixed,pictures,segment['seconds'])
+    if scene_schedule:
+        segment['scene_wardrobe_schedule']=scene_schedule
+    else:
+        segment.pop('scene_wardrobe_schedule',None)
+    cuts=[row['start'] for row in scene_schedule[1:]]
+    slots=plan_slots(segment['seconds'],cues,segment.get('audio_evidence'),
+                     req.get('dynamic_cuts',True),scene_cuts=cuts)
     task=_commission_text(
-        req,segment,event,pictures,wardrobe,slots,continuity=len(refs)>2)
+        req,segment,event,pictures,wardrobe,slots,continuity=len(refs)>2,
+        scene_schedule=scene_schedule)
     images_parts=images
     calls=0
     def call(parts,t,system=SYSTEM):
@@ -414,7 +463,7 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
         raise SceneStateError('9B 無法填入 Python 鏡頭骨架：'+why)
     blocks,vocal_fixes=_repair_vocals(blocks,slots,fixed)
     for attempt in range(3):
-        errors=_errors(blocks,wardrobe)
+        errors=_errors(blocks,wardrobe,scene_schedule,slots)
         if not errors:
             break
         segment['commission_guard_errors']=[msg for messages in errors.values() for msg in messages]
@@ -449,4 +498,4 @@ def write_locked_shoot_prompt(cfg,req,segment,event,fixed,pictures,wardrobe,refs
     segment['prompt_profile']={'source':'python_locked_srt_shots','writer_calls':calls,
                                'contract_check_calls':1+attempt,'python_shot_count':len(slots),
                                'vocal_auto_correction_count':len(vocal_fixes)}
-    return _native(blocks,slots,pictures,wardrobe,len(refs)>2,event,len(refs),fixed)
+    return _native(blocks,slots,pictures,wardrobe,len(refs)>2,event,len(refs),fixed,scene_schedule)
