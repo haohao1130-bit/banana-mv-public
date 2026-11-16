@@ -650,6 +650,38 @@ class TakeTests(unittest.TestCase):
         self.assertEqual(job['request']['rewrite_retries'],2)
         self.assertNotIn('continuation_restart',job)
 
+
+    def test_resume_migrates_old_pending_v2_from_before_new_adoption_rules(self):
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.job['status']='cancelled'
+        self.cfg['rewriter']={'model':'fake'}
+        for i in (2,3):
+            self.job['segments'][i]['status']='waiting'
+            (self.work/f'{i:02d}_part.mp4').unlink()
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        v2=job['segments'][1]['takes'][-1]['id']
+        # Simulate the persistent state from the older frontend in the photo:
+        # V2 is "待凝丹", but selected_take is still original V1.
+        job['pending_takes']={'1':v2}
+        job['segments'][1]['selected_take']='original'
+        job.pop('continuation_restart',None)
+        app.write_state(job)
+        seen=[]
+        def observe_worker(state,cfg,originals,song,drive):
+            seen.append((state['segments'][1]['selected_take'],
+                         state['segments'][2]['status'],
+                         state['segments'][2].get('refresh_prompt'),
+                         state.get('pending_takes',{}).get('1')))
+            app.GPU_LOCK.release()
+        with patch.object(app,'worker',side_effect=observe_worker) as film:
+            result=app.resume(job['id'])
+            self.assertEqual(result['retake']['branch']['index'],1)
+            self.run_background()
+        film.assert_called_once()
+        self.assertEqual(seen,[(v2,'waiting',True,None)])
+
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
