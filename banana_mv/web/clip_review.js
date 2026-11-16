@@ -26,7 +26,8 @@ function updateClipActions(){
 function showClipVersion(row){
   const take=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
-  row.note.textContent=take?`V${take.version||1} · ${take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
+  const format=take?.preview_kind==='raw'?'RAW 原始有聲預覽':'裁切版（無 RAW 音軌）';
+  row.note.textContent=take?`V${take.version||1} · ${format} · ${take.preview_filename||take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:'')+(take.preview_kind==='raw'&&clipView.jobData?.request?.mode==='chain5'?' · 接續模式 RAW 開頭含重疊影格，正式成片已裁切':''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
   updateClipActions();
 }
 function renderClipPreviews(job){
@@ -40,7 +41,7 @@ function renderClipPreviews(job){
       const card=document.createElement('article');card.className='dan-card';
       const label=document.createElement('label'),check=document.createElement('input'),title=document.createElement('span');
       check.type='checkbox';label.append(check,title);
-      const video=document.createElement('video');video.controls=true;video.muted=true;video.preload='none';video.playsInline=true;
+      const video=document.createElement('video');video.controls=true;video.muted=false;video.preload='none';video.playsInline=true;
       const version=document.createElement('div');version.className='dan-version';
       const select=document.createElement('select');select.setAttribute('aria-label',`第 ${i+1} 顆丹藥的版本`);
       const use=document.createElement('button');use.type='button';use.className='secondary';use.textContent='選用此丹';

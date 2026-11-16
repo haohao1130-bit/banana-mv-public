@@ -98,8 +98,23 @@ def clip_url(job,index,take_id):
     return '/api/mv/clip?'+urllib.parse.urlencode({'id':job['id'],'index':index,'take':take_id})
 
 
+def preview_source(job,index,take_id='current'):
+    """Use the original H3 RAW (with its audio track) for audition only.
+
+    Check the chosen take's trimmed part first: this enforces readiness and
+    prevents accidentally pairing an earlier take's RAW with a newer video.
+    Missing RAW on old projects falls back to the existing silent part.
+    Assembly and continuity still exclusively use take_source()/part.mp4.
+    """
+    part=take_source(job,index,take_id)
+    selected=(segment(job,index).get('selected_take','original')
+              if take_id=='current' else take_id)
+    raw=existing_file(job,index,selected,'raw.mp4')
+    return (raw,'raw') if raw.is_file() else (part,'part')
+
+
 def describe(job):
-    """Cheap read-only status enrichment; preview muxing is lazy, on playback."""
+    """Cheap read-only status enrichment; preview RAW before trimmed fallback."""
     result=copy.deepcopy(job)
     work=app.job_dir(job['id'])
     if job.get('video') and (work/'final.mp4').is_file():result['final_video']=str(work/'final.mp4')
@@ -107,8 +122,10 @@ def describe(job):
         master['download']='/api/mv/file?'+urllib.parse.urlencode({'id':job['id'],'version':master['version']})
     for i,seg in enumerate(result['segments']):
         try:
-            source=take_source(job,i)
+            source,kind=preview_source(job,i)
             seg['preview']=clip_url(job,i,'current')+'&v='+str(source.stat().st_mtime_ns)
+            seg['preview_kind']=kind
+            seg['preview_filename']=source.name
         except ValueError:
             continue
         if not seg.get('takes'):
@@ -116,14 +133,19 @@ def describe(job):
         seg.setdefault('selected_take','original')
         seg['pending_take']=job.get('pending_takes',{}).get(str(i),seg['selected_take'])
         for take in seg['takes']:
-            if take['status']=='ready':take.update(version=take_version(job,i,take['id']), filename=take_file(job,i,take['id'],'part.mp4').name, preview=clip_url(job,i,take['id']))
+            if take['status']=='ready':
+                audition,kind=preview_source(job,i,take['id'])
+                take.update(version=take_version(job,i,take['id']),
+                            filename=take_file(job,i,take['id'],'part.mp4').name,
+                            preview=clip_url(job,i,take['id']),
+                            preview_kind=kind,preview_filename=audition.name)
     return result
 
 
 def preview(job,index,take_id='current'):
-    """Silent trimmed H3 frames; only final assembly mixes the original song."""
+    """Stream original H3 RAW with native audio; never alter the final cut."""
     with PREVIEW_LOCK:
-        return take_source(job,index,take_id)
+        return preview_source(job,index,take_id)[0]
 
 
 
