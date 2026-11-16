@@ -682,6 +682,48 @@ class TakeTests(unittest.TestCase):
         film.assert_called_once()
         self.assertEqual(seen,[(v2,'waiting',True,None)])
 
+
+    def test_emergency_retake_resets_formerly_finished_successors_before_9b(self):
+        """The official V2 is a new timeline, not an invisible background batch."""
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
+        self.job['status']='cancelled'
+        self.cfg['rewriter']={'model':'fake'}
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        job=self.run_background()
+        v2=job['segments'][1]['takes'][-1]['id']
+        takes.select_take(job['id'],1,v2)
+        seen=[]
+        def fresh_9b(config,request,segment,originals,tail):
+            live=app.read_state(job['id'])
+            seen.append({'current':live['retake']['current'],
+                         'successors':[live['segments'][2]['status'],
+                                       live['segments'][3]['status']],
+                         'parent':live['segments'][1]['selected_take'],
+                         'tail':tail.read_bytes()})
+            return 'fresh shot '+str(segment['index'])
+        app.last_frame.reset_mock()
+        with patch.object(app,'local_prompt',side_effect=fresh_9b) as model:
+            kicked=takes.continue_from_take(job['id'],1,v2,'cascade')
+            self.assertEqual(kicked['status'],'retaking')
+            self.assertEqual([s['status'] for s in kicked['segments']], 
+                             ['done','done','waiting','waiting'])
+            self.assertEqual(kicked['continuation_generation']['anchor_version'],2)
+            self.assertEqual(kicked['continuation_generation']['from_index'],2)
+            job=self.run_background()
+        self.assertEqual(model.call_count,2)
+        self.assertEqual(seen[0]['current'],2)
+        self.assertEqual(seen[0]['successors'],['rewriting','waiting'])
+        self.assertEqual(seen[0]['parent'],v2)
+        self.assertEqual(seen[0]['tail'],b'frame')
+        self.assertEqual(seen[1]['successors'],['done','rewriting'])
+        self.assertEqual(job['status'],'done')
+        self.assertEqual([s['status'] for s in job['segments']],
+                         ['done','done','done','done'])
+        self.assertEqual([c.args[0] for c in app.last_frame.call_args_list],
+                         [takes.take_file(job,1,v2,'part.mp4'),
+                          takes.take_file(job,2,job['segments'][2]['selected_take'],'part.mp4')])
+
     def test_only_branch_adopts_one_retake_without_touching_later_clips(self):
         self.job['request']['mode']='chain'
         app.write_state(self.job)
