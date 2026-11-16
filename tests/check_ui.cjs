@@ -320,6 +320,9 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(rows[2].use.disabled,true);
   assert.equal(rows[2].rewriteButton.disabled,true);
   assert.equal(rows[2].renderButton.disabled,true);
+  vm.runInContext(`renderProgress(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(els.progress.value,2,'adopted V2 counts only valid shots before the old timeline');
+  assert(els['progress-label'].textContent.includes('舊片失效'));
   await rows[1].branchCascade.onclick();
   assert.deepEqual(branches.at(-1),{
     id:'review123',index:1,take:'abcdef123456',mode:'cascade'
