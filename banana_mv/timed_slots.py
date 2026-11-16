@@ -378,8 +378,6 @@ def allocate_timed_chapters(chapters, segments, commission, srt_cues=None):
             phase = matches.index(i)
             begin = max(chapter['start'], clip_start)-clip_start
             end = min(chapter['end'], clip_end)-clip_start
-            anchored=aligned[overlaps.index(matches)] if False else None
-            # Locate the same chapter directly; zipped data is positional.
             aligned_events=aligned[chapters.index(chapter)]
             if aligned_events is not None:
                 chosen=[(action,stamp) for action,stamp in aligned_events

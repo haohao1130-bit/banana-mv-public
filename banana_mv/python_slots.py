@@ -503,3 +503,74 @@ def ensure_python_slot_plan(req, segments, originals, work):
     plan['input_sha256'] = fingerprint
     atomic_json(path, plan)
     return plan
+
+
+def refresh_stale_timed_plan(job, originals, work):
+    """Upgrade an old *saved* legacy-ordered plan without touching rendered media.
+
+    Called only from an idle, GPU-locked action or when entering the existing
+    worker on resume. Recompute remaining commissions from author scene clocks
+    and SRT. Archive both old plan AND status for exact rollback/debug.
+    Returns False if the job is not the affected Python-slot branch.
+    """
+    if job.get('request',{}).get('director_schema') != 6:
+        return False
+    work=Path(work)
+    path=work/'director_plan.json'
+    if not path.is_file():
+        return False
+    saved=json.loads(path.read_text(encoding='utf-8'))
+    if saved.get('engine')!='python_owned_slots_v1' or saved.get('source_timing')!='legacy_ordered':
+        return False
+    req=job['request']
+    brief=map_image_mentions(req.get('prompt',''),len(originals))
+    if parse_timed_source(brief,authored_intervals=req.get('direct_script',False)) is None:
+        return False
+
+    original=path.read_bytes()
+    suffix=str(saved.get('content_sha256','unknown'))[:12]
+    backup=work/('director_plan_before_timing_fix_'+suffix+'.json')
+    if not backup.exists():backup.write_bytes(original)
+    state_file=work/'status.json'
+    state_backup=work/('status_before_timing_fix_'+suffix+'.json')
+    if state_file.exists() and not state_backup.exists():
+        state_backup.write_bytes(state_file.read_bytes())
+    # Always derive a NEW plan from the user's unchanged source, never by
+    # editing or shifting the old event strings.
+    path.unlink()
+    try:
+        new=ensure_python_slot_plan(req,job['segments'],originals,work)
+        if new.get('source_timing')!='explicit_markdown' or len(new['segments'])!=len(job['segments']):
+            raise SceneStateError('重新分析的時間通告單缺少完整分段。')
+    except Exception:
+        path.write_bytes(original)
+        raise
+
+    completed=[]
+    refreshed=[]
+    for i,(seg,row) in enumerate(zip(job['segments'],new['segments'])):
+        if seg.get('status')=='done':
+            completed.append(i)
+        else:
+            refreshed.append(i)
+            seg['refresh_prompt']=True
+            seg.pop('prompt_id',None)
+            if isinstance(seg.get('prompt_rewrite'),dict):
+                seg['prompt_rewrite']['stale_plan']=True
+        seg['director_plan']=row
+        seg['fixed_reference_settings']=new.get('shared_setup','')
+        seg['direction_ending_contract']=new['ending_contract']
+        if i:
+            seg['previous_planned_event']=new['segments'][i-1]['event']
+    job['director_plan']={'version':new['version'],'status':'ready'}
+    job['timing_repair']={'source':'legacy_ordered','target':'explicit_markdown',
+                          'backup':backup.name,'status_backup':state_backup.name,
+                          'preserved_completed':completed,'refreshed_pending':refreshed}
+    # This is not a new creative screenplay approval; the user is restoring
+    # the exact timestamps from the screenplay they had already approved.
+    if job.get('plan_approved'):
+        from banana_mv import server as app
+        job['plan_approved']=app.plan_revision(job)
+    from banana_mv import server as app
+    app.write_state(job)
+    return True
