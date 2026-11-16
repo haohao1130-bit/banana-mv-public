@@ -1120,6 +1120,21 @@ def resume(job_id,rewrite_retries=None):
     local_chain=(is_continuation(prior['request']['mode'])
                  and prior['request'].get('director_schema')==6)
     restart=prior.get('continuation_restart')
+    # Interrupted during a NEW continuation? Resume after the last genuinely
+    # regenerated clip, never mistake an old archived downstream Take for a
+    # completed segment in the new branch.
+    generation=prior.get('continuation_generation')
+    if stopped and local_chain and generation and not restart:
+        parent=int(generation['anchor_index'])
+        for i in range(parent+1,len(prior['segments'])):
+            segment=prior['segments'][i]
+            if segment.get('status')!='done':
+                break
+            parent=i
+        from banana_mv.takes import continue_from_take
+        return continue_from_take(job_id,parent,
+                                  prior['segments'][parent].get('selected_take','original'),
+                                  'cascade',rewrite_retries=retries)
     if stopped and local_chain and not restart:
         # Migration: an older 5070 build treated "選用此丹" as pending.
         # Before continuing, adopt that explicit user choice instead of
