@@ -231,6 +231,24 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.deepEqual(retakes.at(-1),{
     id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'},previous_takes:{'1':'original'}
   });
+  // A new previous Take is an explicit source for both 9B and H3.
+  rows[0].select.value='abcdef123456';rows[0].select.onchange();
+  await rows[1].rewriteButton.onclick();
+  assert.deepEqual(rewrites.at(-1),{id:'review123',index:1,previous_take:'abcdef123456'});
+  reviewJob.segments[1].prompt_rewrite={status:'ready',version:2,previous_take:'abcdef123456',
+    text:'subject_definitions:\\nDraft based on newly rendered previous Take'};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  await rows[1].renderButton.onclick();
+  assert.deepEqual(retakes.at(-1),{
+    id:'review123',indices:[1],
+    prompts:{'1':'subject_definitions:\\nDraft based on newly rendered previous Take'},
+    previous_takes:{'1':'abcdef123456'}
+  });
+  const retakeCount=retakes.length;
+  rows[0].select.value='original';rows[0].select.onchange();
+  await rows[1].renderButton.onclick();
+  assert.equal(retakes.length,retakeCount,'stale rewritten prompt must not render against another previous Take');
+  assert(rows[1].promptInfo.textContent.includes('上一段版本已變更'));
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
 
