@@ -298,6 +298,173 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
         app.GPU_LOCK.release();raise
 
 
+
+def _adopt_branch_clips(job, choices):
+    """Adopt only ready immutable Takes for an unfinished project.
+
+    Do not assemble a misleading partial master. Existing films and old Takes
+    remain on disk for manual rollback.
+    """
+    pending=job.setdefault('pending_takes',{})
+    for i, take_id in sorted(choices.items()):
+        seg=segment(job,i)
+        source=take_source(job,i,take_id)
+        if not app.valid_part(source,seg,job['size']):
+            raise ValueError('接續版毛片無效，保留原片。')
+        archive_original(job,i)
+        chosen=next((row for row in seg['takes'] if row['id']==take_id),None)
+        if chosen is None:
+            raise ValueError('找不到接續版丹藥。')
+        seg['selected_take']=take_id
+        seg['render_seed']=chosen['seed']
+        seg['status']='done'
+        prompt=existing_file(job,i,take_id,'prompt.txt')
+        if prompt.is_file():
+            seg['prompt']=prompt.read_text(encoding='utf-8')
+        seg.pop('prompt_id',None)
+        if chosen.get('prompt_id'):seg['prompt_id']=chosen['prompt_id']
+        pending.pop(str(i),None)
+    # Every previously unrendered clip needs an up-to-date initial frame and
+    # freshly generated local filming prompt. Never replay completed shots.
+    for seg in job['segments']:
+        if seg.get('status')!='done':
+            seg['status']='waiting'
+            seg['refresh_prompt']=True
+            seg.pop('prompt_id',None)
+            seg.pop('interrupted_render',None)
+            seg.pop('scene_state_prompt_sha256',None)
+    job.pop('video',None)
+    job['final_stale']=True
+
+
+def _branch_finish(job, choices, song, cfg, originals, drive):
+    """Finish one of two user-selected continuation semantics under GPU lock.
+
+    Returns True only when the normal MV worker takes ownership of GPU_LOCK.
+    """
+    complete=all(s.get('status')=='done' for s in job['segments'])
+    if complete:
+        apply_takes(job,choices,song)
+        job['status']='done'
+        job['retake']['status']='done'
+        for i in choices:job.setdefault('pending_takes',{}).pop(str(i),None)
+        job['selection_revision']=uuid.uuid4().hex
+        app.write_state(job)
+        return False
+    app.repair_unstarted_timeline(job,song)
+    app.restore_render_settings(job)
+    _adopt_branch_clips(job,choices)
+    job.update(status='running',resuming=True,resumed=time.time())
+    job['retake'].update(status='done',auto_resume=True,auto_resume_status='running')
+    job.pop('error',None);job.pop('error_stage',None)
+    app.CANCEL.discard(job['id'])
+    app.write_state(job)
+    app.worker(job,cfg,originals,song,drive)
+    return True
+
+
+def _branch_direct_worker(job, choices, song, cfg, originals, drive, old_status):
+    handoff=False
+    try:
+        # _branch_finish calls the standard worker synchronously for incomplete
+        # jobs, which releases the GPU lock in its own finally block.
+        handoff=_branch_finish(job,choices,song,cfg,originals,drive)
+    except Exception as error:
+        job['status']=old_status
+        job['retake'].update(status='error',error=str(error))
+        app.write_state(job)
+    finally:
+        if not handoff and app.GPU_LOCK.locked():
+            app.GPU_LOCK.release()
+
+
+def continue_from_take(job_id, index, take_id, mode):
+    """Two explicit choices after an auditioned clip retake.
+
+    only: adopt just this Take, keep existing downstream videos untouched.
+    cascade: retake every completed downstream clip from the new tail frame
+             with fresh, clip-local 9B prompts; resume any unrendered tail.
+    """
+    if mode not in ('only', 'cascade'):
+        raise ValueError('請選擇只替換這段，或由新版尾幀重拍後續。')
+    if not app.GPU_LOCK.acquire(blocking=False):
+        raise ValueError('已有 MV 工作執行中，不能同時分支續跑。')
+    handed_off=False
+    try:
+        job=app.read_state(job_id)
+        cfg=copy.deepcopy(app.backend.load_config())
+        require_idle(job,cfg)
+        seg=segment(job,index)
+        if seg.get('status')!='done':
+            raise ValueError('請先完成這一段回爐，再選擇接續分支。')
+        candidate=take_source(job,index,take_id)
+        if not app.valid_part(candidate,seg,job['size']):
+            raise ValueError('選取版本的影片無效，原片保留。')
+        if any(s.get('status')!='done' for s in job['segments'][:index]):
+            raise ValueError('前面仍有未完成片段，不能從這段繼續接拍。')
+        others=[k for k in job.get('pending_takes',{}) if k!=str(index)]
+        if others:
+            raise ValueError('尚有其他段的待採用版本，請先確認或取消那些選擇。')
+        if mode=='cascade' and not app.is_continuation(job['request']['mode']):
+            raise ValueError('新版尾幀接拍只適用於末幀／末五幀接續模式。')
+        done_after=[i for i in range(index+1,len(job['segments']))
+                    if job['segments'][i].get('status')=='done']
+        if mode=='cascade' and done_after:
+            # This branch is intentionally limited to the Python-owned
+            # director; the whole-song plan stays frozen.
+            if job['request'].get('director_schema')!=6 or not job['request'].get('rewrite',True):
+                raise ValueError('後續逐段重寫需要啟用 5070 本機 Python 通告單與 9B。')
+            if done_after!=list(range(index+1,index+1+len(done_after))):
+                raise ValueError('後續已完成段落不連續，請先整理狀態再分支接拍。')
+            app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader',
+                                          'inputs':{'clip_name':cfg['rewriter']['model']}},
+                               'generate':{'class_type':'TextGenerate','inputs':{}}})
+        originals,song,drive=app.project_inputs(job,cfg)
+        from banana_mv.python_slots import refresh_stale_timed_plan
+        refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
+        app.restore_render_settings(job)
+        first=seg if not done_after else segment(job,done_after[0])
+        graph=app.build_workflow(job['images_comfy'],'preflight.wav',*job['size'],first['model_frames'],'',
+                                 job['seed'],**app.graph_options(job['request'],first['seconds'],first))
+        app.preflight(cfg,graph)
+        app.preflight_five_frame(cfg,job['request'],job['images_comfy'],job['size'],first,job['seed'])
+        old_status=job['status']
+        job['retake']={'indices':[index], 'status':'running', 'operation':'continue_branch',
+                       'branch':{'index':index,'take':take_id,'mode':mode},
+                       'completed':0}
+        if mode=='cascade' and done_after:
+            archive_original(job,index)
+            batch=[]
+            for i in done_after:
+                child=segment(job,i)
+                archive_original(job,i)
+                existing=[int(m[1]) for p in app.job_dir(job_id).glob(f'{i:02d}_*_v*.*')
+                          if (m:=re.search(r'_v(\d+)\.',p.name))]
+                version=max(existing+[t.get('version',n) for n,t in enumerate(child['takes'],1)]+[0])+1
+                taken={'id':uuid.uuid4().hex[:12],'version':version,
+                       'seed':random.randrange(2**48),'created':time.time(),
+                       'status':'waiting','rebuild_prompt':True}
+                child['takes'].append(taken);batch.append((i,taken))
+            job.setdefault('pending_takes',{})[str(index)]=take_id
+            job['retake'].update(indices=done_after,takes={str(i):t['id'] for i,t in batch})
+            job.update(status='retaking',resumed=time.time())
+            app.CANCEL.discard(job_id);app.write_state(job)
+            threading.Thread(target=retake_worker,
+                             args=(job,cfg,song,drive,batch,old_status,originals),
+                             daemon=True).start()
+        else:
+            job.update(status='assembling',resumed=time.time())
+            app.CANCEL.discard(job_id);app.write_state(job)
+            threading.Thread(target=_branch_direct_worker,
+                             args=(job,{index:take_id},song,cfg,originals,drive,old_status),
+                             daemon=True).start()
+        handed_off=True
+        return describe(job)
+    finally:
+        if not handed_off:
+            app.GPU_LOCK.release()
+
+
 def apply_takes(job,choices,song):
     """Build the new master before replacing any adopted clip; retain all old takes."""
     work=app.job_dir(job['id']);parts=[];prompts={};token=uuid.uuid4().hex[:12]
@@ -436,7 +603,15 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
         # automatically, then the already-running GPU worker owns the handoff.
         job['retake']['status']='done'
         job['status']=old_status
-        if job['retake'].get('auto_resume'):
+        branch=job['retake'].get('branch')
+        if branch and branch['mode']=='cascade':
+            try:
+                selected={int(branch['index']):branch['take'],**choices}
+                handoff=_branch_finish(job,selected,song,cfg,originals,drive)
+            except Exception as error:
+                job['retake'].update(status='error',error='接拍交接失敗：'+str(error))
+                job['status']=old_status
+        elif job['retake'].get('auto_resume'):
             try:
                 app.repair_unstarted_timeline(job,song)
                 app.restore_render_settings(job)
