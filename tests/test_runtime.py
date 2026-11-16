@@ -14,6 +14,16 @@ runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_colab_face_refine_is_explicit_opt_in(self):
+        for filename in ('Banana_MV_Public.ipynb', 'BANANAMV_CLASSIC_PUBLIC.ipynb'):
+            with self.subTest(notebook=filename):
+                notebook=json.loads((ROOT/filename).read_text(encoding='utf-8'))
+                installer=''.join(notebook['cells'][1]['source'])
+                self.assertIn('INSTALL_FACE_REFINE = False #@param',installer)
+                self.assertIn('遠景修臉預設不安裝',installer)
+        html=(ROOT/'banana_mv/web/index.html').read_text(encoding='utf-8')
+        self.assertIn('<input id="face_refine" type="checkbox">',html)
+
     def test_music_venv_skips_ensurepip_and_repairs_existing_partial_environment(self):
         for existing in (False,True):
             with self.subTest(existing=existing),tempfile.TemporaryDirectory() as tmp:
