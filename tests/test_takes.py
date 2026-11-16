@@ -734,6 +734,10 @@ class TakeTests(unittest.TestCase):
         job=self.run_background()
         v2=job['segments'][1]['takes'][-1]['id']
         takes.select_take(job['id'],1,v2)
+        # Emulate that continuation was explicitly started before the second
+        # stop. Editing old future clips while adoption is pending is blocked.
+        active=app.read_state(job['id']);active.pop('continuation_restart',None)
+        app.write_state(active)
         takes.retake(job['id'],[2],previous_takes={'2':v2})
         job=self.run_background()
         new_15=job['segments'][2]['takes'][-1]['id']
@@ -784,6 +788,7 @@ class TakeTests(unittest.TestCase):
         takes.retake(self.job['id'],[1])
         job=self.run_background()
         candidate=job['segments'][1]['takes'][-1]['id']
+        takes.select_take(job['id'],1,candidate)
         app.last_frame.reset_mock()
         with patch.object(app,'local_prompt',side_effect=lambda cfg,req,seg,originals,tail:
                           'fresh clip '+str(seg['index'])) as rewrite:
@@ -815,6 +820,7 @@ class TakeTests(unittest.TestCase):
         takes.retake(self.job['id'],[1])
         job=self.run_background()
         candidate=job['segments'][1]['takes'][-1]['id']
+        takes.select_take(job['id'],1,candidate)
         observed=[]
         def resume_worker(state,cfg,originals,song,drive):
             observed.append({
