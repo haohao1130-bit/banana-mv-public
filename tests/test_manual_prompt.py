@@ -38,7 +38,7 @@ class ManualPromptTests(unittest.TestCase):
             revised=root/'new.mp4'
             original.write_bytes(b'old')
             revised.write_bytes(b'new')
-            job={'id':'abcdef123456','status':'done','size':[32,32],
+            job={'id':'abcdef123456','status':'done','seed':42,'size':[32,32],
                  'request':{'mode':'chain','director_schema':6,'rewrite':True},
                  'segments':[
                      {'index':0,'status':'done','selected_take':'original','takes':[
@@ -71,6 +71,7 @@ class ManualPromptTests(unittest.TestCase):
                  patch.object(app,'local_prompt',side_effect=writer), \
                  patch.object(takes,'take_source',side_effect=source), \
                  patch.object(takes,'require_idle',Mock()), \
+                 patch.object(takes,'describe',side_effect=lambda state:state), \
                  patch('banana_mv.python_slots.refresh_stale_timed_plan',return_value=False), \
                  patch.object(manual_prompt.threading,'Thread',side_effect=inline_thread):
                 result=manual_prompt.rewrite_clip(job['id'],1,previous_take='abcdefabcdef')
