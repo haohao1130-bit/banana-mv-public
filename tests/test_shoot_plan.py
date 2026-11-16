@@ -67,11 +67,103 @@ class ShootPlanTests(unittest.TestCase):
                               'FINAL_BEAT','WHOLE_SONG_LYRIC_MARKER','OPENING_CUE','HISTORY_LEAK'):
                 self.assertNotIn(forbidden,text)
             task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
-            self.assertEqual(task['local_srt'][0]['clip_start'],1)
-            self.assertEqual(task['local_srt'][0]['text'],'CURRENT_CUE')
+            self.assertNotIn('local_srt', task)
+            self.assertNotIn('CURRENT_CUE', text)
+            self.assertEqual(task['authored_vocal_timeline'], [])
             self.assertEqual(task['ending']['phase'],'resolving')
             self.assertEqual(task['ending']['local_settle_by'],3.5)
             self.assertEqual(seg['prompt_profile']['writer_calls'],1)
+
+    def test_tagged_duet_sends_roles_without_lyrics_or_previous_events(self):
+        from banana_mv.python_slots import split_source
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            images, cfg, req = self.fixture(root, 'chain')
+            setup, chapters = split_source(
+                '【共同設定】\n'
+                '真人寫實情侶生活 MV，從公寓出發，到海邊，再回到同一間公寓。\n'
+                'S1 = @圖片1，男主角。\nS2 = @圖片2，女主角。\n'
+                '依 SRT 分配對嘴。\n【劇情】\n男主角看向手機。'
+            )
+            from banana_mv.core import map_image_mentions
+            setup = map_image_mentions(setup, 2)
+            self.assertIn('海邊', setup)  # The whole route belongs to Python.
+            self.assertEqual(chapters[0]['actions'], ['男主角看向手機。'])
+            self.assertIn('S2 = <Picture 2>', setup)
+            req['srt_cues'] = [
+                {'start': 0, 'end': 1, 'text': '[S1] 那天只是看了一眼價格'},
+                {'start': 1, 'end': 2, 'text': '[S2] 你上次也是這樣說的喔'},
+                {'start': 2, 'end': 3, 'text': '[S1+S2] 一邊是夢一邊是幸福'},
+            ]
+            seg = dict(timeline()[0], fixed_reference_settings=setup, director_plan={
+                'handoff_version': 1, 'mode': 'story',
+                'event': 'ALREADY ESTABLISHED; do not restage: PREVIOUS_ACTION\n'
+                         'Current interval actions in original order:\n- 男主角看向手機。'
+            })
+            writer = Mock(return_value=(
+                'subject_definitions:\nMan from <Picture 2>. Woman from <Picture 3>.\n'
+                'retention_analysis:\n<Audio 1>: reference - generated dialogue.\n'
+                'detailed_description:\n'
+                '[Shot 1] She says <d>那天只是看了一眼價格</d>. Camera moves closer.\n'
+                'overall_soundscape:\nInvented voices.\nnon_diegetic_music:\nN/A'
+            ))
+            with patch.object(server.backend, 'rewrite_local', writer):
+                got = server.local_prompt(cfg, req, seg, images, images[0])
+            text = writer.call_args.args[2][0][1]
+            self.assertNotIn('PREVIOUS_ACTION', text)
+            self.assertNotIn('那天只是看了一眼價格', text + got)
+            self.assertNotIn('海邊', text)
+            self.assertNotIn('<d>', got)
+            self.assertNotIn('She says', got)
+            self.assertNotIn('Invented voices', got)
+            self.assertIn('<Audio 1>: fully_copy.', got)
+            self.assertIn('0.000–1.000s: <Picture 2>', got)
+            self.assertIn('1.000–2.000s: <Picture 3>', got)
+            self.assertIn('2.000–3.000s: <Picture 2> and <Picture 3>', got)
+            self.assertIn('Camera moves closer', got)
+            self.assertEqual(writer.call_count, 1)
+
+
+    def test_global_route_is_filtered_but_srt_cast_survives(self):
+        from banana_mv.python_slots import split_source
+        from banana_mv.core import map_image_mentions
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            images, cfg, req = self.fixture(root)
+            raw = ('【共同設定】\nS1 = @圖片1，男主唱。\nS2 = @圖片2，女主唱。\n'
+                   '真人寫實情侶 MV，先在公寓唱歌，後面去海邊游泳，最後回公寓。\n'
+                   '【角色設定】\n人物五官與身份依圖片。\n'
+                   '【故事主題】\n中段兩人去海邊玩水，最終在夕陽下告白。\n'
+                   '【故事背景】\n公寓內木桌與暖色窗光。\n'
+                   '【整體風格】\n真人電影攝影，自然演出。\n'
+                   '【演唱與劇情安排】\n尾聲時男女主角重返公寓。\n')
+            setup, _ = split_source(raw + '【劇情】\n男主角在公寓看手機。')
+            self.assertIn('海邊', setup)
+            req['srt_cues'] = [
+                {'start': 0, 'end': 1, 'text': '[S1] 男主唱'},
+                {'start': 1, 'end': 2, 'text': '[S2] 女主唱'},
+                {'start': 2, 'end': 3, 'text': '[S1+S2] 合唱'},
+            ]
+            seg = dict(timeline()[0],
+                fixed_reference_settings=map_image_mentions(setup, 2),
+                director_plan={'handoff_version': 1, 'mode': 'story',
+                    'event': 'Current interval actions in original order:\n'
+                             '- 男主角在公寓看手機。'})
+            writer = Mock(return_value='subject_definitions:\nMan from <Picture 1>.\n'
+                'detailed_description:\n[Shot 1] The man checks his phone.\n'
+                'overall_soundscape:\nSource song.\nnon_diegetic_music:\nSource song.')
+            with patch.object(server.backend, 'rewrite_local', writer):
+                prompt = server.local_prompt(cfg, req, seg, images, None)
+            sent = writer.call_args.args[2][0][1]
+            for retained in ('S1 = <Picture 1>', 'S2 = <Picture 2>',
+                             '公寓內木桌', '真人電影攝影', '男主角在公寓看手機'):
+                self.assertIn(retained, sent)
+            for leaked in ('海邊', '夕陽下告白', '重返公寓', '合唱'):
+                self.assertNotIn(leaked, sent)
+            self.assertIn('0.000–1.000s: <Picture 1>', prompt)
+            self.assertIn('1.000–2.000s: <Picture 2>', prompt)
+            self.assertIn('2.000–3.000s: <Picture 1> and <Picture 2>', prompt)
+            self.assertIn('unchanged (fully_copy)', prompt)
 
     def test_chain_uses_fixed_original_slots_and_actual_tail_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -114,7 +206,7 @@ class ShootPlanTests(unittest.TestCase):
                     task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
                     expected=int(mode=='chain5' and has_tail)
                     self.assertEqual(text.count('CHAIN5 CONTINUATION:'),expected)
-                    self.assertEqual(text.count('FIRST_STRIKE_DONE'),1)
+                    self.assertNotIn('FIRST_STRIKE_DONE', text)
                     self.assertEqual(text.count('FOLLOW_THROUGH_COUNTER'),1)
                     self.assertEqual(seg['director_plan'],row)
                     self.assertNotIn('CURRENT_ACTOR_STATE',text)
@@ -156,7 +248,7 @@ class ShootPlanTests(unittest.TestCase):
                 text=inputs[0][1]
                 self.assertEqual(text.count('CURRENT_ACTOR_STATE'),1)
                 self.assertEqual(text.count('EXPECTED_ACTOR_STATE_AFTER_THIS_CLIP'),1)
-                self.assertIn('jacket removal completed',text)
+                self.assertNotIn('jacket removal completed', text)
                 self.assertIn('The fighters exchange a new counter.',text)
             self.assertEqual(seg['director_plan'],row)
 

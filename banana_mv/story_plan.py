@@ -705,7 +705,7 @@ def validate_direct_prompts(raw,segments,picture_count,req):
         prompt=row.get('prompt')
         if not isinstance(prompt,str) or not prompt.strip():
             raise SceneStateError(f'第 {seg["index"]+1} 段缺少最終提示詞。')
-        offset=int(req.get('mode')=='chain' and seg['index']>0)
+        offset=int(req.get('mode') in ('chain','chain5') and seg['index']>0)
         prompt=normalize_mv_prompt(prompt,picture_count+offset)
         if picture_count>1 and not re.search(r'<Picture \d+>',prompt):
             raise SceneStateError(f'第 {seg["index"]+1} 段未綁定任何原始參考圖；多圖提示詞需明確使用 <Picture N>。')
@@ -740,7 +740,7 @@ def ensure_unified_plan(cfg,req,segments,originals,work,rewrite):
         task['direct_prompts']=True
         task['delivery_format']='clip_blocks_v1'
         for row in task['timeline']:
-            row['picture_offset']=int(req.get('mode')=='chain' and row['index']>0)
+            row['picture_offset']=int(req.get('mode') in ('chain','chain5') and row['index']>0)
             start=row['start'];end=start+row['seconds']
             row['source_end']=end
             from banana_mv.mv_scope import clip_ending

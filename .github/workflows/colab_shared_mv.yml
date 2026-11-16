@@ -1,0 +1,46 @@
+name: Colab Python Slot shared MV regression
+on:
+  push:
+    branches:
+      - experiment/colab-python-slot-5070-backport
+  workflow_dispatch:
+jobs:
+  colab-backport:
+    runs-on: ubuntu-latest
+    env:
+      BANANA_DATA: /tmp/banana-colab-slot-ci
+      BANANA_PORT: '8190'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: python -m pip install Pillow numpy
+      - run: ffmpeg -version
+      - run: python -m unittest discover -s tests -p test_python_slots.py -v
+      - run: python -m unittest discover -s tests -p test_commission_guard.py -v
+      - run: python -m unittest discover -s tests -p test_locked_shoot.py -v
+      - run: python -m unittest discover -s tests -p test_emergency_stop.py -v
+      - run: python -m unittest discover -s tests -p test_manual_prompt.py -v
+      - run: python -m unittest discover -s tests -p test_takes.py -v
+      - run: node tests/check_ui.cjs
+      - run: python -m compileall -q banana_mv
+      - name: Check notebook and Colab GPU defaults
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          notebook=json.loads(Path('BANANAMV_PYTHON_SLOT_BACKPORT_TEST.ipynb').read_text())
+          source=''.join(''.join(cell.get('source',[])) for cell in notebook['cells'])
+          assert "BRANCH = 'experiment/colab-python-slot-5070-backport'" in source
+          assert "drive_folder='BananaMVClassicPythonSlot'" in source
+          html=Path('banana_mv/web/index.html').read_text()
+          assert '<option value="720p" selected>' in html
+          assert '<option value="10" selected>' in html
+          assert 'RAW 原始有聲預覽' in Path('banana_mv/web/clip_review.js').read_text()
+          from banana_mv import services
+          assert services.PORT==8190
+          PY

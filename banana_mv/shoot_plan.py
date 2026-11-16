@@ -4,9 +4,11 @@ import re
 import uuid
 from pathlib import Path
 
+from banana_mv.commission_guard import check_commission, role_pictures, wardrobe_for_clip
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
-from banana_mv.lyrics_reference import excerpt
+from banana_mv.lyrics_reference import SUBJECT_VOCAL_PREFIX, clean_lyric_output, excerpt, vocal_timeline
+from banana_mv.locked_shoot import write_locked_shoot_prompt
 from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
 
@@ -396,6 +398,123 @@ def _fixed_reference_with_python_priority(fixed_setup, event):
     return '\n'.join(output)
 
 
+def _local_event(event):
+    # A continuity frame or explicit present state already carries the result.
+    # Do not send previous actions or the source chapter title to the shot writer.
+    return re.sub(
+        r'(?m)^\s*(?:ALREADY ESTABLISHED;[^\n]*|Previously established:[^\n]*|Source chapter:[^\n]*|Phase inside chapter:[^\n]*)\n?',
+        '', event,
+    ).strip()
+
+
+def _apply_source_performance(prompt, timeline, fixed_setup):
+    bindings = {role.upper(): picture for role, picture in re.findall(
+        r'(?im)^\s*(S[12])\s*[=：:]\s*(<Picture \d+>)', fixed_setup
+    )}
+    rows = []
+    for cue in timeline:
+        subjects = cue.get('subjects', [])
+        assigned = ' and '.join(bindings.get(subject, subject) for subject in subjects)
+        if not assigned:
+            assigned = cue['voice']
+        rows.append(f"{cue['clip_start']:.3f}–{cue['clip_end']:.3f}s: {assigned}.")
+    policy = (
+        'Use the original song from <Audio 1> unchanged (fully_copy). '
+        'Only the assigned visible performer(s) lip-sync to vocals already in the track. '
+        'The following clip-local intervals are authoritative. '
+        'No spoken rendition, repeated line, new vocals or subtitles.\n' + '\n'.join(rows)
+    )
+    for field, replacement in (
+        ('overall_soundscape', 'The supplied source song plays unchanged.'),
+        ('non_diegetic_music', 'The supplied source song.'),
+    ):
+        pattern = rf'(?im)^{field}:[ \t]*[^\n]*(?:\n(?![a-z_]+:)[^\n]*)*'
+        prompt, count = re.subn(pattern, lambda _: f'{field}:\n{replacement}\n', prompt)
+        if not count:
+            prompt += f'\n\n{field}:\n{replacement}'
+    prompt = re.sub(r'(?im)^<Audio 1>:\s*(?:reference|partial(?:ly)?_copy)\b[^\n]*',
+                    '<Audio 1>: fully_copy. Preserve the supplied source song.', prompt)
+    description = re.search(r'(?im)^(?:detailed_description|integrated_multimodal_description):[ \t]*', prompt)
+    if description:
+        return prompt[:description.end()] + '\n' + policy + '\n' + prompt[description.end():]
+    return prompt + '\n\ndetailed_description:\n' + policy
+
+
+
+# Python retains every authored story route in its saved plan. Only invariant
+# reference facts travel to the local camera model, including on resumed jobs.
+_FIXED_FILMING_HEADINGS = frozenset((
+    '共同設定', '共通設定', '共用設定', '固定設定', '全片設定',
+    '角色設定', '人物設定', '人物介紹', '角色介紹', '角色與造型',
+    '角色綁定', '世界觀', '場景設定', '固定場景', '故事背景',
+    '背景設定', '整體風格', '視覺基調', '視覺風格',
+    '攝影原則', '攝影語言測試', '演唱安排', '表演原則',
+    '攝影與舞蹈', '演唱近拍', '舞蹈編排',
+))
+_STORY_FILMING_HEADINGS = frozenset((
+    'MV 主題', '主題', '故事主題', '故事內容', '故事劇情',
+    '劇情內容', '故事大綱', '劇情大綱', '劇本內容',
+    '完整故事劇情', '劇情', '故事', '故事路線', '全片故事',
+    '劇情連續性', '服裝連續性', '演唱與劇情安排',
+    '導演自由發揮', '導演執行重點', '執行重點',
+    '特殊要求', '全曲執行原則', '全曲固定原則',
+))
+_FUTURE_FILMING = re.compile(
+    r'前半段|後半段|中段|後段|末段|後面|最後|最終|結局|謝幕|尾聲|'
+    r'第[一二三四五六七八九十\d]+[幕段]|隨著(?:歌曲|劇情|故事)|'
+    r'逐步|依序|一路推進|回家|返回|回到|再回|重返|'
+    r'→|->|⇒|'
+    r'從.{0,90}(?:出發|開始).{0,100}(?:到|再|回)|'
+    r'先.{0,75}(?:再|然後|接著)|'
+    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)',
+    re.I,
+)
+_STATIC_FILMING_FACT = re.compile(
+    r'^(?:S[12]\s*[=:：]|<Picture \d+>|@圖片\d+|'
+    r'角色|人物|男主|女主|歌手|主唱|演唱者|外貌|五官|髮型|'
+    r'服裝|開場穿著|初始服裝|初始穿著|'
+    r'全片只有|唯一|不得新增|禁止新增|不新增|'
+    r'畫面風格|攝影風格|視覺風格|整體風格|'
+    r'固定場景|固定背景|依 SRT|[\[]S[12])',
+    re.I,
+)
+
+
+def _filming_reference_settings(fixed_setup):
+    """Forward identity/style/world, never the future plot, from Python to 9B."""
+    result = []
+    section = 'fixed'  # Legacy unheaded setups include original supporting cast.
+    for raw in fixed_setup.splitlines():
+        line = re.sub(r'^\s*#{1,6}\s+', '', raw).strip().strip('* ').strip()
+        title = line.rstrip('：:').strip()
+        if title.startswith('【') and title.endswith('】'):
+            title = title[1:-1].strip()
+        if title in _FIXED_FILMING_HEADINGS:
+            section = 'fixed'
+            result.append(raw)
+            continue
+        if title in _STORY_FILMING_HEADINGS:
+            section = 'story'
+            continue
+        subfield = re.match(
+            r'^(故事背景|背景設定|整體風格|場景設定|視覺風格|固定場景)\s*[：:]\s*(.*)$',
+            line,
+        )
+        if subfield:
+            section = 'fixed'
+            if not _FUTURE_FILMING.search(subfield.group(2)):
+                result.append(raw)
+            continue
+        if not line or _FUTURE_FILMING.search(line):
+            continue
+        binding = re.match(r'^S[12]\s*[=:：]\s*<Picture \d+>', line, re.I)
+        if binding or section == 'fixed' or (
+            section == 'unknown' and _STATIC_FILMING_FACT.match(line)
+        ):
+            result.append(raw)
+    return '\n'.join(result).strip()
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
@@ -405,15 +524,37 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
     fixed_setup=segment.get('fixed_reference_settings','')
-    context={'seconds':segment['seconds'],'primary_mode':row['mode'],
-          'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
-          'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
-          'ending':clip_ending(req,segment)}
-    # Strip only the explicit upstream outcome block in legacy settings. No
-    # keyword blacklist: identity, scene duties and current results stay intact.
-    fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
-    fixed_setup = _fixed_reference_with_python_priority(fixed_setup, row['event'])
-    if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
+    event = _local_event(row['event'])
+    vocals = vocal_timeline(excerpt(req, segment))
+    context = {'authored_vocal_timeline': vocals, 'ending': clip_ending(req, segment)}
+    fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
+    fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
+    fixed_setup = _filming_reference_settings(fixed_setup)
+    if fixed_setup:
+        context['fixed_reference_settings'] = connected(fixed_setup)
+    pictures = role_pictures(context.get('fixed_reference_settings', ''))
+    wardrobe = wardrobe_for_clip(event, segment.get('fixed_reference_settings', ''))
+    if wardrobe:
+        context['current_wardrobe'] = wardrobe
+
+    # SRT-authored dual singers: Python owns shot cuts, cast, wardrobes and final
+    # Ref2VA sections; 9B supplies only shot-specific visual descriptions.
+    # Keep the legacy native writer for other configurations and unscripted clips.
+    if (req.get('director_schema') == 6 and len(originals) == 2
+            and {'S1', 'S2'} <= set(pictures)
+            and req.get('srt_cues')
+            and any(SUBJECT_VOCAL_PREFIX.match(c.get('text',''))
+                    for c in req['srt_cues'])):
+        refs = ([tail] if tail else []) + list(originals)
+        segment['director_mode'] = row['mode']
+        native = write_locked_shoot_prompt(
+            cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
+            _pictures(refs), rewrite, progress)
+        native, removed = clean_lyric_output(
+            native, dict(req, lyrics_reference_version=2))
+        segment['lyric_reference_cleanup'] = {'removed_spans': removed}
+        return native
+
     if tail:
         if req.get('mode') == 'chain5':
             context['first_frame'] = (
@@ -431,19 +572,15 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         if tail and req.get('mode') == 'chain5' else ''
     )
     text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
+          f"Primary filming mode: {row['mode']}.\n"
           "Inspect the reference images labeled <Picture N> and use them according to the user's instructions.\n"
           "Choose shots that best express the original intent. "
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
           "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
           + continuation_note
-          + "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
+          + "Original prompt:\nCurrent clip script:\n"+connected(event)+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
-When audio_evidence.music_structure is supplied, use its predicted local section
-changes and selected downbeats to motivate action payoffs, camera reveals and
-performance highlights. Write their timing into the shots, not an analysis appendix.
-Keep anticipation and contrast; do not cut on every beat. Labels can be wrong and
-do not identify instruments or override vocal roles. Use loudness only as acoustic evidence.
 The current clip script alone assigns plot events. Fixed reference settings carry
 identity and scene duties, never permission to perform a future ending. If old
 fixed settings mention a whole-work outcome, perform it only when assigned here.
@@ -487,29 +624,90 @@ Return only the native filming prompt, no analysis, JSON or management instructi
 """
     text+='\n'+adaptation_direction(req)
     text+='\n'+REFERENCE_PERFORMANCE
+    if vocals:
+        text += ('\nUse authored_vocal_timeline as the source of voice timing, even when '
+                 'acoustic analysis is unavailable or disagrees. Apply it only to visible '
+                 'lip-sync permitted by the current scene. Resolve subjects S1 and S2 using the explicit '
+                 'user-defined cast bindings, never picture order or gender. If a binding is absent, '
+                 'do not guess. Two subject IDs mean both assigned performers sing together. '
+                 'Duet means both assigned voices. Harmony identifies backing vocals and '
+                 'does not assign a lead singer or imply both leads sing. Untagged time '
+                 'has no explicit voice assignment. Keep the original soundtrack.')
+
+    if vocals and pictures:
+        rows = []
+        for cue in vocals:
+            singer_roles = cue.get('subjects', [])
+            named = ' + '.join(role+' = '+pictures.get(role, 'UNBOUND') for role in singer_roles)
+            rows.append(f"{cue['clip_start']:.3f}–{cue['clip_end']:.3f}s: {named or 'UNASSIGNED'}")
+        text += '\nCLIP-LOCAL VOCAL AUTHORITY (precise, not a script or dialogue):\n' + '\n'.join(rows)
+        text += ('\nOnly these assigned singers perform vocals inside their intervals. '
+                 'Everyone else may smile, react and move silently. '
+                 'A camera may film reactions, but never describe an unassigned actor singing. '
+                 'Do not move vocal events between intervals.\n')
+    if wardrobe:
+        text += '\nCURRENT COSTUME AT THIS LOCATION (already changed, no repeat changing scene):\n'
+        text += '\n'.join(role+' '+pictures.get(role, '')+': '+garment for role, garment in wardrobe.items())
+        text += ('\nUse the referenced face and hairstyle, but replace prior clothing '
+                 'in ALL subject_definitions, retention_analysis and shots. '
+                 'This is current state, not an upcoming story event.\n')
     text+='\n'+AUTO_FILMING
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
-    text+='\n\nClip timing and audio context:\n'+json.dumps(context,ensure_ascii=False)
+    text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
-    for attempt in range(rewrite_retry_count(req)+1):
+    repair_count = 0
+    format_errors = 0
+    max_attempts = rewrite_retry_count(req) + 3
+    for attempt in range(max_attempts):
         if progress:progress({'stage':'rewriting','clip_index':segment['index'],
-                              'attempt':attempt+1,'max_attempts':rewrite_retry_count(req)+1})
+                              'attempt':attempt+1,'max_attempts':max_attempts})
         segment['prompt_profile']={'source':'isolated_native_director','writer_calls':attempt+1,
-                                   'contract_check_calls':0}
+                                   'contract_check_calls':attempt+1}
         raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
             prompt=normalize_mv_prompt(_text(raw),len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
+            if vocals:
+                # Preserve camera prose while discarding an explicit speech instruction.
+                prompt = re.sub(
+                    r'(?i)\b(?:he|she|they|<Subject \d+>|<Picture \d+>)\s+'
+                    r'(?:says?|replies|speaks?|whispers?|recites?)\b[^.\n<]*'
+                    r'(<d\b[^>]*>.*?</d\s*>)[.,]?',
+                    r'\1', prompt,
+                )
+                prompt, removed = clean_lyric_output(prompt, dict(req, lyrics_reference_version=2))
+                segment['lyric_reference_cleanup'] = {'removed_spans': removed}
+                prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
+            problems = check_commission(prompt, vocals, pictures, float(segment['seconds']),
+                                        wardrobe, bool(req.get('srt_reference') or req.get('srt_cues')))
+            if problems:
+                segment['commission_guard_errors'] = problems
+                if repair_count >= 2:
+                    raise SceneStateError('9B 拍攝稿與當段通告衝突，兩次局部修稿後仍未通過：'
+                                          + ' | '.join(problems))
+                repair_count += 1
+                attempts = parts + [('text',
+                    'REPAIR THIS CLIP ONLY. The previous draft violates the explicit commission. '
+                    'Fix exactly the listed errors while retaining valid shots, camera choices, '
+                    'identities, action continuity and ending. No new lyrics or dialogue. '
+                    'Return all six native sections.\n'
+                    'CONFLICTS:\n' + '\n'.join(problems) +
+                    '\nPREVIOUS DRAFT:\n' + prompt)]
+                continue
+            segment.pop('commission_guard_errors', None)
             return prompt
         except ValueError as error:
-            if attempt>=rewrite_retry_count(req):
+            if isinstance(error, SceneStateError) and str(error).startswith('9B 拍攝稿與當段通告衝突'):
+                raise
+            format_errors += 1
+            if format_errors > rewrite_retry_count(req):
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 

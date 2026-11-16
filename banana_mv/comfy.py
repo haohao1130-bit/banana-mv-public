@@ -19,7 +19,7 @@ def comfy(cfg, path, payload=None, timeout=60):
             raw = response.read()
             if not raw.strip():
                 # ComfyUI /free acknowledges with HTTP 200 and no JSON body.
-                if path == '/free' and payload is not None:
+                if payload is not None and path in ('/free','/interrupt','/queue'):
                     return {}
                 raise RuntimeError(f'ComfyUI {path} 回傳空內容（HTTP {response.status}），請檢查 ComfyUI 是否仍在執行。')
             try:
@@ -33,6 +33,27 @@ def comfy(cfg, path, payload=None, timeout=60):
     except urllib.error.HTTPError as error:
         detail = error.read(4000).decode('utf-8', errors='replace')
         raise RuntimeError(f'ComfyUI HTTP {error.code}: {detail}') from None
+
+
+def cancel_prompt(cfg, prompt_id):
+    """Cancel ONLY the named running/queued ComfyUI prompt.
+
+    Never send an unscoped /interrupt and never wipe the whole queue.
+    A running H3 job may finish the current atomic operation before it stops.
+    """
+    if not isinstance(prompt_id,str) or not prompt_id.strip():
+        raise ValueError('需要已知的 ComfyUI prompt_id 才能精準中斷。')
+    queue=comfy(cfg,'/queue')
+    def prompt_ids(kind):
+        return {str(item[1]) for item in queue.get(kind,())
+                if isinstance(item,(list,tuple)) and len(item)>=2}
+    if prompt_id in prompt_ids('queue_running'):
+        comfy(cfg,'/interrupt',{'prompt_id':prompt_id})
+        return 'interrupt_requested'
+    if prompt_id in prompt_ids('queue_pending'):
+        comfy(cfg,'/queue',{'delete':[prompt_id]})
+        return 'removed_from_queue'
+    return 'already_finished_or_unknown'
 
 
 def queue_prompt(cfg, graph):

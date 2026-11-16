@@ -72,6 +72,53 @@ class WholeSongTests(TestCase):
         self.assertIn('Continue this shot already in progress.', prompts[2])
         self.assertIn('夕陽下揮手', prompts[2])
 
+    def test_manual_bracketed_common_settings_apply_to_each_workflow_once(self):
+        req = self.job['request']
+        req.update(
+            director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,
+            rewrite=False, story_plan=False, dynamic_cuts=False, plan_review=True,
+            prompt=("【參考圖】\n@圖片1 是快遞員。\n@圖片2 是機車。\n"
+                    "【59秒連續劇情與攝影機運動】\n【00:00–00:04｜最後一單！】\n快遞員開車。\n"
+                    "【00:04–00:08.00｜抵達！】\n快遞員抵達。\n"
+                    "【最終畫面原則】\nFPV 一鏡到底。"),
+        )
+        self.job['segments'] = segments(8, 4)
+        self.plan()
+        self.model.assert_not_called()
+        for i, segment in enumerate(self.job['segments']):
+            self.assertIn('FPV 一鏡到底。', segment['fixed_reference_settings'])
+            self.assertNotIn('FPV 一鏡到底。', segment['director_plan']['event'])
+            prompt = server.local_prompt(self.cfg, req, segment, ['actor.png', 'bike.png'], bool(i))
+            self.assertEqual(prompt.count('FPV 一鏡到底。'), 1)
+            self.assertIn(f'<Picture {i+1}> 是快遞員。', prompt)
+            self.assertIn(f'<Picture {i+2}> 是機車。', prompt)
+            self.assertNotIn('Singing shots use', prompt)
+        self.assertIn('FPV 一鏡到底。', self.job['plan_preview_setup'])
+
+    def test_manual_timeline_clips_crossing_cue_on_local_clock(self):
+        req = self.job['request']
+        req.update(
+            director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,
+            rewrite=False, story_plan=False, dynamic_cuts=False, plan_review=True,
+            prompt=("【00:00.00–00:06.98】\n攝影機沿車輪往前。\n"
+                    "【00:06.98–00:13.00】\n機車繼續沿道路前進。\n"
+                    "鏡頭倒飛進入市場。\n"),
+        )
+        self.job['segments'] = segments(13, 10)
+        self.plan()
+        first, second = self.job['segments']
+        first_prompt = server.local_prompt(self.cfg, req, first, self.images, None)
+        second_prompt = server.local_prompt(self.cfg, req, second, self.images, True)
+        self.assertEqual(first_prompt.count('[Shot '), 1)
+        self.assertIn('每個時間碼是目前鏡頭裡的動作提示', first_prompt)
+        self.assertIn('6.980–10.000 秒\n機車繼續沿道路前進。', first_prompt)
+        self.assertIn('0.000–3.000 秒\n鏡頭倒飛進入市場。', second_prompt)
+        self.assertIn('[Shot 1] <Picture 1> 是上一段交接的起始畫面。', second_prompt)
+        self.assertIn('攝影機倒飛時，載具仍照原稿沿自己的路線行駛。', second_prompt)
+        self.assertNotIn('Phase inside chapter', first_prompt)
+        self.assertNotIn('鏡頭倒飛進入市場。', first_prompt)
+        self.model.assert_not_called()
+
     def test_manual_draft_slices_authored_times_without_9b(self):
         self.job['request'].update(
             director_schema=whole_song.DIRECT_SCRIPT, direct_script=True,

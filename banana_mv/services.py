@@ -6,6 +6,7 @@ import random
 import shutil
 import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -25,7 +26,7 @@ DEFAULTS = {
     'free_after_rewrite': True,
     'rewriter': {'model': 'minimax_h3_rewriter_ref2va_qwen3.5_9b_w4a8.safetensors',
                  'thinking': False, 'mtp': 'auto', 'max_length': 8192,
-                 'temperature': 0.7, 'top_p': 0.8, 'top_k': 20},
+                 'temperature': 0.4, 'top_p': 0.8, 'top_k': 20},
 }
 
 
@@ -154,18 +155,48 @@ def build_rewrite_graph(cfg, system, parts, job_id):
         raise
 
 
+_REWRITE_PROMPT_LOCK = threading.Lock()
+_REWRITE_PROMPT_ID = None
+
+
+def active_rewrite_prompt_id():
+    """The 9B prompt currently owned by this BANANAMV process."""
+    with _REWRITE_PROMPT_LOCK:
+        return _REWRITE_PROMPT_ID
+
+
 def rewrite_local(cfg, system, parts, job_id):
     graph, names = build_rewrite_graph(cfg, system, parts, job_id)
     entry = None
+    prompt_id = None
+    global _REWRITE_PROMPT_ID
     try:
-        entry = wait_prompt(cfg, queue_prompt(cfg, graph))
+        prompt_id = queue_prompt(cfg, graph)
+        with _REWRITE_PROMPT_LOCK:
+            _REWRITE_PROMPT_ID = prompt_id
+        entry = wait_prompt(cfg, prompt_id)
         values = entry.get('outputs', {}).get('result', {}).get('text', [])
         text = values if isinstance(values, str) else ''.join(values)
         if not text.strip():
             raise ValueError('本地 9B 改寫回傳空白。')
         return text.strip()
     finally:
+        with _REWRITE_PROMPT_LOCK:
+            if prompt_id is not None and _REWRITE_PROMPT_ID == prompt_id:
+                _REWRITE_PROMPT_ID = None
         for name in names:
             (Path(cfg['comfy_input_dir'])/name).unlink(missing_ok=True)
         if entry is not None and cfg.get('free_after_rewrite', True):
             comfy(cfg, '/free', {'unload_models': True, 'free_memory': True})
+
+
+def upload_comfy_image(cfg, name, data, content_type):
+    boundary = uuid.uuid4().hex
+    header = (f'--{boundary}\r\nContent-Disposition: form-data; name="image"; '
+              f'filename="{name}"\r\nContent-Type: {content_type}\r\n\r\n')
+    body = header.encode() + data + f'\r\n--{boundary}--\r\n'.encode()
+    request = urllib.request.Request(cfg['comfy_url'].rstrip('/') + '/upload/image',
+        data=body, headers={'Content-Type': f'multipart/form-data; boundary={boundary}'})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        uploaded = json.load(response)
+    return '/'.join(filter(None, (uploaded.get('subfolder'), uploaded['name'])))

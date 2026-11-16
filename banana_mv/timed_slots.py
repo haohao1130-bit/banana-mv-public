@@ -12,6 +12,15 @@ PLAIN_SCENE = re.compile(
     r'\s*[｜|:：]\s*', re.I
 )
 PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
+# Mirror the hand-written short film headings when MV input has explicit times.
+AUTHORED_SECTION = re.compile(
+    r'^(?:共同設定|共通設定|共用設定|全片設定|全局設定|全域設定|固定設定|全片固定設定|'
+    r'固定角色|固定場景|角色設定|人物設定|角色綁定|世界觀|場景設定|全局電影設定|電影設定|'
+    r'故事內容|故事劇情|劇情內容|劇本內容|故事大綱|劇情大綱|故事分段|劇情分段|'
+    r'分段劇情|分段腳本|分鏡時間軸|分鏡腳本|分鏡內容|拍攝段落|段落安排|演出內容|'
+    r'故事開始|正片內容|精密鏡頭時間軸|鏡頭時間軸|Shared Settings|Common Settings|'
+    r'Shot Timeline|Storyboard|subject_definitions|detailed_description|最終畫面原則)\s*[：:]?$', re.I
+)
 PLAIN_CONTROL = re.compile(
     r'^【?(?:電影導演控制|電影攝影控制|角色表演控制|角色與物件連續性|'
     r'角色語音控制|聲音與語音控制|背景音樂與音效|跨段連續性控制|'
@@ -21,6 +30,9 @@ TIME_SPAN = re.compile(
     r'(?<!\d)(?P<begin>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
     r'\s*[-–—－~～至]\s*'
     r'(?P<end>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
+)
+BRACKET_TIMED_TITLE = re.compile(
+    TIME_SPAN.pattern + r'(?:\s*[｜|]\s*.+)?'
 )
 STORY_NUMBER = re.compile(r'第([一二三四五六七八九十\d]+)段')
 TARGET_RULE = re.compile(
@@ -59,6 +71,118 @@ def _clean_line(raw):
     return line
 
 
+
+# Plain Chinese screenplay headings commonly put "時間：" on the NEXT line,
+# rather than inside a Markdown heading. Treat that as a real author clock.
+_NEXT_LINE_CHAPTER = re.compile(
+    r'^(?:#{1,6}\s*)?(?:第[一二三四五六七八九十百零〇\d]+[段幕]|'
+    r'CHAPTER\s+\d+|SEGMENT\s+\d+)\s*[｜|:：\-—].+', re.I)
+_NEXT_LINE_CLOCK = re.compile(r'^時間\s*[：:]\s*', re.I)
+_QUOTED_LYRIC = re.compile(r'「([^」]+)」|“([^”]+)”')
+_INLINE_CLOCK = re.compile(r'(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?')
+
+
+def _lift_next_line_chapter_times(prompt):
+    """Translate chapter + next-line time syntax into canonical timed headings."""
+    raw = prompt.replace('\r\n','\n').splitlines()
+    out=[];skip=set()
+    for i,line in enumerate(raw):
+        if i in skip:continue
+        clean=line.strip()
+        if _NEXT_LINE_CHAPTER.fullmatch(clean) and not TIME_SPAN.search(clean):
+            next_idx=next((j for j in range(i+1,len(raw)) if raw[j].strip()),None)
+            if next_idx is not None:
+                clock_line=raw[next_idx].strip()
+                clock=TIME_SPAN.search(clock_line) if _NEXT_LINE_CLOCK.match(clock_line) else None
+                if clock and not clock_line[clock.end():].strip():
+                    title=re.sub(r'^#{1,6}\s*','',clean)
+                    out.append('### '+title+'｜'+clock.group())
+                    skip.add(next_idx)
+                    continue
+        out.append(line)
+    return '\n'.join(out)
+
+
+def _lyric_key(value):
+    value=re.sub(r'\[\s*S[12](?:\s*\+\s*S[12])?\s*\]','',value,flags=re.I)
+    return re.sub(r'[^\w\u3400-\u9fff]+','',value,flags=re.U).lower()
+
+
+def _line_cue_times(line, chapter, srt, after):
+    """Return SRT cue starts actually named by this specific action line."""
+    phrases=[a or b for a,b in _QUOTED_LYRIC.findall(line)]
+    times=[]
+    for phrase in phrases:
+        key=_lyric_key(phrase)
+        if not key:continue
+        candidates=[]
+        for cue in srt:
+            if not isinstance(cue,dict):continue
+            try:start=float(cue['start'])
+            except (ValueError,TypeError,KeyError):continue
+            if start < chapter['start']-.250 or start >= chapter['end']+.001:
+                continue
+            label=_lyric_key(str(cue.get('text','')))
+            if key==label or (len(key)>=6 and key in label):
+                candidates.append(start)
+        next_time=next((t for t in candidates if t >= after-.050),None)
+        if next_time is not None:
+            times.append((phrase,next_time))
+            after=next_time
+    return times
+
+
+def _timed_action_events(chapter,srt):
+    """Anchor quoted lyric events to SRT; interpolate only untimed actions.
+
+    A single source action that mentions later lyrics is split by its quoted
+    lyric boundaries so no future lyric text is exposed in an earlier clip.
+    """
+    source=[]
+    last_srt=chapter['start']
+    for line in chapter['actions']:
+        matches=_line_cue_times(line,chapter,srt,last_srt)
+        if len(matches)>1:
+            quotes=list(_QUOTED_LYRIC.finditer(line))
+            previous_end=0
+            for k,(phrase,stamp) in enumerate(matches):
+                quote=next((m for m in quotes if (m[1] or m[2])==phrase and m.end()>previous_end),None)
+                if quote is None:continue
+                fragment=line[previous_end:quote.end()].strip(' ，,、;；')
+                previous_end=quote.end()
+                if k and not re.search(r'唱|對嘴|lip.sync',fragment,re.I):
+                    fragment='依照 SRT 接唱'+fragment
+                source.append([fragment,stamp])
+            if quotes and previous_end<len(line):
+                remaining=line[previous_end:].strip(' ，,、;；')
+                if remaining:
+                    source.append([remaining,None])
+            last_srt=matches[-1][1]
+        else:
+            explicit=_INLINE_CLOCK.search(line)
+            stamp=matches[0][1] if matches else None
+            if stamp is None and explicit and re.search(r'起|開始|切入|轉入',line):
+                stamp=_seconds(explicit.group())
+            if stamp is not None:
+                stamp=max(chapter['start'],min(chapter['end']-.0001,stamp))
+                last_srt=max(last_srt,stamp)
+            source.append([line,stamp])
+    if not source:return []
+    anchors=[(-1,chapter['start'])]
+    for i,(_,stamp) in enumerate(source):
+        if stamp is not None:anchors.append((i,stamp))
+    anchors.append((len(source),chapter['end']))
+    for (left,a),(right,b) in zip(anchors,anchors[1:]):
+        # Source event clocks must progress, never jump to a future act.
+        b=max(a,b)
+        for i in range(left+1,right):
+            fraction=(i-left)/(right-left)
+            source[i][1]=a+(b-a)*fraction
+    return [(line,max(chapter['start'],min(chapter['end']-.0001,stamp)))
+            for line,stamp in source]
+
+
+
 def parse_timed_source(prompt, *, authored_intervals=False):
     """Return (fixed_setup, timed_chapters) or None for legacy non-timed briefs.
 
@@ -71,13 +195,29 @@ def parse_timed_source(prompt, *, authored_intervals=False):
     current = None
     current_level = 0
     interval = None
-    for raw in prompt.splitlines():
+    for raw in _lift_next_line_chapter_times(prompt).splitlines():
         line = raw.strip()
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
             continue
         heading = HEADING.match(line)
+        bracket_span = False
+        bracket = re.fullmatch(r'【([^】]+)】\s*[：:]?', line) if authored_intervals else None
+        if bracket:
+            title = bracket[1].strip()
+            timed_title = BRACKET_TIMED_TITLE.fullmatch(title)
+            if timed_title:
+                if current is None or 'bracket_span' in current:
+                    bracket_span = True
+                    line = '### ' + title
+                    heading = HEADING.match(line)
+                else:
+                    line = TIME_SPAN.match(title).group()
+            elif PLAIN_SECTION.fullmatch(title) or AUTHORED_SECTION.fullmatch(title):
+                line = '## ' + title
+                heading = HEADING.match(line)
         plain_scene = authored_intervals and PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
-        plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line))
+        plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line)
+                                               or AUTHORED_SECTION.fullmatch(line))
         if heading or plain_scene or plain_section:
             title = heading.group('title').strip() if heading else line
             level = len(heading.group('marks')) if heading else (3 if plain_scene else 2)
@@ -90,6 +230,8 @@ def parse_timed_source(prompt, *, authored_intervals=False):
                 current = {'title': title, 'actions': [], 'start':start, 'end':end,
                            'ordinal':_number(number.group(1)) if number else None,
                            'constraints':[]}
+                if bracket_span:
+                    current['bracket_span'] = True
                 chapters.append(current)
                 interval = None
                 current_level = level
@@ -177,7 +319,35 @@ def _last_narrative(actions, previous):
     return previous
 
 
-def allocate_timed_chapters(chapters, segments, commission):
+def allocate_authored_cues(chapters, segments):
+    """Package authored cues on the clip clock, keeping actions in source order."""
+    rows = []
+    for segment in segments:
+        start = segment['start']
+        end = start + segment['seconds']
+        cues = []
+        for chapter in chapters:
+            cue_start, cue_end = chapter['start'], chapter['end']
+            begin, finish = max(start, cue_start), min(end, cue_end)
+            if finish - begin <= 1e-6:
+                continue
+            actions = chapter['actions']
+            duration = cue_end - cue_start
+            # When there are no inner timestamps, estimate where action lines
+            # fall within their authored cue by the elapsed fraction.
+            first = int(len(actions) * (begin - cue_start) / duration + 1e-8)
+            last = int(len(actions) * (finish - cue_start) / duration + 1e-8)
+            local = actions[first:last]
+            if not local:
+                local = ['延續目前的動作與運鏡。']
+            if finish >= cue_end - 1e-6:
+                local = [*local, *chapter['constraints']]
+            cues.append(f'{begin-start:.3f}–{finish-start:.3f} 秒\n' + '\n'.join(local))
+        rows.append('\n\n'.join(cues) or '延續已建立的場景、動作與運鏡。')
+    return rows
+
+
+def allocate_timed_chapters(chapters, segments, commission, srt_cues=None):
     """Map time-anchored scenes onto exact audio slots (including transitions).
 
     commission is the existing local 9B handoff writer, unmodified. No future
@@ -191,6 +361,13 @@ def allocate_timed_chapters(chapters, segments, commission):
         overlaps.append(matches)
     allocated = []
     previous = ''
+    # Anchor the chapter's own lyric-identified actions to their real SRT
+    # times. Other chapters without lyric evidence retain legacy pacing.
+    srt_cues=srt_cues or []
+    aligned=[_timed_action_events(chapter,srt_cues)
+             if srt_cues and any(_line_cue_times(a,chapter,srt_cues,chapter['start'])
+                                 for a in chapter['actions']) else None
+             for chapter in chapters]
     for i, segment in enumerate(segments):
         fragments = []
         clip_start = segment['start']
@@ -199,9 +376,29 @@ def allocate_timed_chapters(chapters, segments, commission):
             if i not in matches:
                 continue
             phase = matches.index(i)
-            assigned, _ = commission(chapter, phase, len(matches), previous)
             begin = max(chapter['start'], clip_start)-clip_start
             end = min(chapter['end'], clip_end)-clip_start
+            aligned_events=aligned[chapters.index(chapter)]
+            if aligned_events is not None:
+                chosen=[(action,stamp) for action,stamp in aligned_events
+                        if clip_start-1e-6 <= stamp < clip_end-1e-6]
+                local=[action for action,_ in chosen]
+                assigned='PYTHON-OWNED CURRENT EVENT — scene '+chapter['title']+'\n'
+                if previous:
+                    assigned+='ALREADY ESTABLISHED (do not replay): '+previous+'\n'
+                assigned+='Current interval actions (at their actual source-song times):\n'
+                assigned+='\n'.join(f'- @{stamp-clip_start:.3f}s '+action
+                                    for action,stamp in chosen) if chosen else (
+                    'Continue established acting and staging inside this scene; '
+                    'no future lyric/event may be performed yet.')
+                if chosen:previous=_last_narrative(local,previous)
+            else:
+                assigned, _ = commission(chapter, phase, len(matches), previous)
+                size = len(chapter['actions'])
+                first = phase*size//len(matches)
+                last = (phase+1)*size//len(matches)
+                local = chapter['actions'][first:last]
+                previous = _last_narrative(local, previous)
             fragments.append(
                 'USER-SPECIFIED SONG TIME — this chapter is assigned to '
                 f'{chapter["start"]:.3f}–{chapter["end"]:.3f}s source time; '
@@ -212,11 +409,6 @@ def allocate_timed_chapters(chapters, segments, commission):
                    + '\n'.join('- '+note for note in chapter['constraints'])
                    if chapter['constraints'] else '')
             )
-            size = len(chapter['actions'])
-            first = phase*size//len(matches)
-            last = (phase+1)*size//len(matches)
-            local = chapter['actions'][first:last]
-            previous = _last_narrative(local, previous)
         if not fragments:
             fragments = [
                 'PYTHON-OWNED SOURCE INTERVAL — no explicitly timed story event '

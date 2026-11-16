@@ -4,6 +4,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -43,6 +44,87 @@ RUNS.mkdir(parents=True, exist_ok=True)
 GPU_LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 CANCEL = set()
+RESTART_LOCK = threading.Lock()
+SERVER_INSTANCE = uuid.uuid4().hex
+RESTART_REQUEST = backend.DATA / 'restart-request.json'
+RESTART_HEARTBEAT = backend.DATA / 'restart-controller.heartbeat'
+
+
+def detect_build_version():
+    """Report the running checkout at server startup; never invent a release number."""
+    root = Path(__file__).resolve().parents[1]
+    if not (root / '.git').exists():
+        return {'branch': 'unknown', 'commit': 'unknown'}
+
+    def git(*args):
+        try:
+            result = subprocess.run(['git', *args], cwd=root, check=True,
+                                    capture_output=True, text=True, timeout=2)
+            return result.stdout.strip() or 'unknown'
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return 'unknown'
+
+    return {'branch': git('symbolic-ref', '--quiet', '--short', 'HEAD'),
+            'commit': git('rev-parse', '--short=9', 'HEAD')}
+
+
+SERVER_BUILD = detect_build_version()
+
+
+def restart_capability():
+    """The button is live only while the external desktop supervisor is alive."""
+    enabled = (backend.PORT == 8193 and
+               os.environ.get('BANANA_SUPERVISED_RESTART') == '1')
+    if enabled:
+        try:
+            enabled = time.time() - RESTART_HEARTBEAT.stat().st_mtime < 12
+        except OSError:
+            enabled = False
+    return {'supported': backend.PORT == 8193,
+            'available': enabled, 'busy': GPU_LOCK.locked(),
+            'reason': ('5070 桌面管家尚未啟動，請使用 V4 桌面捷徑。' if not enabled
+                       else '目前有任務正在執行，請等完成再重啟。' if GPU_LOCK.locked() else '')}
+
+
+def request_desktop_restart(handler, payload):
+    """Request, never execute, a privileged restart; Windows supervisor owns processes."""
+    if handler.headers.get('X-Banana-Control') != '5070-restart':
+        raise ValueError('缺少本機控制確認標頭。')
+    if handler.headers.get('Content-Type','').split(';',1)[0].strip().lower() != 'application/json':
+        raise ValueError('請使用 JSON 傳送重新啟動要求。')
+    origin = handler.headers.get('Origin', '')
+    if not origin or urllib.parse.urlparse(origin).scheme not in ('http','https'):
+        raise ValueError('重新啟動只能由 BANANAMV 網頁發起。')
+    if handler.headers.get('Sec-Fetch-Site', 'same-origin') not in ('same-origin', 'none'):
+        raise ValueError('跨網站請求不能控制重新啟動。')
+    origin_host = urllib.parse.urlparse(origin).netloc.casefold()
+    request_host = handler.headers.get('Host', '').casefold()
+    forwarded_host = handler.headers.get('X-Forwarded-Host', '').casefold()
+    # Tailscale Serve may forward the original Host or supply X-Forwarded-Host.
+    if origin_host not in (request_host, forwarded_host):
+        raise ValueError('來源網址不符合目前的 5070 前端。')
+    if payload.get('confirm') != 'restart-5070':
+        raise ValueError('尚未確認重新啟動。')
+    with RESTART_LOCK:
+        state = restart_capability()
+        if not state['available'] or state['busy']:
+            raise ValueError(state['reason'])
+        try:
+            queue = backend.comfy(backend.load_config(), '/queue')
+        except Exception:
+            queue = None  # Unreachable ComfyUI can be repaired by its owning supervisor.
+        if isinstance(queue, dict) and (queue.get('queue_running') or queue.get('queue_pending')):
+            raise ValueError('ComfyUI 還有正在執行或等待的工作，請先完成再重新啟動。')
+        if RESTART_REQUEST.exists():
+            raise ValueError('重新啟動要求已送出，請勿重複點擊。')
+        RESTART_REQUEST.parent.mkdir(parents=True, exist_ok=True)
+        tmp = RESTART_REQUEST.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'version':1,'issued_at':time.time(),
+                                  'instance':SERVER_INSTANCE}),encoding='utf-8')
+        tmp.replace(RESTART_REQUEST)
+    return {'ok':True,'restarting':True,'instance':SERVER_INSTANCE}
+
+
 def is_continuation(mode):
     return mode in ('chain', 'chain5')
 
@@ -300,14 +382,62 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
 def wait_generation(cfg, prompt_id, job):
     deadline = time.monotonic()+7200
     while time.monotonic()<deadline:
+        if job['id'] in CANCEL:
+            raise InterruptedError('已取消目前段落生成；不採用中斷影片。')
         entry = backend.history_entry(cfg,prompt_id)
+        if job['id'] in CANCEL:
+            raise InterruptedError('已取消目前段落生成；不採用中斷影片。')
         if entry:
             if entry.get('status',{}).get('status_str')=='error':
                 raise RuntimeError(backend.execution_error(entry))
             if entry.get('status',{}).get('completed'):
                 return entry
-        time.sleep(2)
+        time.sleep(1)
     raise RuntimeError('單段生成等待超過兩小時；請檢查 ComfyUI 紀錄。')
+
+
+def stop_job(job_id):
+    """Stop the current GPU task, not just the next clip.
+
+    Only an active prompt ID owned by this BANANAMV run is targeted.
+    Finished clips, saved sources, master versions and other Comfy jobs
+    are untouched. The worker acknowledges cancellation and releases GPU_LOCK.
+    """
+    from banana_mv.comfy import cancel_prompt
+    job=read_state(job_id)
+    if job.get('status') in ('done','cancelled','error','interrupted','plan_ready'):
+        return {'ok':True,'message':'目前沒有正在煉製的段落。','interruption':'not_running'}
+    CANCEL.add(job_id)
+    pid=None
+    if job.get('status')=='retaking':
+        i=(job.get('retake') or {}).get('current')
+        if isinstance(i,int) and 0<=i<len(job.get('segments',[])):
+            take_ids=(job.get('retake') or {}).get('takes',{})
+            target=take_ids.get(str(i))
+            take=next((x for x in job['segments'][i].get('takes',[])
+                       if x.get('id')==target),None)
+            if take:pid=take.get('prompt_id')
+    else:
+        for seg in job.get('segments',[]):
+            if seg.get('status')=='generating' and seg.get('prompt_id'):
+                pid=seg['prompt_id']
+                break
+    if not pid:
+        pid=backend.active_rewrite_prompt_id()
+    if not pid:
+        return {'ok':True,'message':'已要求停止；此階段尚未取得 ComfyUI 任務 ID，將停止後續生成。',
+                'interruption':'cancel_requested'}
+    try:
+        cfg=backend.load_config()
+        result=cancel_prompt(cfg,pid)
+        return {'ok':True,'message':'已要求立即中斷此段；不採用未完成的影片。',
+                'interruption':result}
+    except Exception as error:
+        # The stop flag still prevents later clips. Surface API failure so
+        # the user is not falsely told that sampling stopped already.
+        return {'ok':True,'message':'已停止後續段落，但目前 ComfyUI 中斷指令未確認：'+str(error),
+                'interruption':'api_error'}
+
 
 
 def video_info(entry):
@@ -319,12 +449,22 @@ def video_info(entry):
     raise RuntimeError('生成已完成，但沒有找到影片輸出。')
 
 
-def export_finished_video(job,source):
+def export_finished_video(job,source,*,refined_version=None,upscaled_version=None):
     """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
-    folder=backend.DATA/'videos'
+    configured = os.environ.get('BANANA_FINISHED_VIDEOS')
+    if configured:
+        folder = Path(configured)
+    elif sys.platform == 'win32' and backend.PORT == 8193:
+        folder = Path(r'F:\BANANAMV\videos')
+    else:
+        folder = backend.DATA / 'videos'
     folder.mkdir(parents=True,exist_ok=True)
     title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
     suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
+    if refined_version is not None:
+        suffix += f'_face_refine_v{refined_version:03d}'
+    if upscaled_version is not None:
+        suffix += f'_1080p_v{upscaled_version:03d}'
     target=folder/f'{title}_{job["id"]}{suffix}.mp4'
     temp=target.with_name('.'+target.name+'.tmp')
     try:
@@ -332,18 +472,25 @@ def export_finished_video(job,source):
         temp.replace(target)
     finally:
         temp.unlink(missing_ok=True)
-    job['output_video']=str(target)
-    job.pop('export_error',None)
+    if refined_version is None and upscaled_version is None:
+        job['output_video']=str(target)
+        job.pop('export_error',None)
     return target
 
 
 def worker(job, cfg, original, song, drive):
+    from banana_mv import face_refine
+
+    app = sys.modules[__name__]
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
     parts, tail, tail_frames = [], None, []
     def rewrite_progress(info):
         job['rewrite_attempt']=info;write_state(job)
     try:
+        if job.get('resuming') and job['request'].get('director_schema')==6:
+            from banana_mv.python_slots import refresh_stale_timed_plan
+            refresh_stale_timed_plan(job,original,work)
         approved_review=bool(job['request'].get('plan_review') and job.get('plan_approved'))
         if approved_review and job['plan_approved']!=plan_revision(job):
             raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
@@ -412,7 +559,7 @@ def worker(job, cfg, original, song, drive):
                 if index and plan['version'] not in (5,whole_song.VERSION):
                     seg['previous_planned_event'] = plan['segments'][index-1]['event']
             job['director_plan'] = {'version':plan['version'], 'status':'ready'}
-            if job['request'].get('plan_review'):
+            if direct_script or job['request'].get('plan_review'):
                 job['plan_preview_setup']=plan.get('shared_setup','')
             job['status']='running'; write_state(job)
         if job['request'].get('plan_review') and not approved_review:
@@ -472,13 +619,14 @@ def worker(job, cfg, original, song, drive):
                     job['scene_state_summary']['committed_clips']=len(ledger['commits'])
                 parts.append(part)
                 if is_continuation(job['request']['mode']):
+                    guide = face_refine.chained_part(app, cfg, job, seg, part, original, reuse=True)
                     if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
-                        tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
+                        tail_frames = last_frames(guide, work/f'{i:02d}_last5_%02d.png')
                         shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
                         tail = tail_frames[0]
                     else:
                         tail = work/f'{i:02d}_last.png'
-                        last_frame(part,tail)
+                        last_frame(guide,tail)
                 continue
             seg['status']='preparing'; job['current']=i+1; write_state(job)
             name = f'banana_{job["id"]}_{i}.wav'
@@ -546,11 +694,20 @@ def worker(job, cfg, original, song, drive):
                 if candidate and candidate.get('status',{}).get('completed') and candidate.get('status',{}).get('status_str')!='error':
                     entry = candidate
             if entry is None:
+                if job['id'] in CANCEL:
+                    raise InterruptedError('手動緊急停爐；不開始新的 H3 任務。')
                 pid = backend.queue_prompt(cfg,wf)
                 seg['prompt_id']=pid
                 if ledger is not None:seg['scene_state_prompt_sha256']=scene_digest(prompt)
                 write_state(job)
+                if job['id'] in CANCEL:
+                    from banana_mv.comfy import cancel_prompt
+                    try:cancel_prompt(cfg,pid)
+                    except Exception:pass
+                    raise InterruptedError('已取消剛提交的 H3 任務。')
                 entry = wait_generation(cfg,pid,job)
+            if job['id'] in CANCEL:
+                raise InterruptedError('已中斷本段生成；不採用輸出。')
             raw = work/f'{i:02d}_raw_v1.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
             part = work/f'{i:02d}_part_v1.mp4'
@@ -558,21 +715,27 @@ def worker(job, cfg, original, song, drive):
                 trim_video(raw,part,seg['frames'],skip_frames=overlap)
             else:
                 trim_video(raw,part,seg['frames'])
+            if job['id'] in CANCEL:
+                raise InterruptedError('已中斷本段生成；不提交影片。')
             parts.append(part)
-            if is_continuation(job['request']['mode']):
-                if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
-                    tail_frames = last_frames(part, work/f'{i:02d}_last5_%02d.png')
-                    shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
-                    tail = tail_frames[0]
-                else:
-                    tail = work/f'{i:02d}_last.png'
-                    last_frame(part,tail)
             if ledger is not None:
                 if not valid_part(part,seg,job['size']):raise SceneStateError('片段未成功保存，不提交規劃狀態。')
                 commit_clip(work,ledger,seg['scene_state_debug'])
                 job['scene_state_summary']['committed_clips']=len(ledger['commits'])
             seg.pop('refresh_prompt',None)
-            seg['status']='done'; write_state(job)
+            if job.get('face_refine_chain') and not valid_part(part,seg,job['size']):
+                raise ValueError('片段未成功保存，無法交接修臉尾幀。')
+            seg['status']='done'
+            if is_continuation(job['request']['mode']):
+                guide = face_refine.chained_part(app, cfg, job, seg, part, original)
+                if job['request']['mode'] == 'chain5' and i+1 < len(job['segments']):
+                    tail_frames = last_frames(guide, work/f'{i:02d}_last5_%02d.png')
+                    shutil.copyfile(tail_frames[-1], work/f'{i:02d}_last.png')
+                    tail = tail_frames[0]
+                else:
+                    tail = work/f'{i:02d}_last.png'
+                    last_frame(guide,tail)
+            write_state(job)
             (inp/name).unlink(missing_ok=True)
             if first:
                 (inp/first).unlink(missing_ok=True)
@@ -590,9 +753,33 @@ def worker(job, cfg, original, song, drive):
             export_finished_video(job,work/'final.mp4')
         except OSError as error:
             job['export_error']=f'成品已合成，但另存 videos 資料夾失敗：{error}；仍可由前端下載。'
+        if job['request'].get('face_refine') and job['id'] not in CANCEL:
+            try:
+                face_refine.render_version(
+                    sys.modules[__name__], cfg, job, parts, original, song,
+                    **({'effects': effects_source(job)} if job.get('effects_mix') else {}))
+            except Exception as error:
+                job['face_refine_error'] = str(error)
+        if job['request'].get('upscale_1080p'):
+            from banana_mv import nv_upscale
+            nv_upscale.render_version(sys.modules[__name__], cfg, job)
         job.pop('resuming',None)
         job['status']='done'; job['video']=f'/api/mv/file?id={job["id"]}'; write_state(job)
     except Exception as e:
+        if job['id'] in CANCEL or isinstance(e,InterruptedError):
+            # Never adopt a half-rendered current clip, even when some output
+            # files arrived during cancellation. Completed earlier clips stay.
+            current=job.get('current',0)
+            if isinstance(current,int) and 1<=current<=len(job['segments']):
+                interrupted=job['segments'][current-1]
+                if interrupted.get('status')!='done':
+                    interrupted['status']='waiting'
+                    interrupted['interrupted_render']=True
+                    interrupted.pop('prompt_id',None)
+                    interrupted.pop('scene_state_prompt_sha256',None)
+            job.pop('error',None);job.pop('error_stage',None)
+            job['status']='cancelled';write_state(job)
+            return
         stage=job.get('status','running')
         if stage=='running' and job.get('current'):
             stage=job['segments'][job['current']-1].get('status',stage)
@@ -610,12 +797,22 @@ def worker(job, cfg, original, song, drive):
 
 def start(req):
     cfg = copy.deepcopy(backend.load_config())
+    if not isinstance(req.get('upscale_1080p', False), bool):
+        raise ValueError('1080P 放大設定必須是布林值。')
+    if backend.PORT != 8193 and req.get('upscale_1080p'):
+        raise ValueError('NVEncC 1080P 放大僅支援 Windows RTX5070 本機版。')
+    if not isinstance(req.get('face_refine', False), bool):
+        raise ValueError('遠景救臉設定必須為布林值。')
+    if req.get('face_refine'):
+        from banana_mv.face_refine import references, template
+        images = req.get('image_ids')
+        selected = references(req, len(images) if isinstance(images, list) else 0)
+        template(sys.modules[__name__], cfg, dual=len(selected) == 2)
     if req.get('direct_script') is True:
         req = dict(req, rewrite=False, story_plan=False)
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else
-                             whole_song.VERSION if req.get('rewrite',True) else 6,
+             director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else 6,
              story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
@@ -635,8 +832,7 @@ def start(req):
         raise ValueError('先搓丹方需要開啟本地提示詞改寫。')
     if not isinstance(req.get('persistent_scene_state',True),bool):
         raise ValueError('persistent_scene_state 必須為布林值。')
-    # New projects allocate once, then write each isolated native prompt. Old projects keep their
-    # original request fields when resumed; creating a new job never re-enables it.
+    # New jobs persist their director version; resuming keeps the original workflow.
     req.update(scene_state_version=0,persistent_scene_state=False)
     if 'face_identity' in req and not isinstance(req['face_identity'], bool):
         raise ValueError('face_identity 必須為布林值。')
@@ -686,7 +882,7 @@ def start(req):
     director_prompt(req, plan[0]['seconds'])
     seed = random.randrange(2**48) if req.get('seed') in (None,'') else int(req['seed'])
     authored_prompt = str(req.get('prompt',''))
-    if req['director_schema'] not in (whole_song.DIRECT_SCRIPT, whole_song.VERSION):
+    if req['director_schema'] == 6 and not req.get('rewrite', True):
         authored_prompt = authored_prompt[:10000]
     req = normalize_references(dict(req, prompt=authored_prompt), seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
@@ -710,6 +906,7 @@ def start(req):
         job_id=uuid.uuid4().hex[:12]
         (RUNS/job_id).mkdir()
         job={'id':job_id,'status':'running','created':time.time(),'request':req,
+             'face_refine_chain': bool(req.get('face_refine') and req['mode'] in ('chain', 'chain5')),
              'duration':seconds,'segments':plan,'size':size,'seed':seed,'timeline_source':'decoded_audio',
              'output_size':output_size, 'title':str(req.get('project_name') or music['name'])[:120],
              'settings_version':2,
@@ -935,11 +1132,12 @@ def resume(job_id,rewrite_retries=None):
         missing=False
         for seg in job['segments']:
             part=adopted_part(job,seg)
-            usable=valid_part(part,seg,job['size'])
+            usable=valid_part(part,seg,job['size']) and not seg.get('interrupted_render')
             if not usable and seg.get('takes'):
                 raise ValueError('採用版毛片遺失或損壞，請恢復該版本或另選現存版本；不覆寫原丹。')
             if not usable or (missing and is_continuation(job['request']['mode'])):
                 seg['status']='waiting'
+                seg.pop('interrupted_render',None)
                 if missing and is_continuation(job['request']['mode']):
                     seg.pop('prompt_id',None)
                     seg['refresh_prompt']=True
@@ -963,13 +1161,24 @@ def resume(job_id,rewrite_retries=None):
 
 class Handler(WebHandler):
     def do_GET(self):
+        if self.path == '/api/5070/switch':
+            if backend.PORT != 8193:
+                return self.send_json({'available':False,'busy':GPU_LOCK.locked()})
+            from banana_mv.room_switch import launcher
+            return self.send_json({'available': bool(launcher('film', backend.PORT)),
+                                   'busy': GPU_LOCK.locked()})
         url = urllib.parse.urlparse(self.path)
         if url.path in ('/','/mv'):
             return self.send_file(WEB/'index.html')
         if url.path=='/clip_review.js':
             return self.send_file(WEB/'clip_review.js')
         if url.path=='/api/health':
-            return self.send_json({'service':'banana-mv','standalone':True})
+            return self.send_json({'service':'banana-mv','standalone':True,'instance':SERVER_INSTANCE,
+                                   'version':SERVER_BUILD})
+        if url.path=='/api/mv/face-refine-capability':
+            return self.send_json({'local5070':backend.PORT==8193})
+        if url.path=='/api/mv/restart-capability':
+            return self.send_json(restart_capability())
         if url.path=='/api/config':
             return self.send_json({'config':{'comfy_url':backend.load_config()['comfy_url']}})
         if url.path=='/api/mv/reference':
@@ -1012,8 +1221,16 @@ class Handler(WebHandler):
         return self.send_error(404)
 
     def do_POST(self):
+        if self.path == '/api/5070/switch':
+            if backend.PORT != 8193:
+                return self.send_json({'error':'5070 桌面切換僅限 Windows 本機版。'},400)
+            from banana_mv.room_switch import switch
+            return switch(self, 'film', backend, GPU_LOCK)
         path=urllib.parse.urlparse(self.path).path
         try:
+            if path=='/api/mv/restart':
+                result = request_desktop_restart(self, self.body_json())
+                return self.send_json(result, 202)
             if path=='/api/upload':
                 if not GPU_LOCK.acquire(blocking=False):
                     raise ValueError('MV 執行中，請完成後再上傳素材。')
@@ -1030,10 +1247,20 @@ class Handler(WebHandler):
             if path=='/api/mv/resume':
                 body=self.body_json()
                 return self.send_json(resume(body['id'],body.get('rewrite_retries')))
+            if path=='/api/mv/upscale':
+                if backend.PORT != 8193:
+                    raise ValueError('NVEncC 升丹僅支援 Windows RTX5070 本機版。')
+                from banana_mv import nv_upscale
+                body=self.body_json()
+                return self.send_json(nv_upscale.start_finished(sys.modules[__name__], body['id'], body.get('version')), 202)
+            if path=='/api/mv/rewrite-clip':
+                from banana_mv.manual_prompt import rewrite_clip
+                body=self.body_json()
+                return self.send_json(rewrite_clip(body['id'],body.get('index')),202)
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions')))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False),body.get('rebuild_prompt',False)))
             if path=='/api/mv/condense':
                 from banana_mv.takes import condense
                 body=self.body_json()
@@ -1043,8 +1270,7 @@ class Handler(WebHandler):
                 body=self.body_json()
                 return self.send_json(select_take(body['id'],body.get('index'),body.get('take')))
             if path=='/api/mv/stop':
-                job_id=self.body_json()['id']; read_state(job_id); CANCEL.add(job_id)
-                return self.send_json({'ok':True,'message':'目前這段完成後停止。'})
+                return self.send_json(stop_job(self.body_json()['id']))
             return self.send_error(404)
         except Exception as e:
             if path == '/api/upload':

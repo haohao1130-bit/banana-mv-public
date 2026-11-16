@@ -128,13 +128,32 @@ def shot_text(shots, overlap=0, *, include_bindings=False):
 
 def direct_script_prompt(req, segment, picture_count, tail):
     """Package just this authored interval for H3 without invoking 9B."""
-    from banana_mv.core import fallback_prompt
-
-    text = '\n\n'.join(filter(None, (segment.get('fixed_reference_settings'),
-                                      segment['director_plan']['event'])))
+    setup = segment.get('fixed_reference_settings', '')
+    event = segment['director_plan']['event']
+    audio = '<Audio 1>: fully_copy. Preserve the supplied source track and its timing.'
+    values = [
+        'Use the original reference images according to the author’s bindings.',
+        setup or 'Follow the author’s instructions for this interval.',
+        audio,
+        '[Shot 1] ' + (
+            '以下秒數皆以本段第一幀為 0 秒。每個時間碼是目前鏡頭裡的動作提示。'
+            '依原稿維持攝影機的連續位置與運動。\n\n'
+            if segment['director_plan'].get('authored_cues') and not req.get('dynamic_cuts', True) else ''
+        ) + event,
+        audio,
+        'Use the supplied soundtrack.',
+    ]
+    prompt = '\n\n'.join(f'{key}:\n{value}' for key, value in zip(H3_SECTIONS, values))
     if tail:
-        text = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', text)
-    prompt = fallback_prompt(text, bool(tail), '', picture_count, scene_aware=True)
+        prompt = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', prompt)
+        opening = '<Picture 1> 是上一段交接的起始畫面。'
+        if segment['director_plan'].get('authored_cues'):
+            opening += ('從畫面中的位置與朝向延續。角色、載具與攝影機各自維持原有行進方向和動勢，'
+                        '到原稿指定的時間才轉向或變速。攝影機的朝向及移動與載具獨立，'
+                        '攝影機倒飛時，載具仍照原稿沿自己的路線行駛。')
+        prompt = prompt.replace('detailed_description:\n[Shot 1] ',
+                                'detailed_description:\n[Shot 1] ' + opening + '\n\n', 1)
+    validate_h3_sections(prompt)
     return normalize_mv_prompt(prompt, picture_count + int(bool(tail)))
 
 

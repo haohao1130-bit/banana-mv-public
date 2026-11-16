@@ -6,6 +6,7 @@ class Element{
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=nodes;}
   setAttribute(key,value){this[key]=value;}
+  getAttribute(key){return this[key]||null;}
   removeAttribute(key){delete this[key];}
   addEventListener(name,fn){this.events[name]=fn;}
   focus(){this.focused=true;}
@@ -17,11 +18,14 @@ class Element{
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
-const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;const approvals=[];let recipeOpened=false;
+const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[];let reviewJob;const approvals=[];let recipeOpened=false;
+let restartState={supported:false,available:false,busy:false,reason:'Colab 不提供桌面重啟'};
+const intervals=[];
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
-  setTimeout:()=>0,clearTimeout:()=>{},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
+  setTimeout:()=>0,clearTimeout:()=>{},setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
+    if(url==='api/mv/restart-capability')return restartState;
     if(url==='api/upload'){uploads.push(options.body.name);return {id:options.body.name};}
     if(url==='api/mv/start'){const body=JSON.parse(options.body);posts.push(body);return {id:body.plan_review?'recipe123':'abcd'};}
     if(url==='api/mv/open-furnace'){approvals.push(JSON.parse(options.body));recipeOpened=true;return {id:'recipe123',status:'running'};}
@@ -29,6 +33,7 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
+    if(url==='api/mv/rewrite-clip'){rewrites.push(JSON.parse(options.body));return {...reviewJob};}
     if(url==='api/mv/retake'){retakes.push(JSON.parse(options.body));return {...reviewJob,status:'retaking'};}
     if(url==='api/mv/select-take'){selections.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
     if(url==='api/mv/status?id=review123')return reviewJob;
@@ -43,6 +48,28 @@ vm.runInContext(fs.readFileSync('banana_mv/web/clip_review.js','utf8'),context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
+  // Colab never shows the Windows desktop-supervisor button.
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].hidden,true);
+  restartState={supported:true,available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].hidden,false);
+  assert.equal(els['restart-5070'].disabled,true);
+  assert(els['restart-5070'].textContent.includes('需 V4 管家'));
+  assert(intervals.some(({ms})=>ms===5000),'supervisor capability is refreshed periodically');
+  restartState={available:true,busy:false,reason:''};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].disabled,false);
+  assert.equal(els['restart-5070'].textContent,'↻ 重啟丹爐');
+  restartState={available:true,busy:true,reason:'目前有任務正在執行'};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].disabled,true);
+  assert(els['restart-5070'].textContent.includes('任務中'));
+  restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
+  await vm.runInContext('updateRestartControl()',context);
+  assert.equal(els['restart-5070'].hidden,false);
+  assert.equal(els['restart-5070'].disabled,true);
+
   vm.runInContext("renderProgress({status:'planning_state',segments:[{},{},{}]})",context);assert(els['activity-text'].textContent.includes('狀態'));
   vm.runInContext("renderOutputLocation({output_video:'/content/drive/MyDrive/BananaMV/videos/test.mp4'})",context);assert.equal(els['output-location'].hidden,false);assert(els['output-location'].textContent.includes('videos/test.mp4'));
   vm.runInContext("renderOutputLocation({export_error:'另存失敗，仍可下載'})",context);assert(els['output-location'].textContent.includes('仍可下載'));
@@ -81,6 +108,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   for(const status of ['done','error','cancelled','interrupted']){vm.runInContext(`renderProgress({status:'${status}',segments:[]})`,context);assert.equal(els['current-activity'].hidden,true);assert.equal(els['activity-text'].textContent,'');assert(!els['progress-label'].textContent.includes('NaN'));}
 
   vm.runInContext("renderEventPlan({segments:[{index:0,director_plan:{mode:'story',event:'<b>plain text</b>'}}]})",context);assert.equal(els['event-plan-text'].textContent,'1. story\n<b>plain text</b>');assert.equal(els['event-plan-details'].hidden,false);assert.equal(vm.runInContext("eventPreview('x'.repeat(800)).length",context),101);
+  vm.runInContext("renderEventPlan({request:{director_schema:8},segments:[{index:0,fixed_reference_settings:'<Picture 1> 是快遞員',director_plan:{mode:'action',event:'<Picture 2> 是機車'}}]})",context);
+  assert.equal(els['event-plan-text'].textContent,'共同設定\n@圖片1 是快遞員\n\n1. action\n@圖片2 是機車');
   els.prompt.value='original user prompt';await vm.runInContext("active='broken-plan';poll()",context);assert(els.status.textContent.startsWith('錯誤（planning_story）：plan parse failed'));assert(els.status.textContent.length<500);assert.equal(els.prompt.value,'original user prompt');assert(els['event-plan-text'].textContent.includes('x'.repeat(800)));
   const terminal=await vm.runInContext("api('status-error')",context);assert.equal(terminal.status,'error');assert.equal(terminal.error,'bad media tag');
   vm.runInContext('renderJobSeed({seed:0})',context);assert.equal(els['job-seed'].textContent,'本次 Seed：0');
@@ -140,8 +169,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   const beforeChain=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});assert.equal(posts.length,beforeChain);assert.deepEqual(uploads,[]);
   els['remove-image-9'].onclick();req=await submit();assert.equal(req.image_ids.length,8);
   assert.equal(req.image_ids[6],'slot7.png');assert.equal(req.image_ids[7],'slot8.png');
-  els.mode.value='chain5';els.mode.events.change();assert.equal(els['image-9'].disabled,true);
-els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'].disabled,false);
+  els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'].disabled,false);
   // Clearing slot 1 also keeps every other binding in place.
   els['remove-image-1'].onclick();const beforeMissingFirst=posts.length;uploads.length=0;await els.form.onsubmit({preventDefault(){}});
   assert.equal(posts.length,beforeMissingFirst);assert.equal(els['image-name-2'].textContent,'actor2.png');
@@ -162,10 +190,18 @@ els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'
   vm.runInContext("renderRewriteAttempt({status:'done'})",context);assert.equal(els['rewrite-status'].textContent,'');
   await vm.runInContext("openProject('low480')",context);assert.equal(els.project_scope.value,'full');assert.equal(els.resolution.value,'480p');assert.equal(els.width.value,'854');
   reviewJob={id:'review123',status:'done',seed:42,request:{mode:'chain'},segments:Array.from({length:4},(_,i)=>({index:i,start:i*10,seconds:10,status:'done',preview:`/clip-${i}`,selected_take:'original',takes:[{id:'original',status:'ready',seed:42+i,preview:`/clip-${i}-original`},{id:'abcdef123456',status:'ready',seed:900+i,preview:`/clip-${i}-new`}]}))};
+  reviewJob.segments[1].director_plan={handoff_version:1,event:'Only this scene'};
+  reviewJob.segments[1].prompt='subject_definitions:\\nOriginal H3 prompt';
   vm.runInContext(`active='review123';renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(els['clip-review'].hidden,false);assert.equal(els['clip-chain-note'].hidden,false);
   const rows=vm.runInContext('[...clipView.rows.values()]',context);
-  assert.equal(rows.length,4);assert.equal(rows[0].video.muted,true);assert.equal(rows[0].video.preload,'none');
+  assert.equal(rows.length,4);assert.equal(rows[0].video.muted,false);assert.equal(rows[0].video.preload,'none');
+  reviewJob.segments[0].takes[0].preview_kind='raw';reviewJob.segments[0].takes[0].preview_filename='00_raw_v1.mp4';
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[0].note.textContent.includes('RAW 原始有聲預覽'));
+  reviewJob.segments[0].takes[0].preview_kind='part';
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[0].note.textContent.includes('裁切版（無 RAW 音軌）'));
   rows[1].check.checked=true;rows[2].check.checked=true;rows[1].check.onchange();
   assert(els['clips-retake'].textContent.includes('2 顆'));assert.equal(els['clips-retake'].disabled,false);
   vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,status:'running'})})`,context);
@@ -179,6 +215,36 @@ els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'
   assert.equal(els['clip-list'].children[1].children[1],rows[1].video);
   await els['clips-retake'].onclick();
   assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'}});
+  // New one-clip prompt workbench: do not queue H3 when asking 9B to recompose.
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].rewriteButton.disabled,false);
+  assert(rows[1].promptEditor.value.includes('Original H3 prompt'));
+  await rows[1].rewriteButton.onclick();
+  assert.deepEqual(rewrites,[{id:'review123',index:1}]);
+  assert.equal(retakes.length,2,'9B text rewrite does not queue a video retake');
+  reviewJob.segments[1].prompt_rewrite={status:'ready',version:1,text:'subject_definitions:\n9B rewritten clip\nsummary:\nClip changed'};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[1].promptEditor.value.includes('9B rewritten clip'));
+  rows[1].promptEditor.value='subject_definitions:\nMy own custom revised clip';
+  rows[1].promptEditor.oninput();
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[1].promptEditor.value.includes('My own custom revised clip'),'poll must not destroy manual edits');
+  assert.equal(rows[1].renderButton.textContent,'依此提示詞回爐這一段');
+  await rows[1].renderButton.onclick();
+  assert.deepEqual(retakes.at(-1),{
+    id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'}
+  });
+  vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
+  assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
+
+  vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'clip',index:1,total:2}})",context);
+  assert.match(els['refined-status'].textContent,/正在修臉第 2／2 段/);
+  vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'assembling'}})",context);
+  assert.match(els['refined-status'].textContent,/正在合成/);
+  vm.runInContext("renderFinalPreviews({video:'/master',status:'done',segments:[{face_refine_error:'測試原因'}]})",context);
+  assert.match(els['refined-status'].textContent,/第 1 段：測試原因/);
+  vm.runInContext('renderFinalPreviews({})',context);
+  assert.equal(els['final-previews'].hidden,true);assert.equal(els['refined-video'].src,undefined);
   vm.runInContext("renderOutputLocation({final_video:'/job/final.mp4',current_master:2,final_versions:[{version:1,download:'/old-v1'},{version:2,download:'/new-v2'}]})",context);
   assert(els['output-location'].textContent.includes('/job/final.mp4'));
   assert.equal(els['master-list'].children.length,2);assert.equal(els['master-list'].children[0].href,'/old-v1');
@@ -186,6 +252,26 @@ els.mode.value='independent';els.mode.events.change();assert.equal(els['image-9'
   rows[1].select.value='abcdef123456';rows[1].select.onchange();assert.equal(rows[1].video.src,'/clip-1-new');assert.equal(rows[1].use.disabled,false);
   await rows[1].use.onclick();assert.deepEqual(selections,[{id:'review123',index:1,take:'abcdef123456'}]);
   els['clips-all'].onclick();assert(rows.every(row=>row.check.checked));els['clips-clear'].onclick();assert(rows.every(row=>!row.check.checked));
+  // Even the failed/not-yet-generated clip has its own prompt workbench.
+  const missing={id:'failed123',status:'error',request:{mode:'independent'},
+    segments:[{index:0,start:0,seconds:10,status:'waiting',
+      director_plan:{handoff_version:1,event:'A current event'},prompt:''}]};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(missing)})`,context);
+  const failedRow=vm.runInContext('clipView.rows.get(0)',context);
+  assert(failedRow);assert.equal(failedRow.rewriteButton.disabled,false);
+  assert.equal(failedRow.renderButton.disabled,true,'empty prompt cannot render');
+  failedRow.promptEditor.value='subject_definitions:\nMy pasted manual prompt';
+  failedRow.promptEditor.oninput();
+  assert.equal(failedRow.renderButton.disabled,false,'complete pasted prompt can render first version');
+  assert.equal(failedRow.renderButton.textContent,'依此提示詞回爐並自動續跑');
+  vm.runInContext("active='failed123'",context);
+  await failedRow.renderButton.onclick();
+  assert.deepEqual(retakes.at(-1),{
+    id:'failed123',indices:[0],
+    prompts:{'0':'subject_definitions:\nMy pasted manual prompt'},
+    auto_resume:true
+  },'an unfinished clip must auto-continue after manual first render');
+
   // The same form submits either direct rendering or upstream-only planning.
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;
   await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);assert.equal(posts.at(-1).preview_zh,true);
