@@ -318,7 +318,7 @@ function faceRefineActivity(job) {
 
 function renderFinalPreviews(job, relative = false) {
  const current = (job.final_versions || []).find(version => version.version === job.current_master);
- const refined = (job.final_versions || []).findLast(version =>
+ const refined = job.final_stale ? null : (job.final_versions || []).findLast(version =>
   version.reason === 'face_refine' && version.source_master === job.current_master);
  const url = value => relative ? value.replace(/^\//, '') : value;
  function show(videoId, linkId, source) {
@@ -339,7 +339,7 @@ function renderFinalPreviews(job, relative = false) {
  $('final-previews').hidden = !master;
  show('video', 'download', master);
  show('refined-video', 'refined-download', refined?.download);
- const upscale = (job.final_versions || []).findLast(version =>
+ const upscale = job.final_stale ? null : (job.final_versions || []).findLast(version =>
   version.reason === 'upscale_1080p' && version.source_master === job.current_master);
  const upgrade = $('upscale-again');
  const upgradeSource = refined?.download ? refined : current;
