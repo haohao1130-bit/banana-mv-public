@@ -155,17 +155,35 @@ def build_rewrite_graph(cfg, system, parts, job_id):
         raise
 
 
+_REWRITE_PROMPT_LOCK = threading.Lock()
+_REWRITE_PROMPT_ID = None
+
+
+def active_rewrite_prompt_id():
+    """The 9B prompt currently owned by this BANANAMV process."""
+    with _REWRITE_PROMPT_LOCK:
+        return _REWRITE_PROMPT_ID
+
+
 def rewrite_local(cfg, system, parts, job_id):
     graph, names = build_rewrite_graph(cfg, system, parts, job_id)
     entry = None
+    prompt_id = None
+    global _REWRITE_PROMPT_ID
     try:
-        entry = wait_prompt(cfg, queue_prompt(cfg, graph))
+        prompt_id = queue_prompt(cfg, graph)
+        with _REWRITE_PROMPT_LOCK:
+            _REWRITE_PROMPT_ID = prompt_id
+        entry = wait_prompt(cfg, prompt_id)
         values = entry.get('outputs', {}).get('result', {}).get('text', [])
         text = values if isinstance(values, str) else ''.join(values)
         if not text.strip():
             raise ValueError('本地 9B 改寫回傳空白。')
         return text.strip()
     finally:
+        with _REWRITE_PROMPT_LOCK:
+            if prompt_id is not None and _REWRITE_PROMPT_ID == prompt_id:
+                _REWRITE_PROMPT_ID = None
         for name in names:
             (Path(cfg['comfy_input_dir'])/name).unlink(missing_ok=True)
         if entry is not None and cfg.get('free_after_rewrite', True):

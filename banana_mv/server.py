@@ -381,14 +381,62 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
 def wait_generation(cfg, prompt_id, job):
     deadline = time.monotonic()+7200
     while time.monotonic()<deadline:
+        if job['id'] in CANCEL:
+            raise InterruptedError('已取消目前段落生成；不採用中斷影片。')
         entry = backend.history_entry(cfg,prompt_id)
+        if job['id'] in CANCEL:
+            raise InterruptedError('已取消目前段落生成；不採用中斷影片。')
         if entry:
             if entry.get('status',{}).get('status_str')=='error':
                 raise RuntimeError(backend.execution_error(entry))
             if entry.get('status',{}).get('completed'):
                 return entry
-        time.sleep(2)
+        time.sleep(1)
     raise RuntimeError('單段生成等待超過兩小時；請檢查 ComfyUI 紀錄。')
+
+
+def stop_job(job_id):
+    """Stop the current GPU task, not just the next clip.
+
+    Only an active prompt ID owned by this BANANAMV run is targeted.
+    Finished clips, saved sources, master versions and other Comfy jobs
+    are untouched. The worker acknowledges cancellation and releases GPU_LOCK.
+    """
+    from banana_mv.comfy import cancel_prompt
+    job=read_state(job_id)
+    if job.get('status') in ('done','cancelled','error','interrupted','plan_ready'):
+        return {'ok':True,'message':'目前沒有正在煉製的段落。','interruption':'not_running'}
+    CANCEL.add(job_id)
+    pid=None
+    if job.get('status')=='retaking':
+        i=(job.get('retake') or {}).get('current')
+        if isinstance(i,int) and 0<=i<len(job.get('segments',[])):
+            take_ids=(job.get('retake') or {}).get('takes',{})
+            target=take_ids.get(str(i))
+            take=next((x for x in job['segments'][i].get('takes',[])
+                       if x.get('id')==target),None)
+            if take:pid=take.get('prompt_id')
+    else:
+        for seg in job.get('segments',[]):
+            if seg.get('status')=='generating' and seg.get('prompt_id'):
+                pid=seg['prompt_id']
+                break
+    if not pid:
+        pid=backend.active_rewrite_prompt_id()
+    if not pid:
+        return {'ok':True,'message':'已要求停止；此階段尚未取得 ComfyUI 任務 ID，將停止後續生成。',
+                'interruption':'cancel_requested'}
+    try:
+        cfg=backend.load_config()
+        result=cancel_prompt(cfg,pid)
+        return {'ok':True,'message':'已要求立即中斷此段；不採用未完成的影片。',
+                'interruption':result}
+    except Exception as error:
+        # The stop flag still prevents later clips. Surface API failure so
+        # the user is not falsely told that sampling stopped already.
+        return {'ok':True,'message':'已停止後續段落，但目前 ComfyUI 中斷指令未確認：'+str(error),
+                'interruption':'api_error'}
+
 
 
 def video_info(entry):
@@ -642,11 +690,20 @@ def worker(job, cfg, original, song, drive):
                 if candidate and candidate.get('status',{}).get('completed') and candidate.get('status',{}).get('status_str')!='error':
                     entry = candidate
             if entry is None:
+                if job['id'] in CANCEL:
+                    raise InterruptedError('手動緊急停爐；不開始新的 H3 任務。')
                 pid = backend.queue_prompt(cfg,wf)
                 seg['prompt_id']=pid
                 if ledger is not None:seg['scene_state_prompt_sha256']=scene_digest(prompt)
                 write_state(job)
+                if job['id'] in CANCEL:
+                    from banana_mv.comfy import cancel_prompt
+                    try:cancel_prompt(cfg,pid)
+                    except Exception:pass
+                    raise InterruptedError('已取消剛提交的 H3 任務。')
                 entry = wait_generation(cfg,pid,job)
+            if job['id'] in CANCEL:
+                raise InterruptedError('已中斷本段生成；不採用輸出。')
             raw = work/f'{i:02d}_raw_v1.mp4'
             backend.comfy_download(cfg,video_info(entry),raw)
             part = work/f'{i:02d}_part_v1.mp4'
@@ -654,6 +711,8 @@ def worker(job, cfg, original, song, drive):
                 trim_video(raw,part,seg['frames'],skip_frames=overlap)
             else:
                 trim_video(raw,part,seg['frames'])
+            if job['id'] in CANCEL:
+                raise InterruptedError('已中斷本段生成；不提交影片。')
             parts.append(part)
             if ledger is not None:
                 if not valid_part(part,seg,job['size']):raise SceneStateError('片段未成功保存，不提交規劃狀態。')
@@ -703,6 +762,20 @@ def worker(job, cfg, original, song, drive):
         job.pop('resuming',None)
         job['status']='done'; job['video']=f'/api/mv/file?id={job["id"]}'; write_state(job)
     except Exception as e:
+        if job['id'] in CANCEL or isinstance(e,InterruptedError):
+            # Never adopt a half-rendered current clip, even when some output
+            # files arrived during cancellation. Completed earlier clips stay.
+            current=job.get('current',0)
+            if isinstance(current,int) and 1<=current<=len(job['segments']):
+                interrupted=job['segments'][current-1]
+                if interrupted.get('status')!='done':
+                    interrupted['status']='waiting'
+                    interrupted['interrupted_render']=True
+                    interrupted.pop('prompt_id',None)
+                    interrupted.pop('scene_state_prompt_sha256',None)
+            job.pop('error',None);job.pop('error_stage',None)
+            job['status']='cancelled';write_state(job)
+            return
         stage=job.get('status','running')
         if stage=='running' and job.get('current'):
             stage=job['segments'][job['current']-1].get('status',stage)
@@ -1053,11 +1126,12 @@ def resume(job_id,rewrite_retries=None):
         missing=False
         for seg in job['segments']:
             part=adopted_part(job,seg)
-            usable=valid_part(part,seg,job['size'])
+            usable=valid_part(part,seg,job['size']) and not seg.get('interrupted_render')
             if not usable and seg.get('takes'):
                 raise ValueError('採用版毛片遺失或損壞，請恢復該版本或另選現存版本；不覆寫原丹。')
             if not usable or (missing and is_continuation(job['request']['mode'])):
                 seg['status']='waiting'
+                seg.pop('interrupted_render',None)
                 if missing and is_continuation(job['request']['mode']):
                     seg.pop('prompt_id',None)
                     seg['refresh_prompt']=True
@@ -1184,8 +1258,7 @@ class Handler(WebHandler):
                 body=self.body_json()
                 return self.send_json(select_take(body['id'],body.get('index'),body.get('take')))
             if path=='/api/mv/stop':
-                job_id=self.body_json()['id']; read_state(job_id); CANCEL.add(job_id)
-                return self.send_json({'ok':True,'message':'目前這段完成後停止。'})
+                return self.send_json(stop_job(self.body_json()['id']))
             return self.send_error(404)
         except Exception as e:
             if path == '/api/upload':

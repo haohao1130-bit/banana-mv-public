@@ -356,8 +356,15 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                                      **app.graph_options(job['request'],seg['seconds'],seg))
             graph['16']['inputs']['filename_prefix']=f'BananaMV/{job["id"]}/{i:02d}_v{take["version"]}'
             app.preflight(cfg,graph);(output('workflow.json')).write_text(json.dumps(graph,ensure_ascii=False,indent=2))
+            if job['id'] in app.CANCEL:raise InterruptedError('已停止本次回爐。')
             take['prompt_id']=app.backend.queue_prompt(cfg,graph);app.write_state(job)
+            if job['id'] in app.CANCEL:
+                from banana_mv.comfy import cancel_prompt
+                try:cancel_prompt(cfg,take['prompt_id'])
+                except Exception:pass
+                raise InterruptedError('已取消剛提交的回爐任務。')
             entry=app.wait_generation(cfg,take['prompt_id'],job)
+            if job['id'] in app.CANCEL:raise InterruptedError('回爐生成已停止。')
             app.backend.comfy_download(cfg,app.video_info(entry),output('raw.mp4'))
             if overlap:
                 app.trim_video(output('raw.mp4'),output('part.mp4'),seg['frames'],skip_frames=overlap)
@@ -379,8 +386,13 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
         job['status']=old_status
         job['retake']['status']='done'
     except Exception as e:
-        if current and current['status']!='ready':current.update(status='error',error=str(e))
-        job['status']=old_status;job['retake'].update(status='error',error=str(e))
+        cancelled=job['id'] in app.CANCEL or isinstance(e,InterruptedError)
+        if current and current['status']!='ready':
+            if cancelled:current.update(status='cancelled',error='使用者緊急停爐')
+            else:current.update(status='error',error=str(e))
+        job['status']=old_status
+        if cancelled:job['retake'].update(status='cancelled',error='使用者緊急停爐')
+        else:job['retake'].update(status='error',error=str(e))
     finally:
         for _,take in batch:
             if take['status']=='waiting':take['status']='cancelled'

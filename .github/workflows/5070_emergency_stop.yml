@@ -1,0 +1,20 @@
+name: RTX5070 immediate task interruption
+on:
+  push:
+    branches:
+      - experiment/rtx5070-480p-local
+  workflow_dispatch:
+jobs:
+  emergency-stop:
+    runs-on: ubuntu-latest
+    env:
+      BANANA_DATA: /tmp/banana-mv-stop-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install Pillow numpy
+      - run: python -m unittest discover -s tests -p test_emergency_stop.py -v
+      - run: python -m unittest discover -s tests -p test_comfy.py -v
+      - run: python -m compileall -q banana_mv/server.py banana_mv/takes.py banana_mv/comfy.py banana_mv/services.py
