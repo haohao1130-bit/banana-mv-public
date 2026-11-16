@@ -128,9 +128,13 @@ def _extract(raw,slots,only=None):
     # Native Ref2VA rewriters sometimes omit a redundant [Shot 1] on
     # a one-shot correction. The H3 detailed_description itself then
     # serves as the body for the single Python-owned slot.
-    if only is not None and not found and native_detail and text.strip():
-        blocks[only]=text.strip()
-    expected={only} if only else {s['number'] for s in slots}
+    if not found and native_detail and text.strip() and (
+            only is not None or len(slots)==1):
+        # The official native format supplies detailed_description; a one-
+        # shot response may contain prose without repeating [Shot 1].
+        target=only if only is not None else slots[0]['number']
+        blocks[target]=text.strip()
+    expected={only} if only is not None else {s['number'] for s in slots}
     if set(blocks)!=expected:
         raise ValueError('9B 必須填寫這些指定鏡頭：'+repr(sorted(expected))+'；實際：'+repr(sorted(blocks)))
     return blocks

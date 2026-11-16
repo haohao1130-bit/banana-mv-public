@@ -140,8 +140,8 @@ class LockedShootTests(unittest.TestCase):
         self.assertIn('[Shot 1]',result)
         self.assertIn('[Shot 2] At 00:05.000',result)
         self.assertEqual([x[0] for x in record],[.4,.15])
-        self.assertIn('REPAIR ONLY [Shot 1]',record[1][1])
-        self.assertNotIn('REPAIR ONLY [Shot 2]',record[1][1])
+        self.assertIn('REPAIR ONE SHOT ONLY: [Shot 1]',record[1][1])
+        self.assertNotIn('REPAIR ONE SHOT ONLY: [Shot 2]',record[1][1])
         self.assertEqual(segment['prompt_profile']['writer_calls'],2)
 
     def test_9b_commission_order_is_hard_locks_event_cinematography(self):
@@ -156,7 +156,7 @@ class LockedShootTests(unittest.TestCase):
         self.assertLess(text.index('CURRENT WARDROBE'),text.index('LOCKED SHOT SLOTS'))
         self.assertLess(text.index('LOCKED SHOT SLOTS'),text.index('THIS CLIP EVENT'))
         self.assertLess(text.index('THIS CLIP EVENT'),text.index('CINEMATOGRAPHY AND OUTPUT'))
-        self.assertLess(text.index('CINEMATOGRAPHY AND OUTPUT'),text.index('Return only'))
+        self.assertLess(text.index('CINEMATOGRAPHY AND OUTPUT'),text.index('OUTPUT SHAPE'))
         self.assertIn('face and hairstyle from <Picture 3> ONLY',text)
         self.assertIn('CURRENT OUTFIT: pure-white tie-string bikini',text)
         self.assertIn('[Shot 2] 2.300–8.760s',text)
@@ -279,6 +279,8 @@ class LockedShootTests(unittest.TestCase):
         body=_extract(native,slots,only=1)
         self.assertEqual(sorted(body),[1])
         self.assertIn('camera arcs',body[1])
+        full=_extract(native,slots)
+        self.assertEqual(full[1],body[1])
         with self.assertRaises(ValueError):
             _extract('A bare unlabeled paragraph.',slots,only=1)
 
