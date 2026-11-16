@@ -820,6 +820,56 @@ class TakeTests(unittest.TestCase):
         self.assertEqual(app.backend.queue_prompt.call_count,1,
                          'final assembly must not reshoot an already adopted final clip')
 
+
+    def test_condense_runs_auto_1080p_again_for_newly_assembled_master(self):
+        from banana_mv import nv_upscale
+        self.job['request']['upscale_1080p']=True
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[1])
+        result=self.run_background()
+        choice=result['segments'][1]['takes'][-1]['id']
+        takes.select_take(result['id'],1,choice)
+        observed=[]
+        def record_upscale(server,cfg,state):
+            observed.append((state['current_master'],
+                             (self.work/'final.mp4').read_bytes(),
+                             state['final_versions'][-1]['takes']['1']))
+        with patch.object(nv_upscale,'render_version',side_effect=record_upscale) as upscale:
+            takes.condense(result['id'])
+            finished=self.run_background()
+        upscale.assert_called_once()
+        self.assertEqual(observed,[(2,b'old0|new|old2|old3',choice)])
+        self.assertEqual(finished['status'],'done')
+        self.assertEqual(finished['current_master'],2)
+
+    def test_5070_last_clip_reassembly_repeats_face_refine_then_nv_1080p(self):
+        from banana_mv import face_refine, nv_upscale
+        self.job['request'].update(mode='chain',director_schema=6,rewrite=True,
+                                   face_refine=True,upscale_1080p=True)
+        app.write_state(self.job)
+        takes.retake(self.job['id'],[3])
+        result=self.run_background()
+        choice=result['segments'][3]['takes'][-1]['id']
+        takes.select_take(result['id'],3,choice)
+        observed=[]
+        def record_face(server,cfg,state,parts,originals,song,**options):
+            observed.append(('refine',state['current_master'],
+                             [p.read_bytes() for p in parts]))
+        def record_nv(server,cfg,state):
+            observed.append(('upscale',state['current_master'],
+                             (self.work/'final.mp4').read_bytes()))
+        with patch.object(face_refine,'render_version',side_effect=record_face) as refine, \
+             patch.object(nv_upscale,'render_version',side_effect=record_nv) as upscale:
+            takes.continue_from_take(result['id'],3,choice,'cascade')
+            done=self.run_background()
+        refine.assert_called_once()
+        upscale.assert_called_once()
+        self.assertEqual([r[0] for r in observed],['refine','upscale'])
+        self.assertEqual(observed[0][1],2)
+        self.assertEqual(observed[0][2], [b'old0',b'old1',b'old2',b'new'])
+        self.assertEqual(observed[1],('upscale',2,b'old0|old1|old2|new'))
+        self.assertEqual(done['status'],'done')
+
     def test_5070_manual_rewrite_rejects_old_future_after_adoption(self):
         from banana_mv import manual_prompt
         self.job['request'].update(mode='chain',director_schema=6,rewrite=True)
