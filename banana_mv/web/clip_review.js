@@ -1,6 +1,12 @@
 // Keep video nodes and playback intact across status polls.
 const clipView={job:null,rows:new Map(),jobData:null,locked:false,handled:null};
 function clipIdle(){return !clipView.locked&&['done','error','cancelled','interrupted'].includes(clipView.jobData?.status);}
+function previousTakeForClip(index){
+  if(index===0||!['chain','chain5'].includes(clipView.jobData?.request?.mode))return null;
+  const prior=clipView.rows.get(index-1);
+  const saved=clipView.jobData?.segments?.[index-1];
+  return prior?.select.value||saved?.pending_take||saved?.selected_take||'original';
+}
 function updateClipActions(){
   let count=0;
   for(const row of clipView.rows.values()){
@@ -85,13 +91,22 @@ function renderClipPreviews(job){
       branchOnly.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'only'});
       branchCascade.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'cascade'});
       promptEditor.oninput=updateClipActions;
-      rewriteButton.onclick=()=>runClipAction('api/mv/rewrite-clip',{index:i});
+      rewriteButton.onclick=()=>{
+        const previous=previousTakeForClip(i);
+        return runClipAction('api/mv/rewrite-clip',{index:i,...(previous?{previous_take:previous}:{})});
+      };
       renderButton.onclick=()=>{
         const text=promptEditor.value.trim();
         if(!text){promptInfo.textContent='請先填寫或貼上本段完整 H3 提示詞。';return;}
         const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
         const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
+        const previous=previousTakeForClip(i);
+        const draft=row.segment.prompt_rewrite||{};
+        if(previous&&draft.status==='ready'&&draft.previous_take&&draft.previous_take!==previous){
+          promptInfo.textContent='上一段版本已變更；請重新按「重配丹方」，避免丹方首幀與影片首幀不一致。';return;
+        }
         return runClipAction('api/mv/retake',{indices:[i],prompts:{[String(i)]:text},
+          ...(previous?{previous_takes:{[String(i)]:previous}}:{}),
           ...(autoResume?{auto_resume:true}:{})});
       };
     }
@@ -105,7 +120,7 @@ function renderClipPreviews(job){
       row.promptEditor.value=draft.text||segment.prompt||'';row.loadedVersion=draft.version||null;row.editorLoaded=true;
     }
     row.promptInfo.textContent=draft.status==='running'?'9B 正在重配這一段丹方；目前文字與舊影片仍保留。':
-      draft.status==='ready'?`9B 新丹方 V${draft.version} 已完成；可手動修改，再按「依此提示詞回爐」。`:
+      draft.status==='ready'?`9B 新丹方 V${draft.version} 已完成${draft.previous_take?' · 上段來源 Take：'+draft.previous_take:''}；可手動修改，再按「依此提示詞回爐」。`:
       draft.status==='error'?`9B 重配失敗：${draft.error}。可直接貼稿，不影響舊片。`:
       '可用 9B 重寫，或直接貼入你自己的 H3 提示詞；按回爐才會生新片。';
     const ready=(segment.takes||[]).filter(t=>t.status==='ready');
@@ -122,7 +137,16 @@ function renderClipPreviews(job){
   }
   $('clip-review').hidden=!clipView.rows.size;
   const batch=job.retake,stamp=batch&&JSON.stringify([job.resumed,batch.takes,batch.indices,batch.status]);
-  if(batch?.status==='done'&&clipView.handled!==stamp){for(const i of batch.indices||[])if(clipView.rows.has(i))clipView.rows.get(i).check.checked=false;clipView.handled=stamp;}
+  if(batch?.status==='done'&&clipView.handled!==stamp){
+    for(const i of batch.indices||[]){
+      const row=clipView.rows.get(i);
+      if(!row)continue;
+      row.check.checked=false;
+      const latest=(row.segment.takes||[]).find(t=>t.id===batch?.takes?.[String(i)]&&t.status==='ready');
+      if(latest){row.select.value=latest.id;showClipVersion(row);}
+    }
+    clipView.handled=stamp;
+  }
   if(batch?.status==='error'&&clipView.handled!==stamp){
     for(const [i,id] of Object.entries(batch.takes||{})){const row=clipView.rows.get(Number(i));if(row?.segment.takes.some(t=>t.id===id&&t.status==='ready'))row.check.checked=false;}
     clipView.handled=stamp;
@@ -157,6 +181,12 @@ $('clips-retake').onclick=()=>{
   const indices=[...clipView.rows].filter(([,row])=>row.check.checked).map(([i])=>i);
   const instructions=Object.fromEntries(indices.map(i=>[String(i),clipView.rows.get(i).correction.value.trim()]).filter(([,text])=>text));
   const fresh=!Object.keys(instructions).length&&[5,6].includes(clipView.jobData?.request?.director_schema)&&!!clipView.jobData?.request?.rewrite;
-  if(indices.length)return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{}),...(fresh?{rebuild_prompt:true}:{})});
+  if(indices.length){
+    const parents=Object.fromEntries(indices.filter(i=>i>0&&!indices.includes(i-1))
+      .map(i=>[String(i),previousTakeForClip(i)]).filter(([,take])=>take));
+    return runClipAction('api/mv/retake',{indices,...(Object.keys(instructions).length?{instructions}:{}),
+      ...(Object.keys(parents).length?{previous_takes:parents}:{}),
+      ...(fresh?{rebuild_prompt:true}:{})});
+  }
 };
 if(active){busy(true);poll();}
