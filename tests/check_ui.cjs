@@ -102,6 +102,25 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
 
   vm.runInContext("renderProgress({status:'running',segments:[{status:'generating'},{},{},{}]})",context);assert.equal(els.progress.value,0);assert.equal(els.progress.max,4);assert.equal(els['progress-label'].textContent,'整體完成 0／4 段（0%）');assert.equal(els['current-activity'].hidden,false);assert(els['activity-text'].textContent.includes('第 1／4 段 · 影片採樣中'));
   vm.runInContext("renderProgress({status:'running',segments:[{status:'done'},{status:'rewriting'},{},{}]})",context);assert.equal(els.progress.value,1);assert(els['progress-label'].textContent.includes('25%'));assert(els['activity-text'].textContent.includes('9B 當段自動導演'));
+  const continuation={status:'retaking',segments:Array.from({length:17},(_,i)=>({status:i<14?'done':'waiting'})),
+    continuation_generation:{anchor_index:13,anchor_take:'abcdef123456',anchor_version:2,from_index:14,total:3},
+    retake:{branch:{mode:'cascade',index:13,take:'abcdef123456'},completed:0,current:14,
+      takes:{'14':'fedcbafedcba','15':'defabcdefabc','16':'ccddeeffaabb'}}};
+  continuation.segments[14]={status:'rewriting',takes:[{id:'fedcbafedcba',status:'rewriting'}]};
+  vm.runInContext(`renderProgress(${JSON.stringify(continuation)})`,context);
+  assert.equal(els.progress.value,14,'new continuation begins with only the anchor and earlier clips done');
+  assert(els['progress-label'].textContent.includes('第 14 段 V2 接續'));
+  assert(els['progress-label'].textContent.includes('本次完成 0／3 段'));
+  assert(els['activity-text'].textContent.includes('第 15／17 段 · 9B 重新編寫'));
+  continuation.segments[14].status='generating';
+  continuation.segments[14].takes[0].status='generating';
+  vm.runInContext(`renderProgress(${JSON.stringify(continuation)})`,context);
+  assert(els['activity-text'].textContent.includes('第 15／17 段 · H3 影片生成'));
+  continuation.segments[14].status='done';continuation.segments[15].status='preparing';
+  continuation.retake.completed=1;continuation.retake.current=15;
+  vm.runInContext(`renderProgress(${JSON.stringify(continuation)})`,context);
+  assert.equal(els.progress.value,15);
+  assert(els['activity-text'].textContent.includes('第 16／17 段'));
   for(const [status,word] of [['analyzing_audio','分析整首音樂'],['planning_story','規劃全曲事件'],['assembling','合成原曲']]){vm.runInContext(`renderProgress({status:'${status}',segments:[{status:'done'}]})`,context);assert(els['activity-text'].textContent.includes(word));}
   for(const status of ['done','error','cancelled','interrupted']){vm.runInContext(`renderProgress({status:'${status}',segments:[]})`,context);assert.equal(els['current-activity'].hidden,true);assert.equal(els['activity-text'].textContent,'');assert(!els['progress-label'].textContent.includes('NaN'));}
 
