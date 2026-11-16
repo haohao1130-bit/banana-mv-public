@@ -309,7 +309,15 @@ $('restart-5070').onclick=async()=>{
     const resp=await fetch('api/health',{cache:'no-store'});
     if(resp.ok){
      const health=await resp.json();
-     if(health.instance&&health.instance!==result.instance){window.location.reload();return;}
+     if(health.instance&&health.instance!==result.instance){
+      // Restart changes the service instance, not any saved project files.
+      // Do not resurrect the previously finished MV on the fresh homepage.
+      localStorage.removeItem('banana_mv_job');
+      localStorage.setItem('banana_mv_instance',health.instance);
+      active=null;
+      window.location.reload();
+      return;
+     }
     }
    }catch(_){}
   }
@@ -542,7 +550,26 @@ $('refresh-projects').onclick=async()=>{try{await loadProjects();}catch(e){messa
 $('open-last').onclick=async()=>{try{const rows=await loadProjects();await openProject(rows[0]?.id);}catch(e){message(e.message);}};
 $('open-project').onclick=async()=>{try{await openProject($('projects').value);}catch(e){message(e.message);}};
 $('resume-project').onclick=async()=>{if(!active)return;busy(true);$('resume-project').hidden=true;try{await api('api/mv/resume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:active,rewrite_retries:Number($('rewrite_retries').value)})});clearTimeout(timer);await poll();}catch(e){message(e.message);busy(false);$('resume-project').hidden=false;}};
-active=localStorage.getItem('banana_mv_job');
+// A browser refresh keeps the current project; a NEW server session
+// starts with an empty furnace. Existing projects remain selectable.
+async function restoreActiveProjectOnSameServer(){
+ try{
+  const health=await api('api/health',{cache:'no-store'});
+  if(health.service==='banana-mv'&&health.instance){
+   const previous=localStorage.getItem('banana_mv_instance');
+   localStorage.setItem('banana_mv_instance',health.instance);
+   if(previous!==health.instance){
+    localStorage.removeItem('banana_mv_job');
+    active=null;
+    return;
+   }
+  }
+ }catch(_){
+  // Transient health failures must not erase a saved selection.
+ }
+ active=localStorage.getItem('banana_mv_job');
+ if(active){busy(true);await poll();}
+}
 const mobileFurnaceStart = $('mobile-furnace-start');
 const syncMobileFurnace = () => {
  mobileFurnaceStart.disabled = $('generate').disabled;
@@ -556,7 +583,7 @@ if (typeof MutationObserver !== 'undefined') {
  observer.observe($('progress-label'), {childList:true,characterData:true,subtree:true});
  syncMobileFurnace();
 }
-</script><script src="clip_review.js?v=5070-continuity-only-20261116"></script><script>
+</script><script src="clip_review.js?v=5070-fresh-restart-20261117"></script><script>
 (() => {
  const settings = document.getElementById('face-refine-settings');
  const button = document.getElementById('switch-to-film');
