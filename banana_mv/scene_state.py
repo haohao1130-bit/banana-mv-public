@@ -169,7 +169,7 @@ class SceneStateError(ValueError):
 
 
 def rewrite_retry_count(request):
-    value=request.get('rewrite_retries',3)
+    value=request.get('rewrite_retries',5)
     if isinstance(value,bool) or not isinstance(value,int) or not 0<=value<=5:
         raise ValueError('9B 自動重試次數必須是 0–5 的整數（不含第一次）。')
     return value
