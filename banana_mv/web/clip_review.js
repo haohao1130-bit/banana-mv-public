@@ -9,6 +9,8 @@ function updateClipActions(){
     row.use.disabled=!clipIdle()||!row.segment.preview||row.select.value===(row.segment.pending_take||row.segment.selected_take);
     row.rewriteButton.disabled=!clipIdle()||!row.segment.director_plan||row.segment.prompt_rewrite?.status==='running';
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
+    const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
+    row.renderButton.textContent=autoResume?'依此提示詞回爐並自動續跑':'依此提示詞回爐這一段';
     row.renderButton.disabled=!clipIdle()||(!row.segment.preview&&!firstRender)||!row.promptEditor.value.trim();
     row.correction.disabled=clipView.locked||['retaking','assembling','refining_faces'].includes(clipView.jobData?.status);
   }

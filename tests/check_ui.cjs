@@ -220,6 +220,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   rows[1].promptEditor.oninput();
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert(rows[1].promptEditor.value.includes('My own custom revised clip'),'poll must not destroy manual edits');
+  assert.equal(rows[1].renderButton.textContent,'依此提示詞回爐這一段');
   await rows[1].renderButton.onclick();
   assert.deepEqual(retakes.at(-1),{
     id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'}
@@ -253,6 +254,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   failedRow.promptEditor.value='subject_definitions:\nMy pasted manual prompt';
   failedRow.promptEditor.oninput();
   assert.equal(failedRow.renderButton.disabled,false,'complete pasted prompt can render first version');
+  assert.equal(failedRow.renderButton.textContent,'依此提示詞回爐並自動續跑');
   vm.runInContext("active='failed123'",context);
   await failedRow.renderButton.onclick();
   assert.deepEqual(retakes.at(-1),{
