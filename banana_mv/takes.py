@@ -147,6 +147,21 @@ def corrections(indices,instructions):
     return result
 
 
+def manual_prompts(indices,prompts):
+    """Validate an explicit per-clip editing override; do not invoke 9B."""
+    if prompts is None:return {}
+    if not isinstance(prompts,dict):
+        raise ValueError('手動提示詞需依段落編號提供。')
+    found={}
+    for key,value in prompts.items():
+        if not isinstance(key,str) or key not in {str(i) for i in indices}:
+            raise ValueError('手動提示詞只能指定要回爐的段落。')
+        if not isinstance(value,str) or len(value)>50000 or not value.strip():
+            raise ValueError('手動提示詞必須是非空白文字，最多 50000 字。')
+        found[int(key)]=value.strip()
+    return found
+
+
 def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     """One bounded edit of the chosen clip prompt; never sees the full story."""
     from banana_mv.shoot_plan import NATIVE_ENHANCER_SYSTEM,REFERENCE_PERFORMANCE,_pictures,_text
@@ -173,7 +188,7 @@ def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     return normalize_mv_prompt(_text(raw),len(refs))
 
 
-def retake(job_id,indices,instructions=None):
+def retake(job_id,indices,instructions=None,prompts=None):
     if not isinstance(indices,list) or not indices:raise ValueError('請勾選至少一顆需要回爐的丹藥。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
@@ -181,6 +196,9 @@ def retake(job_id,indices,instructions=None):
         for i in indices:segment(job,i)
         indices=sorted(set(indices))
         notes=corrections(indices,instructions)
+        overrides=manual_prompts(indices,prompts)
+        if any(i in notes for i in overrides):
+            raise ValueError('同一段不能同時指定手動完整提示詞與局部 9B 修稿。')
         if notes:
             if not Path(cfg.get('guides',{}).get('ref','')).is_file():
                 raise ValueError('局部修改需要本地 9B 與原生指南，請先完成 Colab 模型下載。')
@@ -193,6 +211,12 @@ def retake(job_id,indices,instructions=None):
             if not (seg.get('prompt') or saved.is_file()):raise ValueError('缺少原段落提示詞，無法保留劇本重拍。')
             if app.is_continuation(job['request']['mode']) and i>0:take_source(job,i-1)
         originals,song,drive=app.project_inputs(job,cfg)
+        # Retake with a user's full prompt: verify only media references,
+        # not the model's creative vocabulary or arbitrary shot counts.
+        from banana_mv.core import normalize_mv_prompt
+        overrides={i:normalize_mv_prompt(text,len(originals)+
+                       int(app.is_continuation(job['request']['mode']) and i>0))
+                   for i,text in overrides.items()}
         app.restore_render_settings(job)
         first=segment(job,indices[0])
         graph=app.build_workflow(job['images_comfy'],'preflight.wav',*job['size'],first['model_frames'],'',
@@ -211,6 +235,7 @@ def retake(job_id,indices,instructions=None):
             take['base_take']=job.get('pending_takes',{}).get(str(i),seg.get('selected_take','original'))
             take_source(job,i,take['base_take'])
             if i in notes:take['correction']=notes[i]
+            if i in overrides:take['manual_prompt']=overrides[i]
             seg['takes'].append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
                    'takes':{str(i):t['id'] for i,t in batch}})
@@ -301,7 +326,11 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                         shutil.copyfile(image_path,inp/filename)
                         guide_files.append(filename)
                 take['previous_take']=previous if previous!='current' else segment(job,i-1).get('selected_take','original')
-            if take.get('correction'):
+            if take.get('manual_prompt') is not None:
+                take['base_prompt_sha256']=hashlib.sha256(prompt.encode()).hexdigest()
+                prompt=take.pop('manual_prompt')
+                take['prompt_source']='manual_editor'
+            elif take.get('correction'):
                 take['status']='rewriting';app.write_state(job)
                 take['base_prompt_sha256']=hashlib.sha256(prompt.encode()).hexdigest()
                 prompt=repair_prompt(cfg,job,seg,prompt,take['correction'],originals,frame if first else None,dest,prefix=f'{i:02d}_v{take["version"]}_')

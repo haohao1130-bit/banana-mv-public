@@ -212,6 +212,34 @@ class TakeTests(unittest.TestCase):
         self.assertEqual(self.assemble.call_count,2)
         app.backend.rewrite_local.assert_not_called()
 
+    def test_manual_text_retake_only_selected_clip_and_never_calls_9b(self):
+        custom=('subject_definitions:\n<Subject 1> keeps the reference face.\n'
+                'summary:\nA different camera angle.\nretention_analysis:\nKeep identity.\n'
+                'detailed_description:\n[Shot 1] Film the current scene from the side.\n'
+                'overall_soundscape:\nOriginal song.\nnon_diegetic_music:\nOriginal song.')
+        result=takes.retake(self.job['id'],[1],prompts={'1':custom})
+        self.assertEqual(result['retake']['indices'],[1])
+        job=self.run_background()
+        self.assertEqual(job['retake']['status'],'done')
+        self.assertEqual(app.backend.queue_prompt.call_count,1)
+        app.backend.rewrite_local.assert_not_called()
+        self.assertEqual(job['segments'][1]['prompt'],'fixed story 1')
+        self.assertEqual((self.work/'01_prompt.txt').read_text(),'fixed story 1')
+        self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
+        take=job['segments'][1]['takes'][-1]
+        self.assertEqual(take['prompt_source'],'manual_editor')
+        self.assertEqual(takes.take_file(job,1,take['id'],'prompt.txt').read_text(),custom)
+        self.assertEqual(app.backend.queue_prompt.call_args.args[1]['7']['inputs']['prompt'],custom)
+        self.assertEqual((self.work/'00_part.mp4').read_bytes(),b'old0')
+        self.assertEqual((self.work/'02_part.mp4').read_bytes(),b'old2')
+
+    def test_manual_prompt_keys_and_empty_content_are_rejected(self):
+        for prompts in ({'2':'full prompt'},{'1':''},{'1':12},{'1':'x'*50001}):
+            with self.subTest(prompts=list(prompts)),self.assertRaises(ValueError):
+                takes.retake(self.job['id'],[1],prompts=prompts)
+            self.assertFalse(app.GPU_LOCK.locked())
+        app.backend.rewrite_local.assert_not_called()
+
     def test_invalid_indices_paths_and_busy_queue_do_not_change_project(self):
         for indices in ([],[True],[-1],[4],['1']):
             with self.subTest(indices=indices),self.assertRaises(ValueError):takes.retake(self.job['id'],indices)

@@ -6,7 +6,9 @@ function updateClipActions(){
   for(const row of clipView.rows.values()){
     row.check.disabled=clipView.locked;
     if(row.check.checked)count++;
-    row.use.disabled=!clipIdle()||row.select.value===(row.segment.pending_take||row.segment.selected_take);
+    row.use.disabled=!clipIdle()||!row.segment.preview||row.select.value===(row.segment.pending_take||row.segment.selected_take);
+    row.rewriteButton.disabled=!clipIdle()||!row.segment.director_plan||row.segment.prompt_rewrite?.status==='running';
+    row.renderButton.disabled=!clipIdle()||!row.segment.preview||!row.promptEditor.value.trim();
     row.correction.disabled=clipView.locked||['retaking','assembling','refining_faces'].includes(clipView.jobData?.status);
   }
   const pending=Object.keys(clipView.jobData?.pending_takes||{}).length;
@@ -18,9 +20,9 @@ function updateClipActions(){
   $('clips-retake').textContent=count?`將所選 ${count} 顆丹藥回爐重煉`:'將所選丹藥回爐重煉';
 }
 function showClipVersion(row){
-  const take=row.segment.takes.find(t=>t.id===row.select.value&&t.status==='ready');
+  const take=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
-  row.note.textContent=take?`V${take.version||1} · ${take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):'';
+  row.note.textContent=take?`V${take.version||1} · ${take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):(row.segment.preview?'':'這段尚無毛片，可先重配提示詞；完成前請使用原專案續跑。');
   updateClipActions();
 }
 function renderClipPreviews(job){
@@ -28,7 +30,7 @@ function renderClipPreviews(job){
   clipView.jobData=job;
   $('clip-chain-note').hidden=!['chain','chain5'].includes(job.request?.mode);
   for(let i=0;i<(job.segments||[]).length;i++){
-    const segment=job.segments[i];if(!segment.preview)continue;
+    const segment=job.segments[i];if(!segment.preview&&!segment.director_plan&&!segment.prompt)continue;
     let row=clipView.rows.get(i);
     if(!row){
       const card=document.createElement('article');card.className='dan-card';
@@ -47,13 +49,43 @@ function renderClipPreviews(job){
       try{correction.value=JSON.parse(localStorage.getItem('banana_mv_clip_fixes:'+job.id)||'{}')[i]||'';}catch{}
       correction.oninput=()=>{try{const key='banana_mv_clip_fixes:'+job.id;const saved=JSON.parse(localStorage.getItem(key)||'{}');saved[i]=correction.value;localStorage.setItem(key,JSON.stringify(saved));}catch{}};
       fixLabel.append(correction);card.append(fixLabel,help);
-      row={card,check,title,video,select,use,note,correction,segment,index:i};clipView.rows.set(i,row);
+      const formula=document.createElement('div');formula.className='dan-prompt-workbench';
+      const promptLabel=document.createElement('label');promptLabel.textContent='這段丹方／生成提示詞（可直接修改或貼上）';
+      const promptEditor=document.createElement('textarea');promptEditor.rows=12;promptEditor.maxLength=50000;
+      promptEditor.setAttribute('aria-label',`第 ${i+1} 段的可編輯 H3 提示詞`);
+      promptEditor.placeholder='原本的 H3 六段式提示詞，或自行貼入完整新稿。';
+      const promptInfo=document.createElement('p');promptInfo.className='muted';promptInfo.textContent='只改提示詞不會自動生成；確認後再按本段回爐。';
+      const buttons=document.createElement('div');buttons.className='dan-toolbar';
+      const rewriteButton=document.createElement('button');rewriteButton.type='button';rewriteButton.className='secondary';rewriteButton.textContent='重配丹方（9B 重寫）';
+      const renderButton=document.createElement('button');renderButton.type='button';renderButton.textContent='依此提示詞回爐這一段';
+      buttons.append(rewriteButton,renderButton);promptLabel.append(promptEditor);
+      formula.append(promptLabel,promptInfo,buttons);card.append(formula);
+      row={card,check,title,video,select,use,note,correction,segment,index:i,
+        promptEditor,promptInfo,rewriteButton,renderButton,loadedVersion:null,editorLoaded:false};clipView.rows.set(i,row);
       check.onchange=updateClipActions;select.onchange=()=>showClipVersion(row);
       use.onclick=()=>adoptClip(row.index,row.select.value);
+      promptEditor.oninput=updateClipActions;
+      rewriteButton.onclick=()=>runClipAction('api/mv/rewrite-clip',{index:i});
+      renderButton.onclick=()=>{
+        const text=promptEditor.value.trim();
+        if(!text){promptInfo.textContent='請先填寫或貼上本段完整 H3 提示詞。';return;}
+        return runClipAction('api/mv/retake',{indices:[i],prompts:{[String(i)]:text}});
+      };
     }
-    const desired=segment.pending_take||segment.selected_take;const changed=(row.segment.pending_take||row.segment.selected_take)!==desired;row.segment=segment;
-    row.title.textContent=`第 ${i+1} 顆 · ${segment.start.toFixed(2)}–${(segment.start+segment.seconds).toFixed(2)} 秒｜此丹有異，建議回爐`;
-    const ready=segment.takes.filter(t=>t.status==='ready');
+    const desired=segment.pending_take||segment.selected_take||'original';const changed=(row.segment.pending_take||row.segment.selected_take)!==desired;row.segment=segment;
+    row.title.textContent=`第 ${i+1} 段 · ${segment.start.toFixed(2)}–${(segment.start+segment.seconds).toFixed(2)} 秒｜${segment.status==='done'?'已生成':'等待生成'}`;
+    row.video.hidden=!segment.preview;
+    const draft=segment.prompt_rewrite||{};
+    if(draft.status==='ready'&&typeof draft.text==='string'&&draft.version!==row.loadedVersion){
+      row.promptEditor.value=draft.text;row.loadedVersion=draft.version;row.editorLoaded=true;
+    }else if(!row.editorLoaded){
+      row.promptEditor.value=draft.text||segment.prompt||'';row.loadedVersion=draft.version||null;row.editorLoaded=true;
+    }
+    row.promptInfo.textContent=draft.status==='running'?'9B 正在重配這一段丹方；目前文字與舊影片仍保留。':
+      draft.status==='ready'?`9B 新丹方 V${draft.version} 已完成；可手動修改，再按「依此提示詞回爐」。`:
+      draft.status==='error'?`9B 重配失敗：${draft.error}。可直接貼稿，不影響舊片。`:
+      '可用 9B 重寫，或直接貼入你自己的 H3 提示詞；按回爐才會生新片。';
+    const ready=(segment.takes||[]).filter(t=>t.status==='ready');
     const signature=ready.map(t=>t.id+':'+(t.id===segment.selected_take)+':'+(t.id===desired)).join('|');
     if(row.signature!==signature){
       const previous=row.select.value;row.select.replaceChildren();

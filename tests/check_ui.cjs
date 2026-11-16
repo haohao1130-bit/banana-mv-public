@@ -18,7 +18,7 @@ class Element{
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
-const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;const approvals=[];let recipeOpened=false;
+const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[];let reviewJob;const approvals=[];let recipeOpened=false;
 let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
 const intervals=[];
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
@@ -33,6 +33,7 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
+    if(url==='api/mv/rewrite-clip'){rewrites.push(JSON.parse(options.body));return {...reviewJob};}
     if(url==='api/mv/retake'){retakes.push(JSON.parse(options.body));return {...reviewJob,status:'retaking'};}
     if(url==='api/mv/select-take'){selections.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
     if(url==='api/mv/status?id=review123')return reviewJob;
@@ -186,6 +187,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext("renderRewriteAttempt({status:'done'})",context);assert.equal(els['rewrite-status'].textContent,'');
   await vm.runInContext("openProject('low480')",context);assert.equal(els.project_scope.value,'full');assert.equal(els.resolution.value,'480p');assert.equal(els.width.value,'854');
   reviewJob={id:'review123',status:'done',seed:42,request:{mode:'chain'},segments:Array.from({length:4},(_,i)=>({index:i,start:i*10,seconds:10,status:'done',preview:`/clip-${i}`,selected_take:'original',takes:[{id:'original',status:'ready',seed:42+i,preview:`/clip-${i}-original`},{id:'abcdef123456',status:'ready',seed:900+i,preview:`/clip-${i}-new`}]}))};
+  reviewJob.segments[1].director_plan={handoff_version:1,event:'Only this scene'};
+  reviewJob.segments[1].prompt='subject_definitions:\\nOriginal H3 prompt';
   vm.runInContext(`active='review123';renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(els['clip-review'].hidden,false);assert.equal(els['clip-chain-note'].hidden,false);
   const rows=vm.runInContext('[...clipView.rows.values()]',context);
@@ -203,6 +206,33 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['clip-list'].children[1].children[1],rows[1].video);
   await els['clips-retake'].onclick();
   assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'}});
+  // New one-clip prompt workbench: do not queue H3 when asking 9B to recompose.
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].rewriteButton.disabled,false);
+  assert(rows[1].promptEditor.value.includes('Original H3 prompt'));
+  await rows[1].rewriteButton.onclick();
+  assert.deepEqual(rewrites,[{id:'review123',index:1}]);
+  assert.equal(retakes.length,2,'9B text rewrite does not queue a video retake');
+  reviewJob.segments[1].prompt_rewrite={status:'ready',version:1,text:'subject_definitions:\n9B rewritten clip\nsummary:\nClip changed'};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[1].promptEditor.value.includes('9B rewritten clip'));
+  rows[1].promptEditor.value='subject_definitions:\nMy own custom revised clip';
+  rows[1].promptEditor.oninput();
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[1].promptEditor.value.includes('My own custom revised clip'),'poll must not destroy manual edits');
+  await rows[1].renderButton.onclick();
+  assert.deepEqual(retakes.at(-1),{
+    id:'review123',indices:[1],prompts:{'1':'subject_definitions:\nMy own custom revised clip'}
+  });
+  // Even the failed/not-yet-generated clip has its own prompt workbench.
+  const missing={id:'failed123',status:'error',request:{mode:'independent'},
+    segments:[{index:0,start:0,seconds:10,status:'waiting',
+      director_plan:{handoff_version:1,event:'A current event'},prompt:''}]};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(missing)})`,context);
+  const failedRow=vm.runInContext('clipView.rows.get(0)',context);
+  assert(failedRow);assert.equal(failedRow.rewriteButton.disabled,false);
+  assert.equal(failedRow.renderButton.disabled,true,'unfinished footage requires normal resume');
+  vm.runInContext(`active='review123';renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
 

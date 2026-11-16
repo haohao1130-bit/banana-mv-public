@@ -1167,10 +1167,14 @@ class Handler(WebHandler):
                 from banana_mv import nv_upscale
                 body=self.body_json()
                 return self.send_json(nv_upscale.start_finished(sys.modules[__name__], body['id'], body.get('version')), 202)
+            if path=='/api/mv/rewrite-clip':
+                from banana_mv.manual_prompt import rewrite_clip
+                body=self.body_json()
+                return self.send_json(rewrite_clip(body['id'],body.get('index')),202)
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions')))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts')))
             if path=='/api/mv/condense':
                 from banana_mv.takes import condense
                 body=self.body_json()
