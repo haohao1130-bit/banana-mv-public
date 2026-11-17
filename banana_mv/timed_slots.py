@@ -13,6 +13,15 @@ PLAIN_SCENE = re.compile(
 )
 PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
 _TIMED_ACT_SCENE = re.compile(r'^ACT\s+\d+\s*[｜|:：]', re.I)
+# The long-form Master Director Prompt uses numbered, unmarked English sections.
+# Close an ACT at these headings; never turn final checklists into film events.
+_DIRECTOR_SECTION = re.compile(
+    r'^(?:0[1-9]|10)\s*[｜|]\s*(?:PROJECT IDENTITY|SUBJECT DEFINITIONS|'
+    r'ABSOLUTE CHARACTER ENTRANCE LOCK|AUDIO AND SRT LOCK|MASTER STORY CONCEPT|'
+    r'FULL CINEMATIC STORYBOARD|CINEMATOGRAPHY AND EDITING RULES|'
+    r'VISUAL CONSISTENCY AND NEGATIVE CONSTRAINTS|DIRECTOR.S PRIORITY ORDER|'
+    r'FINAL DIRECTOR CHECKLIST)$', re.I
+)
 # Only explicit post-timeline notes close a plain ACT script. A scene's ordinary
 # numbered beats must not be mistaken for another scene or given to a future clip.
 _POST_ACT_SECTION = re.compile(
@@ -84,7 +93,7 @@ def _clean_line(raw):
 # rather than inside a Markdown heading. Treat that as a real author clock.
 _NEXT_LINE_CHAPTER = re.compile(
     r'^(?:#{1,6}\s*)?(?:第[一二三四五六七八九十百零〇\d]+[段幕]|'
-    r'CHAPTER\s+\d+|SEGMENT\s+\d+)\s*[｜|:：\-—].+', re.I)
+    r'CHAPTER\s+\d+|SEGMENT\s+\d+|ACT\s+\d+)\s*[｜|:：\-—].+', re.I)
 _NEXT_LINE_CLOCK = re.compile(r'^時間\s*[：:]\s*', re.I)
 _QUOTED_LYRIC = re.compile(r'「([^」]+)」|“([^”]+)”')
 _INLINE_CLOCK = re.compile(r'(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?')
@@ -101,7 +110,11 @@ def _lift_next_line_chapter_times(prompt):
             next_idx=next((j for j in range(i+1,len(raw)) if raw[j].strip()),None)
             if next_idx is not None:
                 clock_line=raw[next_idx].strip()
-                clock=TIME_SPAN.search(clock_line) if _NEXT_LINE_CLOCK.match(clock_line) else None
+                # Only ACT headings accept an otherwise bare time-only next line.
+                # Existing chapter and short-film parsing keeps its old contract.
+                clock=(TIME_SPAN.search(clock_line) if _NEXT_LINE_CLOCK.match(clock_line)
+                       else TIME_SPAN.fullmatch(clock_line)
+                       if re.match(r'^ACT\s+\d+\b',clean,re.I) else None)
                 if clock and not clock_line[clock.end():].strip():
                     title=re.sub(r'^#{1,6}\s*','',clean)
                     out.append('### '+title+'｜'+clock.group())
@@ -233,6 +246,7 @@ def parse_timed_source(prompt, *, authored_intervals=False):
         plain_section = bool(
             (authored_intervals and (PLAIN_SECTION.fullmatch(line) or
                 PLAIN_CONTROL.fullmatch(line) or AUTHORED_SECTION.fullmatch(line)))
+            or _DIRECTOR_SECTION.fullmatch(line)
             or (_POST_ACT_SECTION.fullmatch(line) and
                 any(_TIMED_ACT_SCENE.match(chapter['title']) for chapter in chapters))
         )
