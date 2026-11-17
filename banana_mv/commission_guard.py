@@ -2,19 +2,32 @@
 import re
 
 
-_ROLE_BIND = re.compile(r'(?im)^\s*(S[12])\s*[=:：]\s*(<Picture \d+>)')
+_ROLE_BIND = re.compile(r'(?im)^\s*(S[12])\s*[=:：＝]\s*(<Picture \d+>)')
+# Existing one-click MV briefs normally declare <Picture 1>＝角色，S1 instead.
+# Treat either orientation as an explicit identity bind; never infer from image order.
+_IMAGE_ROLE_BIND = re.compile(
+    r'(?im)^\s*(?:(<Picture\s+\d+>)|@(?:圖片|图片|image)\s*(\d+))'
+    r'\s*[=:：＝]\s*[^\n]*?\b(S[12])\b'
+)
 _SUBJECT_LINE = re.compile(r'(?m)^\s*<Subject\s+(\d+)>\s+([^\n]+)')
 _SHOT = re.compile(r'(?im)^\s*\[Shot\s+(\d+)\]')
 _TIME = re.compile(r'(?i)\bAt\s+(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?')
-_VOCAL = re.compile(r'(?i)\b(?:sings?|singing|lip[ -]?sync(?:s|ing)?|mouth\s+(?:moves|moving))\b')
+_VOCAL = re.compile(
+    r'(?i)\b(?:sings?|singing|lip[ -]?sync(?:s|ing)?|mouth\s+(?:moves|moving)|'
+    r'raps|rapping|speaks?|speaking|spoken\s+delivery|recites?|reciting|'
+    r'chants?|chanting)\b'
+)
 _BEACH = re.compile(r'在海邊|到了海邊|海邊步道|海灘|沙灘|浪線|淺水|水花|海浪|海水|beach|shore|surf\s+line', re.I)
 _OLD_S1 = re.compile(r'hoodie|cargo\s+(?:pants|trousers)|連帽外套|工裝長褲', re.I)
 _OLD_S2 = re.compile(r'cardigan|camisole|denim\s+(?:mini\s*)?skirt|針織外套|牛仔裙|蕾絲背心', re.I)
 
 
 def role_pictures(fixed_setup):
-    """Use user-specified identities; never infer singers from picture order."""
-    return {role.upper(): picture for role, picture in _ROLE_BIND.findall(fixed_setup)}
+    """Read both S1 = <Picture 1> and <Picture 1>＝name，S1; never infer order."""
+    roles = {role.upper(): picture for role, picture in _ROLE_BIND.findall(fixed_setup)}
+    for picture, index, role in _IMAGE_ROLE_BIND.findall(fixed_setup):
+        roles.setdefault(role.upper(), picture or f'<Picture {index}>')
+    return roles
 
 
 def _subject_roles(prompt, pictures):
