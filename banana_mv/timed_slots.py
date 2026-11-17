@@ -97,6 +97,17 @@ _NEXT_LINE_CHAPTER = re.compile(
 _NEXT_LINE_CLOCK = re.compile(r'^時間\s*[：:]\s*', re.I)
 _QUOTED_LYRIC = re.compile(r'「([^」]+)」|“([^”]+)”')
 _INLINE_CLOCK = re.compile(r'(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?')
+# Storyboard authors often put 00:17.813: on a separate line, followed by
+# the first visible action. Anchor that action without adding a fake shot.
+_CLOCK_MARKER = re.compile(
+    r'^(?P<clock>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)[：:]?$'
+)
+_CLOCK_PREFIX = re.compile(
+    r'^\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?[：:]\s*\S'
+)
+_AT_CLOCK = re.compile(
+    r'\bat\s+\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b',re.I
+)
 
 
 def _lift_next_line_chapter_times(prompt):
@@ -161,7 +172,12 @@ def _timed_action_events(chapter,srt):
     """
     source=[]
     last_srt=chapter['start']
+    pending_clock=None
     for line in chapter['actions']:
+        standalone=_CLOCK_MARKER.fullmatch(line.strip())
+        if standalone:
+            pending_clock=_seconds(standalone['clock'])
+            continue
         matches=_line_cue_times(line,chapter,srt,last_srt)
         if len(matches)>1:
             quotes=list(_QUOTED_LYRIC.finditer(line))
@@ -181,11 +197,15 @@ def _timed_action_events(chapter,srt):
             last_srt=matches[-1][1]
         else:
             explicit=_INLINE_CLOCK.search(line)
-            stamp=matches[0][1] if matches else None
-            # Explicit source sub-intervals are authored clocks, even when the
-            # header only says "S2 Rap" without a verb like "starts".
+            stamp=matches[0][1] if matches else pending_clock
+            pending_clock=None
+            # Preserve the author's exact entrance and cue timestamps. A
+            # standalone timestamp governs the NEXT action; a leading 00:19:
+            # or a sentence saying "at 00:17.813" governs that action.
             if stamp is None and explicit and (
-                    TIME_SPAN.match(line) or re.search(r'起|開始|切入|轉入', line)):
+                    TIME_SPAN.match(line) or _CLOCK_PREFIX.match(line)
+                    or _AT_CLOCK.search(line)
+                    or re.search(r'起|開始|切入|轉入', line)):
                 stamp=_seconds(explicit.group())
             if stamp is not None:
                 stamp=max(chapter['start'],min(chapter['end']-.0001,stamp))
