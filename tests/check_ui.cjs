@@ -112,15 +112,31 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(html.includes('5070 連續模式：重拍 V2 後怎麼接？'));
   await els['copy-ai-guide'].onclick();
   const aiGuide=copied.at(-1);
-  for(const phrase of ['BANANAMV','@圖片1','先搓丹方','直接煉丹',
-                       '正式採用此版本','從本段尾幀續拍第 N+1 段',
-                       '合成正式新版全片','確認凝丹']){
-    assert(aiGuide.includes(phrase),'AI player guide is missing '+phrase);
+  for(const phrase of ['🍌 BANANAMV｜一鍵 AI 輔助新手教學',
+                        'THE BANANA TAKE｜RTX 5070 本機版',
+                        '一、你的工作範圍',
+                        '二、新手開始',
+                        '三、創作素材與圖片辨識',
+                        '四、歌曲與音樂理解',
+                        '五、故事導演',
+                        '六、電影攝影與分鏡規劃',
+                        '七、完整全咒的標準結構',
+                        '八、BANANAMV 前端操作教學',
+                        '九、生成結果檢查與回爐',
+                        '十、續跑與影片版本管理',
+                        '十一、AI 與使用者的合作規則',
+                        '十二、新手最簡單的開始方式',
+                        'AI 輸出完整 H3 控制詞',
+                        '「依此提示詞回爐這一段」',
+                        '「正式採用此版本」',
+                        '「續跑未完成段落」',
+                        '讓每個創意，都能拍成一部作品。']){
+    assert(aiGuide.includes(phrase),'The new AI guide is missing '+phrase);
   }
-  assert(aiGuide.includes('不提供 GitHub、API、程式碼'));
-  assert(aiGuide.includes('不能直接操作使用者的網頁'));
-  assert(aiGuide.includes('AI 新手創作與操作指南'));
-  assert(aiGuide.includes('本機前端現在預設：末幀接續、每段 10 秒、720P'));
+  assert(aiGuide.includes('不負責：'));
+  assert(aiGuide.includes('- 修改程式碼。'));
+  assert(aiGuide.includes('- 維修 Python 或 CUDA。'));
+  assert(aiGuide.includes('如果使用者要求 CODE BLOCK'));
   assert(/<select id="segment"><option value="5"[^>]*>[^<]*<\/option><option value="10" selected>/.test(html),'5070 default clip length must be 10 seconds');
   assert(/<select id="resolution"><option value="480p"[^>]*>[^<]*<\/option><option value="720p" selected>/.test(html),'5070 default render must be 720P');
   assert(html.includes('<input id="width" type="number" value="1280" readonly'),'16:9 initial width must match 720P');
