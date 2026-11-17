@@ -73,6 +73,73 @@ class ShootPlanTests(unittest.TestCase):
             self.assertEqual(task['ending']['local_settle_by'],3.5)
             self.assertEqual(seg['prompt_profile']['writer_calls'],1)
 
+    def test_public_colab_default_schema6_never_passes_full_story_to_9b(self):
+        """Actual online default must use the SAME isolated scene path as schema 5."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            images,cfg,req=self.fixture(root)
+            req['director_schema']=6
+            req['prompt']='PRIVATE_WHOLE_STORY: the hero wins FINAL_SECRET_STAGE'
+            req['srt_cues']=[
+                {'start':4.5,'end':5.2,'text':'[S1] monk opening'},
+                {'start':5.5,'end':6.0,'text':'[S2] snake answers'},
+            ]
+            fixed=('角色設定：\nS1 = <Picture 1>, male monk\n'
+                   'S2 = <Picture 2>, female snake\n'
+                   '故事劇情：\n最後大家到 FINAL_SECRET_STAGE 舉辦終局演唱會。\n'
+                   'Story spine: FIRST_ROUND then FINAL_SECRET_STAGE.\n')
+            event=(
+                'CURRENT_ACTOR_STATE (at clip start; authoritative):\n'
+                '- Torso: jacket already removed\n'
+                'EXPECTED_ACTOR_STATE_AFTER_THIS_CLIP (planned consequence):\n'
+                '- Torso: jacket remains removed\n'
+                'Current interval actions in original order:\n'
+                '- CURRENT_CLIP_EVENT: the monk listens to the snake in rain.\n')
+            seg=dict(timeline()[1],director_plan={'handoff_version':1,'index':1,
+                     'mode':'story','event':event},
+                     fixed_reference_settings=fixed,
+                     direction_ending_contract=ending_contract(req,9,timeline()))
+            writer=Mock(return_value=native_prompt(1))
+            with patch.object(server.backend,'rewrite_local',writer):
+                output=server.local_prompt(cfg,req,seg,images,None)
+            self.assertEqual(writer.call_count,1)
+            outgoing=writer.call_args.args[1]+''.join(
+                str(value) for kind,value in writer.call_args.args[2] if kind=='text')
+            for secret in ('PRIVATE_WHOLE_STORY','FINAL_SECRET_STAGE',
+                           'FIRST_ROUND','終局演唱會'):
+                self.assertNotIn(secret,outgoing)
+            for required in ('CURRENT_CLIP_EVENT','jacket already removed',
+                             'S1 = <Picture 1>','S2 = <Picture 2>'):
+                self.assertIn(required,outgoing)
+            self.assertIn('SRT-LOCKED LEAD VOCALS',outgoing)
+            self.assertIn('0.500–1.200s',outgoing)
+            self.assertIn('1.500–2.000s',outgoing)
+            self.assertNotIn('LOCKED SHOT SLOTS',outgoing)
+            self.assertIn('ORIGINAL AUDIO: CLIP-LOCAL SRT SINGERS',output)
+            self.assertNotIn('FINAL_SECRET_STAGE',output)
+
+    def test_colab_reversed_chinese_singer_bindings_keep_original_picture_order(self):
+        from banana_mv.shoot_plan import _role_bindings, _filming_reference_settings
+        fixed='<Picture 1>＝蕉大師，S1，男性角色\n<Picture 2>＝白素貞，S2，女性角色\n'
+        self.assertEqual(_role_bindings(fixed),{
+            'S1':'<Picture 1>','S2':'<Picture 2>'})
+        self.assertEqual(_role_bindings(_filming_reference_settings(fixed)),{
+            'S1':'<Picture 1>','S2':'<Picture 2>'})
+
+    def test_colab_static_setup_filters_finale_but_keeps_clothes(self):
+        from banana_mv.shoot_plan import _filming_reference_settings
+        setup=('角色設定：\nS1 = <Picture 1>，和尚\n'
+               '開場穿著：灰僧衣橘袈裟\n'
+               '故事劇情：\n最後他們在 FUTURE_FINALE 台上唱歌。\n'
+               'Story spine: the opening then THE_FINAL_VICTORY.\n'
+               '固定場景：古寺廣場與鄰近的古塔\n')
+        output=_filming_reference_settings(setup)
+        self.assertIn('S1 = <Picture 1>',output)
+        self.assertIn('灰僧衣橘袈裟',output)
+        self.assertIn('古寺廣場',output)
+        self.assertNotIn('FUTURE_FINALE',output)
+        self.assertNotIn('THE_FINAL_VICTORY',output)
+
     def test_chain_uses_fixed_original_slots_and_actual_tail_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root,'chain')
