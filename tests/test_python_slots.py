@@ -688,9 +688,10 @@ class PythonSlotsTests(unittest.TestCase):
             plan = ensure_python_slot_plan(settings, slots,
                                            [root/'monk.png',root/'snake.png'],root)
         self.assertEqual(plan['source_timing'],'explicit_markdown')
-        self.assertEqual(role_pictures(
-            _filming_reference_settings(plan['shared_setup'])),
-            {'S1':'<Picture 1>','S2':'<Picture 2>'})
+        filtered_setup = _filming_reference_settings(plan['shared_setup'])
+        self.assertEqual(role_pictures(filtered_setup),
+                         {'S1':'<Picture 1>','S2':'<Picture 2>'})
+        self.assertNotIn('雙人最後化敵為友',filtered_setup)
         before = plan['segments'][4]['event']
         crossing = plan['segments'][5]['event']
         after = plan['segments'][6]['event']
