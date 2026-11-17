@@ -350,6 +350,169 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
                             'Do not copy a complete event sequence into later slots. No analysis. Delivery error: '+str(error))]
 
 
+def _fixed_reference_with_python_priority(fixed_setup, event):
+    """Remove superseded opening-wardrobe facts, not reference identities.
+
+    Only slots with a populated Python state take this path. Untracked
+    appearance properties continue to fall back to the original reference.
+    """
+    match = re.search(
+        r'(?s)^CURRENT_ACTOR_STATE[^\n]*\n(.*?)\nEXPECTED_ACTOR_STATE_AFTER_THIS_CLIP',
+        event)
+    if not match:
+        return fixed_setup
+    known = [line.strip() for line in match.group(1).splitlines()
+             if re.match(r'^- (?:Torso|Bottom|Feet): ', line)]
+    if not known:
+        return fixed_setup
+    # Bind identity to the reference, but never bind today's clothing to the
+    # reference's historic opening wardrobe.
+    fixed_setup = fixed_setup.replace(
+        '與開場服裝依照參考圖片',
+        '依照參考圖片；開場服裝僅是初始造型，不代表本段外觀')
+    output = []
+    opening = False
+    for line in fixed_setup.splitlines():
+        stripped = line.strip().lstrip('-* ').strip()
+        opener = re.match(r'^(開場穿著|初始穿著|初始服裝|開場服裝)\s*[：:]\s*(.*)$',
+                          stripped)
+        if opener:
+            opening = True
+            output.append('初始服裝僅作歷史參考；本段已記錄的屬性由 Python 當前狀態決定。')
+            inline = opener.group(2).strip()
+            if inline and not any(inline in entry for entry in known):
+                output.append(inline)
+            continue
+        if opening:
+            if (not stripped or stripped.endswith(('：', ':')) or
+                    stripped.startswith(('服裝依', '已卸除', '不重新', '人物', '整體',
+                                         '故事', '演唱', '攝影', '後半段'))):
+                opening = False
+            elif any(stripped in entry for entry in known):
+                # The Python-ledger category is known; discard the stale
+                # reference outfit for this category. Other items stay.
+                continue
+        output.append(line)
+    return '\n'.join(output)
+
+
+def _local_event(event):
+    # A continuity frame or explicit present state already carries the result.
+    # Do not send previous actions or the source chapter title to the shot writer.
+    return re.sub(
+        r'(?m)^\s*(?:ALREADY ESTABLISHED;[^\n]*|Previously established:[^\n]*|Source chapter:[^\n]*|Phase inside chapter:[^\n]*)\n?',
+        '', event,
+    ).strip()
+
+
+# Python retains every authored story route in its saved plan. Only invariant
+# reference facts travel to the local camera model, including on resumed jobs.
+_FIXED_FILMING_HEADINGS = frozenset((
+    '共同設定', '共通設定', '共用設定', '固定設定', '全片設定',
+    '角色設定', '人物設定', '人物介紹', '角色介紹', '角色與造型',
+    '角色綁定', '世界觀', '場景設定', '固定場景', '故事背景',
+    '背景設定', '整體風格', '視覺基調', '視覺風格',
+    '攝影原則', '攝影語言測試', '演唱安排', '表演原則',
+    '攝影與舞蹈', '演唱近拍', '舞蹈編排',
+))
+_STORY_FILMING_HEADINGS = frozenset((
+    'MV 主題', '主題', '故事主題', '故事內容', '故事劇情',
+    '劇情內容', '故事大綱', '劇情大綱', '劇本內容',
+    '完整故事劇情', '劇情', '故事', '故事路線', '全片故事',
+    '劇情連續性', '服裝連續性', '演唱與劇情安排',
+    '導演自由發揮', '導演執行重點', '執行重點',
+    '特殊要求', '全曲執行原則', '全曲固定原則',
+))
+_FUTURE_FILMING = re.compile(
+    r'前半段|後半段|中段|後段|末段|後面|最後|最終|結局|謝幕|尾聲|'
+    r'第[一二三四五六七八九十\d]+[幕段]|隨著(?:歌曲|劇情|故事)|'
+    r'逐步|依序|一路推進|回家|返回|回到|再回|重返|'
+    r'→|->|⇒|'
+    r'從.{0,90}(?:出發|開始).{0,100}(?:到|再|回)|'
+    r'先.{0,75}(?:再|然後|接著)|'
+    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)',
+    re.I,
+)
+_NATIVE_SECTION = re.compile(r'^(0[1-9]|10)\s*[｜|]\s*([A-Z][A-Z\s\'-]+)$', re.I)
+_NATIVE_STATIC_PROJECT = re.compile(
+    r'^(?:Project|Format|Duration|Aspect Ratio|Visual Style|Resolution|Editing Style|Genre)\s*:',
+    re.I,
+)
+_NATIVE_FUTURE = re.compile(
+    r'\b(?:eventually|finally|ultimately|gradually|later|after the performance|'
+    r'second half|ending|finale|becomes a concert)\b', re.I,
+)
+_STATIC_FILMING_FACT = re.compile(
+    r'^(?:S[12]\s*[=:：]|<Picture \d+>|@圖片\d+|'
+    r'角色|人物|男主|女主|歌手|主唱|演唱者|外貌|五官|髮型|'
+    r'服裝|開場穿著|初始服裝|初始穿著|'
+    r'全片只有|唯一|不得新增|禁止新增|不新增|'
+    r'畫面風格|攝影風格|視覺風格|整體風格|'
+    r'固定場景|固定背景|依 SRT|[\[]S[12])',
+    re.I,
+)
+
+
+def _filming_reference_settings(fixed_setup):
+    """Forward identity/style/world, never the future plot, from Python to 9B."""
+    result = []
+    section = 'fixed'  # Legacy unheaded setups include original supporting cast.
+    for raw in fixed_setup.splitlines():
+        line = re.sub(r'^\s*#{1,6}\s+', '', raw).strip().strip('* ').strip()
+        title = line.rstrip('：:').strip()
+        if title.startswith('【') and title.endswith('】'):
+            title = title[1:-1].strip()
+        # Long-form English director packages embed the full future screenplay
+        # before and after the ACTs. Only static project/cast facts go to 9B.
+        native = _NATIVE_SECTION.match(title)
+        if native:
+            section = ('native_project' if native[1] == '01' else
+                       'native_cast' if native[1] == '02' else 'story')
+            continue
+        if section == 'native_project':
+            if _NATIVE_STATIC_PROJECT.match(line):
+                result.append(raw)
+            continue
+        if section == 'native_cast':
+            if _NATIVE_FUTURE.search(line):
+                continue
+            # The shrine is an environment, not a third singer or actor.
+            if re.match(r'(?i)^Subject\s+3\s*[｜|:：]',line):
+                result.append(re.sub(r'(?i)^Subject\s+3\s*[｜|:：]', 'Environment: ', raw))
+            else:
+                result.append(raw)
+            continue
+        # Author's concluding story explanation is useful for Python's plan,
+        # never a current-shot instruction for the isolated 9B cameraman.
+        if re.match(r'^[一二三四五六七八九十]+[、.．]\s*(?:最終導演意圖|結語)', title):
+            section = 'story'
+            continue
+        if title in _FIXED_FILMING_HEADINGS:
+            section = 'fixed'
+            result.append(raw)
+            continue
+        if title in _STORY_FILMING_HEADINGS:
+            section = 'story'
+            continue
+        subfield = re.match(
+            r'^(故事背景|背景設定|整體風格|場景設定|視覺風格|固定場景)\s*[：:]\s*(.*)$',
+            line,
+        )
+        if subfield:
+            section = 'fixed'
+            if not _FUTURE_FILMING.search(subfield.group(2)):
+                result.append(raw)
+            continue
+        if not line or _FUTURE_FILMING.search(line):
+            continue
+        binding = re.match(r'^S[12]\s*[=:：]\s*<Picture \d+>', line, re.I)
+        if binding or section == 'fixed' or (
+            section == 'unknown' and _STATIC_FILMING_FACT.match(line)
+        ):
+            result.append(raw)
+    return '\n'.join(result).strip()
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
