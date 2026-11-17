@@ -804,7 +804,27 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertNotIn('concert partners',plan['segments'][0]['event'])
         self.assertNotIn('The dry final joke',plan['segments'][0]['event'])
         self.assertIn('Only 白素貞',plan['segments'][0]['event'])
+        self.assertNotIn('entrance of 蕉大師',plan['segments'][0]['event'])
+        self.assertIn('@7.813s',plan['segments'][1]['event'])
+        self.assertIn('entrance of 蕉大師',plan['segments'][1]['event'])
         self.assertIn('The dry final joke',plan['segments'][28]['event'])
+
+    def test_standalone_second_precise_entrance_clocks_are_local(self):
+        from banana_mv.timed_slots import _timed_action_events
+        chapter={'start':0.,'end':25.,'actions':[
+            '00:00–00:16.600',
+            '白素貞 glides alone through the shrine.',
+            '00:16.600:',
+            'Cut to the wooden fish only.',
+            '00:17.813:',
+            'Reveal 蕉大師 on camera for the first time.',
+            '00:19.764: 蕉大師 performs the S1 line.',
+        ]}
+        events=_timed_action_events(chapter,[])
+        found=dict(events)
+        self.assertEqual(found['Reveal 蕉大師 on camera for the first time.'],17.813)
+        self.assertEqual(found['00:19.764: 蕉大師 performs the S1 line.'],19.764)
+        self.assertNotIn('00:17.813:',found)
 
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
