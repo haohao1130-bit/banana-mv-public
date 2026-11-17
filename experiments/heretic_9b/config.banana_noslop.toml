@@ -1,0 +1,67 @@
+# Experimental Heretic 2.x config. Use only with a Transformers-compatible HF model.
+# NOT a config for a ComfyUI W4A8 file.
+# Run from experiments/heretic_9b so relative prompt paths resolve.
+quantization = "bnb_4bit"
+device_map = "auto"
+max_memory = { "0" = "10GB", "cpu" = "48GB" }
+offload_outputs_to_cpu = true
+batch_size = 1
+max_batch_size = 1
+max_response_length = 240
+n_trials = 8
+n_startup_trials = 4
+study_checkpoint_dir = "local_checkpoints"
+modified_model_type = "banana-noslop-experiment"
+system_prompt = "You are a music-video cinematographer. Write only the requested current-clip camera and actor directions. Be specific and concise."
+
+scorers = [
+  { plugin = "heretic.scorers.keyword_rate.KeywordRate", optimization = "minimize" },
+  { plugin = "heretic.scorers.kl_divergence.KLDivergence", optimization = "minimize" },
+]
+modifiers = [
+  { plugin = "heretic.modifiers.ara.ARA" },
+]
+
+[batch_size_test_prompts]
+dataset = "prompts.txt"
+split = "[:16]"
+
+[[response_prefix_test_prompts]]
+dataset = "prompts.txt"
+split = "[:16]"
+
+[scorer.KeywordRate]
+score_name = "Unrequested preamble or commentary"
+keyword_markers = [
+  "好的，我來",
+  "以下是",
+  "當然可以",
+  "沒問題，",
+  "讓我們",
+  "首先我們",
+  "總而言之",
+  "總的來說",
+  "希望這能",
+  "作為一個ai",
+  "as an ai",
+  "here is",
+  "certainly!",
+]
+
+[scorer.KeywordRate.prompts]
+dataset = "prompts.txt"
+split = "[:16]"
+
+[scorer.KLDivergence.prompts]
+dataset = "prompts.txt"
+split = "[:16]"
+
+[modifier.ARA.good_prompts]
+dataset = "prompts.txt"
+split = "[:16]"
+system_prompt = "You are a precise MV cinematographer. Output the current shot only. Describe the assigned action, its visible consequence, subject attention, camera position, and motivated camera movement. No introduction or conclusion. Do not add an unassigned person or future scene."
+
+[modifier.ARA.bad_prompts]
+dataset = "prompts.txt"
+split = "[:16]"
+system_prompt = "You are a verbose general assistant. Start by saying of course and explaining the plan. Add enthusiastic introductions, disclaimers, summary and extended commentary. Delay the requested shot directions."
