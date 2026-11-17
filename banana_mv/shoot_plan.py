@@ -8,7 +8,7 @@ from banana_mv.commission_guard import check_commission, role_pictures, wardrobe
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
 from banana_mv.lyrics_reference import SUBJECT_VOCAL_PREFIX, clean_lyric_output, excerpt, vocal_timeline
-from banana_mv.locked_shoot import write_locked_shoot_prompt
+from banana_mv.director_shoot import write_director_shoot_prompt
 from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, rewrite_retry_count
 
@@ -577,9 +577,10 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     if wardrobe:
         context['current_wardrobe'] = wardrobe
 
-    # SRT-authored dual singers: Python owns shot cuts, cast, wardrobes and final
-    # Ref2VA sections; 9B supplies only shot-specific visual descriptions.
-    # Keep the legacy native writer for other configurations and unscripted clips.
+    # SRT-authored dual singers: Python owns singer timing, cast, wardrobe and
+    # final H3 sections. 9B owns the number and timing of CAMERA cuts. Never
+    # convert an SRT handoff into a compulsory new shot.
+    # All other legacy and unscripted routes stay unchanged.
     if (req.get('director_schema') == 6 and len(originals) == 2
             and {'S1', 'S2'} <= set(pictures)
             and req.get('srt_cues')
@@ -587,7 +588,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
                     for c in req['srt_cues'])):
         refs = ([tail] if tail else []) + list(originals)
         segment['director_mode'] = row['mode']
-        native = write_locked_shoot_prompt(
+        native = write_director_shoot_prompt(
             cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
             _pictures(refs), rewrite, progress)
         native, removed = clean_lyric_output(
