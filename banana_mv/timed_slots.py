@@ -331,10 +331,10 @@ def parse_timed_source(prompt, *, authored_intervals=False):
 
 
 def _srt_safe_action(action):
-    """Keep on-screen actions and authored clocks; SRT owns all lyric text."""
+    """Omit copied whole-verse lyrics; keep timed action lines with short cues."""
     if re.fullmatch(r'「[^」]*」|“[^”]*”', action.strip()):
         return ''
-    return re.sub(r'「[^」]*」|“[^”]*”', '本段 SRT 歌詞', action)
+    return action
 
 
 def _last_narrative(actions, previous):
