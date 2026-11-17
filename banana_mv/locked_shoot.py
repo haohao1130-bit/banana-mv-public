@@ -3,7 +3,7 @@ import copy
 import re
 import uuid
 
-from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, scene_is_beach, scene_wardrobe_schedule
+from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, role_pictures, scene_is_beach, scene_wardrobe_schedule
 from banana_mv.direction_contract import validate_h3_sections
 from banana_mv.lyrics_reference import excerpt, vocal_timeline
 from banana_mv.scene_state import SceneStateError, rewrite_retry_count
@@ -16,8 +16,10 @@ VOCAL_ACTION = re.compile(
     r'(?!\w)(?:\s*\(S[12]\))?'
     r'(?P<link>(?:\s+(?:is|are|was|were|has|have|been|begins?|starts?|'
     r'started|continues?|continuing|keeps?|kept|still|visibly|clearly|'
-    r'softly|loudly|to|shown|seen)){0,5}\s+)'
-    r'(?P<verb>sing(?:s|ing)?|lip[ -]?sync(?:s|ing)?|mouth\s+(?:moves|moving))\b'
+    r'softly|loudly|to|shown|seen|performs?|delivers?)){0,5}\s+)'
+    r'(?P<verb>sing(?:s|ing)?|raps|rapping|speaks?|speaking|recites?|reciting|'
+    r'chants?|chanting|spoken\s+delivery|lip[ -]?sync(?:s|ing)?|'
+    r'mouth\s+(?:moves|moving))\b'
 )
 PROPS = re.compile(r'泳圈|毛巾|車鑰匙|鑰匙|外出包|背包|吉他|手機|主機|螢幕', re.I)
 SYSTEM = (
@@ -172,21 +174,20 @@ def _extract(raw,slots,only=None):
     return blocks
 
 def _pronoun_roles(fixed):
-    """Read the explicitly described genders; never infer from picture order."""
+    """Only explicit role and gender declarations authorize he/she mapping."""
     male=[];female=[]
-    for line in fixed.splitlines():
-        m=re.match(r'^\s*(S[12])\s*[=:：]\s*<Picture \d+>(.*)$',line,re.I)
-        if not m:continue
-        role,details=m[1].upper(),m[2]
-        if re.search(r'\bmale\b|\bman\b|\bboy\b|男主|男聲|男主唱',details,re.I):
+    bound=role_pictures(fixed)
+    for role,picture in bound.items():
+        details=' '.join(line for line in fixed.splitlines()
+                         if picture in line and re.search(r'\b'+role+r'\b',line,re.I))
+        if re.search(r'\bmale\b|\bman\b|\bboy\b|男性|男主|男聲|男主唱',details,re.I):
             male.append(role)
-        if re.search(r'\bfemale\b|\bwoman\b|\bgirl\b|女主|女聲|女主唱',details,re.I):
+        if re.search(r'\bfemale\b|\bwoman\b|\bgirl\b|女性|女主|女聲|女主唱',details,re.I):
             female.append(role)
     roles={}
     if len(male)==1:roles.update(he=male[0],him=male[0])
     if len(female)==1:roles.update(she=female[0],her=female[0])
     return roles
-
 
 def _vocal_role(actor,pronouns):
     who=actor.lower().strip()
@@ -199,6 +200,7 @@ def _vocal_role(actor,pronouns):
 
 def _quiet_verb(verb):
     low=verb.lower()
+    if low == 'spoken delivery':return 'quiet gestures'
     if low.endswith('ing'):return 'moving to the beat'
     if low.endswith('s'):return 'moves to the beat'
     return 'move to the beat'
