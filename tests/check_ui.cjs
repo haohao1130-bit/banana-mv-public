@@ -29,6 +29,8 @@ class Element{
   getBoundingClientRect(){return {left:20,right:680,top:20,bottom:800};}
   select(){this.selected=true;}
   setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=this.selectionEnd=start+text.length;}
+  scrollIntoView(){this.scrolled=true;}
+  insertAdjacentElement(position,child){child.insertPosition=position;return child;}
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='5';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
@@ -37,10 +39,11 @@ let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟�
 let serverInstance='mv-service-a',restartRequestInstance='mv-service-a',reloadCount=0;
 const storage=new Map(),restartRequests=[];
 const intervals=[];
+const mobileViewport={matches:false,addEventListener(){}};
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},
   localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,v)=>storage.set(key,String(v)),removeItem:key=>storage.delete(key)},
-  window:{confirm:()=>true,location:{reload:()=>{reloadCount++;}}},
+  window:{confirm:()=>true,location:{reload:()=>{reloadCount++;}},matchMedia:()=>mobileViewport},
   setTimeout:(fn,ms)=>{if(ms===2000)fn();return 0;},clearTimeout:()=>{},setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
     if(url==='api/mv/restart-capability')return restartState;
@@ -440,6 +443,13 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
   assert(els['recipe-text'].textContent.includes('@圖片1'));assert(els['recipe-text'].textContent.includes('<b>plain text</b>'));
   assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);
+  assert.equal(els['mobile-furnace-start'].textContent,'丹方無誤，開爐','ready plan must replace direct generate');
+  assert(html.includes('main>.card:nth-child(2){order:-1}'),'mobile saved projects must render before new MV setup');
+  mobileViewport.matches=true;vm.runInContext('arrangeRecipe()',context);
+  assert.equal(els['recipe-review'].insertPosition,'afterend','mobile approval must sit immediately below progress');
+  assert.equal(els['recipe-plan-details'].open,false,'full recipe should default closed on phone');
+  vm.runInContext("renderEventPlan({id:'mobile-new-plan',segments:[{index:0,director_plan:{mode:'story',event:'A'}}]})",context);
+  assert.equal(els['event-plan-details'].open,false,'event details should default closed on phone');
   const translatedRecipe={id:'recipe123',status:'plan_ready',plan_revision:'r1',plan_preview_setup:'English source setup',segments:[{index:0,start:0,seconds:10,director_plan:{event:'English source event'}}],plan_translation:{status:'ready',source_plan_revision:'r1',blocks:{setup:'中文共通設定','0':'中文事件 <Picture 2>'}}};
   els['recipe-language'].value='zh';context.translatedRecipe=translatedRecipe;vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('中文事件 @圖片2'));assert(els['recipe-language-status'].textContent.includes('僅供審閱'));
   els['recipe-language'].value='en';els['recipe-language'].onchange();assert(els['recipe-text'].textContent.includes('English source event'));assert(!els['recipe-text'].textContent.includes('中文事件'));
@@ -447,8 +457,19 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
 
   assert.equal(els.stop.hidden,true);assert.equal(els['resume-project'].hidden,true);assert.equal(els['current-activity'].hidden,true);
   await vm.runInContext("openProject('recipe123')",context);assert.equal(els['recipe-review'].hidden,false);assert.equal(approvals.length,0);
-  await els['approve-recipe'].onclick();assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
-  assert.equal(els['recipe-review'].hidden,true);await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
+  const beforeApproval={posts:posts.length,uploads:uploads.length};
+  await els['mobile-furnace-start'].onclick();
+  assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
+  assert.equal(posts.length,beforeApproval.posts,'confirm must NOT create a new MV');
+  assert.equal(uploads.length,beforeApproval.uploads,'confirm must NOT reupload song or references');
+  assert.equal(els['recipe-review'].hidden,true);
+  assert.equal(els['mobile-furnace-start'].textContent,'查看進度');
+  await els['mobile-furnace-start'].onclick();
+  assert.equal(els['progress-summary'].scrolled,true);
+  assert.equal(posts.length,beforeApproval.posts,'progress link must NOT create a new MV');
+  await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
+  mobileViewport.matches=false;vm.runInContext('arrangeRecipe()',context);
+  assert.equal(els['recipe-review'].insertPosition,'beforebegin','desktop recipe remains in original panel');
   vm.runInContext('busy(false)',context);
   // The same browser/server instance may restore its selected project on F5.
   await vm.runInContext('restoreActiveProjectOnSameServer()',context);
