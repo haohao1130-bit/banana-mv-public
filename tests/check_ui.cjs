@@ -187,7 +187,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els.resolution.value,'720p');assert.equal(els.width.value,'720');
   assert.equal(els['srt-reference'].value,'已存SRT');assert.equal(els.lyrics.value,'已存歌詞');
   typeMention('@');assert.equal(els['image-mentions'].children.length,1);assert.equal(els['image-mentions'].children[0].children[0].src,'api/mv/reference?id=saved123&image=0');els['image-mentions'].children[0].onclick();assert.equal(els.prompt.value,'@圖片1 ');
-  assert.equal(els.persistent_scene_state.checked,false);assert.equal(els.audio_analysis.checked,false);assert.equal(els.rewrite.checked,false);
+  assert.equal(els.persistent_scene_state.checked,false);assert.equal(els.audio_analysis.checked,false);assert.equal(els.rewrite.checked,true);
   vm.runInContext("renderAudioAnalysis({audio_analysis:{status:'ready',structure:{bpm:120,segments:[{start:0,end:10,label:'chorus'}]}},request:{audio_analysis:true}})",context);assert.equal(els['music-structure-details'].hidden,false);assert(els['music-structure-text'].textContent.includes('副歌（預測）'));
   vm.runInContext("renderAudioAnalysis({request:{}})",context);assert.equal(els['music-structure-details'].hidden,true);
   vm.runInContext("renderAudioAnalysis({audio_analysis:{status:'ready',pulse:{bpm_estimate:120}},request:{audio_analysis:true}})",context);assert(els['audio-summary'].textContent.includes('120 BPM'));
