@@ -102,6 +102,9 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els.stop.disabled,true);
   assert.equal(els['stop-emergency'].disabled,false,
     'emergency must remain usable after a graceful stop request');
+  // The background initial-project restore can settle while an async
+  // mocked request is awaited; keep the test's selected running job fixed.
+  vm.runInContext("active='running-stop-test'",context);
   await els['stop-emergency'].onclick();
   assert.deepEqual(emergencyStops,[{id:'running-stop-test'}]);
   assert.equal(gracefulStops.length,1,'emergency must not request graceful stop');
