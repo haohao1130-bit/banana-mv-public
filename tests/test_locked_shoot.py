@@ -37,6 +37,34 @@ class LockedShootTests(unittest.TestCase):
         self.assertNotIn('0.920–3.360s',' '.join(merged))
         self.assertEqual(len(singer_rows(0,10,cues)),2)
 
+    def test_overlapping_separate_srt_lines_are_not_a_duet(self):
+        # In the Bai Suzhen song the 03:47.940–03:48.015 overlap is
+        # two independently labeled SRT cues, not an authored [S1+S2].
+        cues=[cue(0,8.015,'S1'),cue(7.940,10,'S2')]
+        rows=singer_rows(0,10,cues)
+        self.assertTrue(any('No authored duet' in row for row in rows),rows)
+        self.assertFalse(any('lip-sync together' in row for row in rows),rows)
+        slots=plan_slots(10,cues,{},False)
+        both=next(slot for slot in slots if set(slot['allowed_singers'])=={'S1','S2'})
+        self.assertFalse(both['duet_authorized'])
+        repaired,audit=_repair_vocals(
+            {both['number']:'Both sing while the camera arcs around the shrine.'},
+            [both],'S1 = <Picture 1>\nS2 = <Picture 2>')
+        self.assertEqual(len(audit),1)
+        self.assertNotIn('Both sing',repaired[both['number']])
+        self.assertIn('camera arcs',repaired[both['number']])
+
+    def test_explicit_s1_plus_s2_duet_still_works(self):
+        cues=[cue(0,10,'S1','S2')]
+        self.assertTrue(any('lip-sync together' in row for row in singer_rows(0,10,cues)))
+        slot=plan_slots(10,cues,{},False)[0]
+        self.assertTrue(slot['duet_authorized'])
+        original='Both sing while the camera arcs around the shrine.'
+        revised,audit=_repair_vocals({slot['number']:original},[slot],
+                                     'S1 = <Picture 1>\nS2 = <Picture 2>')
+        self.assertEqual(revised[slot['number']],original)
+        self.assertEqual(audit,[])
+
     def test_real_gap_and_duet_break_merging(self):
         cues=[cue(0,2,'S2'),cue(2,4,'S2'),cue(4.5,6,'S2'),
               cue(6,8,'S1','S2'),cue(8,10,'S1')]
