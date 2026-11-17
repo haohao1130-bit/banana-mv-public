@@ -128,12 +128,12 @@ class ShootPlanTests(unittest.TestCase):
                 '@圖片2＝白素貞，S2，女性角色\n',2),
                 director_plan={'handoff_version':1,'mode':'performance',
                                'event':'白素貞唱 S2，蕉大師在旁安靜敲木魚。'})
-            with patch('banana_mv.shoot_plan.write_locked_shoot_prompt',
+            with patch('banana_mv.shoot_plan.write_director_shoot_prompt',
                        return_value='subject_definitions:\n<Subject 1> S1\n'
                        'detailed_description:\n[Shot 1] <Subject 2> sings.\n'
                        'overall_soundscape:\nMusic.\nnon_diegetic_music:\nMusic.') as locked:
                 result=server.local_prompt(cfg,req,segment,images,None)
-            self.assertTrue(locked.called,'two authored singers must enter Python-locked camera path')
+            self.assertTrue(locked.called,'two authored singers must enter Python-SRT / 9B-free-camera path')
             self.assertIn('<Subject 2> sings',result)
             self.assertNotEqual(segment.get('prompt_profile',{}).get('source'),
                                 'isolated_native_director')
