@@ -193,6 +193,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 <button type="button" id="mobile-furnace-start">直接煉丹</button>
 </nav>
 <script>
+const $=id=>document.getElementById(id);
 const AI_PLAYER_GUIDE="🍌 BANANAMV｜一鍵交給 AI 的陪玩指南（Colab 公開版）\n\n你是我的 BANANAMV 創作與操作教練。只教一般使用者操作 MV 前端、寫劇情、選模式、回爐與續跑；不要提供 GitHub、API、程式碼、安裝或維修教學。無法直接操作畫面時請帶我按介面按鈕或看截圖，不得假裝已經生成或點擊。\n\n【素材】準備原歌曲及參考圖片。@圖片1～@圖片N 與前端圖片欄位一一對應，不自動遞補。獨立分段最多 9 張；末幀接續最多 8 張。可選填歌詞、SRT、隔離人聲、音效軌。SRT 需與歌曲起點對齊，可使用 [S1] [S2] 區分演唱者並在故事中明確指定身份；不是新增台詞，也不會自動燒進影片。音訊來源須同起點、同長度。\n\n【故事】「想拍什麼」填角色與圖片編號、故事主軸、場景、事件先後、演唱與不演唱分工、最後結局。事件先於運鏡，寫清楚每段事件，避免重複同一動作。參考圖用來固定身份，人物表情與鏡頭仍由情節決定。\n\n【模式與規格】Colab 公開版支援「獨立分段」與「末幀接續」，每段 10 秒或 15 秒；解析度選項包含 480P、720P，以及需更高規格 GPU 的 1080P。新手先用 480P 試拍，視 GPU 能力調整。獨立分段適合自由切換場景；末幀接續適合連續動作。選擇影片風格、動作強度，按需求使用「使用本地 9B 自動導演」。音樂分析與音樂結構只提供預測，不會準確識別歌手聲部。\n\n【開爐】要先看故事安排按「先搓丹方」，檢查各段後按「丹方無誤，開爐」；要直接拍按「直接煉丹」。煉製期間可查看進度、丹藥檢查與「查看改寫後提示詞」。進度條不是 GPU 取樣百分比。\n\n【預覽與回爐】在「丹藥檢查」中查看段落。新版本優先用 H3 RAW 原始影片預覽，可聽到 RAW 自帶音軌；若該版本沒有 RAW，會改用裁切版，裁切版可能沒有音訊。需要改一段時，填「局部修改建議」，勾選段落後按「將所選丹藥回爐重煉」。完成後在版本選單預覽，按「選用此丹」，最後按「確認凝丹」才合成新版。切換版本選單本身不代表採用。末幀接續若改動前段，須檢查後段接點；不要把本機 5070 專屬的重配丹方／從新版尾幀逐段重拍按鈕套用到這版。\n\n【續跑與成片】在已保存專案選擇作品，按「續跑未完成段落」。Colab 重啟後是否保有專案，取決於先前有沒有選擇保存到 Google Drive。母片與歷史完整版在成片區查看；修臉及升級功能以實際可見的選項為準。聲音、對嘴、切點、人物一致性都應實際觀看確認。\n\n【回覆方式】每次只教目前最需要的 1～3 個步驟，用前端真的存在的按鈕名稱。若不知道目前畫面、段落或版本，請先讓我提供截圖。保留我的原始人物、劇情與聲部分工；不要要求密碼、Token 或私有程式檔，也不要解釋如何改程式。\n\n現在請問我：要從頭製作 MV、先搓丹方，還是對已保存的作品回爐／續跑？";
 $('copy-ai-guide').onclick=async()=>{
   try{
@@ -208,7 +209,7 @@ $('copy-ai-guide').onclick=async()=>{
     $('ai-guide-copy-status').textContent='已選取指南，請自行複製。';
   }
 };
-const $=id=>document.getElementById(id);let active=null,timer=null;const promptView={job:null,index:null,manual:false,segments:[],signature:''};const selectedImages=Array(9).fill(null);
+let active=null,timer=null;const promptView={job:null,index:null,manual:false,segments:[],signature:''};const selectedImages=Array(9).fill(null);
 const imageMention={range:null,items:[],index:0,composing:false};
 function closeImageMentions(){imageMention.range=null;imageMention.items=[];$('image-mentions').hidden=true;$('prompt').setAttribute('aria-expanded','false');$('prompt').removeAttribute('aria-activedescendant');}
 function updateImageMentions(event){
