@@ -1,0 +1,3 @@
+{"id":"ticket","required":["票根","鏡頭"],"forbidden":["拳王","終幕"],"expect_json":false}
+{"id":"boxing","required":["閃避","鏡頭"],"forbidden":["舞台","主唱"],"expect_json":false}
+{"id":"json-route","required":["event","camera"],"forbidden":["未來"],"expect_json":true}
