@@ -98,7 +98,7 @@ class ShootPlanTests(unittest.TestCase):
             seg=dict(timeline()[1],director_plan={'handoff_version':1,'index':1,
                      'mode':'story','event':event},
                      fixed_reference_settings=fixed,
-                     direction_ending_contract=ending_contract(req,9,timeline()))
+                     )
             writer=Mock(return_value=native_prompt(1))
             with patch.object(server.backend,'rewrite_local',writer):
                 output=server.local_prompt(cfg,req,seg,images,None)
