@@ -521,14 +521,18 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     def connected(text):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
-    fixed_setup=segment.get('fixed_reference_settings','')
+    original_setup=segment.get('fixed_reference_settings','')
+    event=_local_event(row['event'])
+    fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',original_setup,maxsplit=1)[0].strip()
+    # The actual Python current actor ledger overrides outdated opening clothes.
+    fixed_setup=_fixed_reference_with_python_priority(fixed_setup,event)
+    # Only static identity, setting and style are allowed past the handoff.
+    # The complete plot and future ending stay with Python's upstream planner.
+    fixed_setup=_filming_reference_settings(fixed_setup)
     context={'seconds':segment['seconds'],'primary_mode':row['mode'],
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
-    # Strip only the explicit upstream outcome block in legacy settings. No
-    # keyword blacklist: identity, scene duties and current results stay intact.
-    fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',fixed_setup,maxsplit=1)[0].strip()
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
@@ -538,7 +542,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           "Choose shots that best express the original intent. "
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
           "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
-          "Original prompt:\nCurrent clip script:\n"+connected(row['event'])+"\n\n")
+          "Original prompt:\nCurrent clip script:\n"+connected(event)+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 including its per-shot composition, lighting, actions and camera movement.
 When audio_evidence.music_structure is supplied, use its predicted local section
