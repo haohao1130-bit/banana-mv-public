@@ -408,9 +408,8 @@ def _local_event(event):
 
 
 def _apply_source_performance(prompt, timeline, fixed_setup):
-    bindings = {role.upper(): picture for role, picture in re.findall(
-        r'(?im)^\s*(S[12])\s*[=：:]\s*(<Picture \d+>)', fixed_setup
-    )}
+    # The same user-defined SRT identities drive both filming paths.
+    bindings = role_pictures(fixed_setup)
     rows = []
     for cue in timeline:
         subjects = cue.get('subjects', [])
