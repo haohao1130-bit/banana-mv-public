@@ -488,6 +488,11 @@ def _filming_reference_settings(fixed_setup):
         title = line.rstrip('：:').strip()
         if title.startswith('【') and title.endswith('】'):
             title = title[1:-1].strip()
+        # Author's concluding story explanation is useful for Python's plan,
+        # never a current-shot instruction for the isolated 9B cameraman.
+        if re.match(r'^[一二三四五六七八九十]+[、.．]\s*(?:最終導演意圖|結語)', title):
+            section = 'story'
+            continue
         if title in _FIXED_FILMING_HEADINGS:
             section = 'fixed'
             result.append(raw)
