@@ -35,6 +35,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
  .mobile-furnace-bar .mobile-furnace-link{flex:1;min-width:0;text-align:left}
  .mobile-furnace-label{display:block;font-size:.78rem}
  #alchemy-title{scroll-margin-top:12px}
+ /* Mobile: saved projects, furnace status and progress appear before new-MV setup. */
+ main>.card:nth-child(2){order:-1}
 }
 </style>
 <header><div class="brand"><span class="brand-logo" role="img" aria-label="香蕉">🍌</span><div><small class="brand-name">Banana</small><h1>大乘蕉宗MV製作所</h1></div></div><div class="ai-help-actions"><button id="open-help" type="button" class="secondary" aria-haspopup="dialog" aria-controls="help-dialog">📖 操作說明</button><button id="copy-ai-guide" type="button" class="secondary" aria-describedby="ai-guide-copy-status">🤖 一鍵複製給 AI</button><span id="ai-guide-copy-status" class="muted" role="status" aria-live="polite"></span></div></header><div id="ai-guide-fallback-box" class="card" hidden><label for="ai-guide-fallback">無法自動複製時，請自行複製下方文字</label><textarea id="ai-guide-fallback" rows="8" readonly></textarea></div>
