@@ -8,10 +8,18 @@ import re
 
 HEADING = re.compile(r'^(?P<marks>#{1,6})\s+(?P<title>.+?)\s*$')
 PLAIN_SCENE = re.compile(
-    r'^(?:CHAPTER\s+\d+|SEGMENT\s+\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
+    r'^(?:CHAPTER\s+\d+|SEGMENT\s+\d+|ACT\s+\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
     r'\s*[｜|:：]\s*', re.I
 )
 PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
+_TIMED_ACT_SCENE = re.compile(r'^ACT\s+\d+\s*[｜|:：]', re.I)
+# Only explicit post-timeline notes close a plain ACT script. A scene's ordinary
+# numbered beats must not be mistaken for another scene or given to a future clip.
+_POST_ACT_SECTION = re.compile(
+    r'^[一二三四五六七八九十]+[、.．]\s*'
+    r'(?:全片連續性|全片規則|演出規則|最終導演意圖|導演意圖|最終檢查|生成要求|'
+    r'最終創作目標|結語).*'
+)
 # Mirror the hand-written short film headings when MV input has explicit times.
 AUTHORED_SECTION = re.compile(
     r'^(?:共同設定|共通設定|共用設定|全片設定|全局設定|全域設定|固定設定|全片固定設定|'
@@ -161,7 +169,10 @@ def _timed_action_events(chapter,srt):
         else:
             explicit=_INLINE_CLOCK.search(line)
             stamp=matches[0][1] if matches else None
-            if stamp is None and explicit and re.search(r'起|開始|切入|轉入',line):
+            # Explicit source sub-intervals are authored clocks, even when the
+            # header only says "S2 Rap" without a verb like "starts".
+            if stamp is None and explicit and (
+                    TIME_SPAN.match(line) or re.search(r'起|開始|切入|轉入', line)):
                 stamp=_seconds(explicit.group())
             if stamp is not None:
                 stamp=max(chapter['start'],min(chapter['end']-.0001,stamp))
@@ -215,9 +226,16 @@ def parse_timed_source(prompt, *, authored_intervals=False):
             elif PLAIN_SECTION.fullmatch(title) or AUTHORED_SECTION.fullmatch(title):
                 line = '## ' + title
                 heading = HEADING.match(line)
-        plain_scene = authored_intervals and PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
-        plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line)
-                                               or AUTHORED_SECTION.fullmatch(line))
+        plain_scene = bool(
+            PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
+            and (authored_intervals or _TIMED_ACT_SCENE.match(line))
+        )
+        plain_section = bool(
+            (authored_intervals and (PLAIN_SECTION.fullmatch(line) or
+                PLAIN_CONTROL.fullmatch(line) or AUTHORED_SECTION.fullmatch(line)))
+            or (_POST_ACT_SECTION.fullmatch(line) and
+                any(_TIMED_ACT_SCENE.match(chapter['title']) for chapter in chapters))
+        )
         if heading or plain_scene or plain_section:
             title = heading.group('title').strip() if heading else line
             level = len(heading.group('marks')) if heading else (3 if plain_scene else 2)
@@ -312,6 +330,13 @@ def parse_timed_source(prompt, *, authored_intervals=False):
     return '\n'.join(retained), expanded or chapters
 
 
+def _srt_safe_action(action):
+    """Keep on-screen actions and authored clocks; SRT owns all lyric text."""
+    if re.fullmatch(r'「[^」]*」|“[^”]*”', action.strip()):
+        return ''
+    return re.sub(r'「[^」]*」|“[^”]*”', '本段 SRT 歌詞', action)
+
+
 def _last_narrative(actions, previous):
     for line in reversed(actions):
         if not re.match(r'^(?:攝影機|鏡頭|機位|鏡位|運鏡|畫面|配樂|音效|此動作|本段拍攝|本段時間)', line):
@@ -365,8 +390,10 @@ def allocate_timed_chapters(chapters, segments, commission, srt_cues=None):
     # times. Other chapters without lyric evidence retain legacy pacing.
     srt_cues=srt_cues or []
     aligned=[_timed_action_events(chapter,srt_cues)
-             if srt_cues and any(_line_cue_times(a,chapter,srt_cues,chapter['start'])
-                                 for a in chapter['actions']) else None
+             if srt_cues and any(
+                 TIME_SPAN.match(action) or
+                 _line_cue_times(action,chapter,srt_cues,chapter['start'])
+                 for action in chapter['actions']) else None
              for chapter in chapters]
     for i, segment in enumerate(segments):
         fragments = []
@@ -380,8 +407,11 @@ def allocate_timed_chapters(chapters, segments, commission, srt_cues=None):
             end = min(chapter['end'], clip_end)-clip_start
             aligned_events=aligned[chapters.index(chapter)]
             if aligned_events is not None:
-                chosen=[(action,stamp) for action,stamp in aligned_events
+                # Supplied SRT already carries the authoritative lyrics. Do not
+                # ship whole multi-line verses to a clip-local cinematographer.
+                chosen=[(_srt_safe_action(action),stamp) for action,stamp in aligned_events
                         if clip_start-1e-6 <= stamp < clip_end-1e-6]
+                chosen=[(action,stamp) for action,stamp in chosen if action]
                 local=[action for action,_ in chosen]
                 assigned='PYTHON-OWNED CURRENT EVENT — scene '+chapter['title']+'\n'
                 if previous:
