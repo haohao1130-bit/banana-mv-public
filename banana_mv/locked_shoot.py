@@ -64,18 +64,30 @@ def singer_rows(a,b,cues):
             if float(cue['clip_start'])<=x+.001 and float(cue['clip_end'])>=y-.001:
                 roles.update(r for r in cue.get('subjects',()) if r in ('S1','S2'))
         who=tuple(sorted(roles))
-        if intervals and intervals[-1][2]==who and abs(intervals[-1][1]-x)<.001:
-            intervals[-1]=(intervals[-1][0],y,who)
+        # Two independent SRT rows can overlap for milliseconds. This does
+        # NOT turn them into an authored [S1+S2] duet.
+        explicit_duet=any(
+            set(cue.get('subjects',()))=={'S1','S2'}
+            and float(cue['clip_start'])<=x+.001
+            and float(cue['clip_end'])>=y-.001 for cue in cues
+        )
+        key=(who,explicit_duet)
+        if intervals and intervals[-1][2]==key and abs(intervals[-1][1]-x)<.001:
+            intervals[-1]=(intervals[-1][0],y,key)
         else:
-            intervals.append((x,y,who))
+            intervals.append((x,y,key))
     rows=[]
-    for x,y,who in intervals:
+    for x,y,(who,explicit_duet) in intervals:
         if who==('S1',):
             v='<Subject 1> (S1) ONLY lip-syncs; <Subject 2> is silent.'
         elif who==('S2',):
             v='<Subject 2> (S2) ONLY lip-syncs; <Subject 1> is silent.'
         elif who==('S1','S2'):
-            v='<Subject 1> (S1) AND <Subject 2> (S2) lip-sync together.'
+            if explicit_duet:
+                v='<Subject 1> (S1) AND <Subject 2> (S2) lip-sync together.'
+            else:
+                v=('Independent S1 and S2 source vocals overlap. No authored duet; '
+                   'each character follows their own source voice only.')
         else:
             v='No assigned visible lip-sync; use physical acting and reaction.'
         rows.append(f'{x:.3f}–{y:.3f}s: '+v)
@@ -140,6 +152,10 @@ def plan_slots(seconds,cues,evidence=None,dynamic=True,scene_cuts=None):
         optional=[t for t in candidates if t not in required and t>=1 and duration-t>=.8]
         cuts=[cuts[0]]+sorted(forced+optional[:max(0,6-len(forced))])+[duration]
     return [{'number':i+1,'start':a,'end':b,'rows':singer_rows(a,b,cues),
+             'duet_authorized':any(
+                 set(cue.get('subjects',()))=={'S1','S2'}
+                 and float(cue['clip_start']) < b
+                 and float(cue['clip_end']) > a for cue in cues),
              'allowed_singers':sorted({r for cue in cues
                  if float(cue['clip_start']) < b and float(cue['clip_end']) > a
                  for r in cue.get('subjects',()) if r in ('S1','S2')})}
@@ -218,7 +234,10 @@ def _repair_vocals(blocks,slots,fixed):
         number=slot['number'];allowed=set(slot['allowed_singers'])
         def correct(match):
             assigned=_vocal_role(match['actor'],pronouns)
-            if not assigned or assigned <= allowed:return match[0]
+            if not assigned:return match[0]
+            if assigned <= allowed and not (
+                assigned == {'S1','S2'} and not slot.get('duet_authorized')
+            ):return match[0]
             replacement=(match[0][:match.start('verb')-match.start()]
                          +_quiet_verb(match['verb']))
             audit.append({'shot':number,'from':match[0],'to':replacement,
