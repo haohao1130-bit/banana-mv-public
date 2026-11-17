@@ -112,6 +112,34 @@ class ShootPlanTests(unittest.TestCase):
             self.assertEqual(task['ending']['local_settle_by'],3.5)
             self.assertEqual(seg['prompt_profile']['writer_calls'],1)
 
+    def test_reverse_chinese_cast_activates_python_locked_srt_shots(self):
+        # Real-world 5070 input uses @圖片1＝蕉大師，S1 rather than S1 = @圖片1.
+        from banana_mv.core import map_image_mentions
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            images,cfg,req=self.fixture(root,'chain')
+            req['director_schema']=6
+            req['srt_cues']=[
+                {'start':0,'end':1.3,'text':'[S1] 阿彌陀蕉'},
+                {'start':1.3,'end':10,'text':'[S2] 一紙封印一座塔'},
+            ]
+            segment=dict(timeline()[0],fixed_reference_settings=map_image_mentions(
+                '@圖片1＝蕉大師，S1，男性角色\n'
+                '@圖片2＝白素貞，S2，女性角色\n',2),
+                director_plan={'handoff_version':1,'mode':'performance',
+                               'event':'白素貞唱 S2，蕉大師在旁安靜敲木魚。'})
+            with patch('banana_mv.shoot_plan.write_locked_shoot_prompt',
+                       return_value='subject_definitions:\n<Subject 1> S1\n'
+                       'detailed_description:\n[Shot 1] <Subject 2> sings.\n'
+                       'overall_soundscape:\nMusic.\nnon_diegetic_music:\nMusic.') as locked:
+                result=server.local_prompt(cfg,req,segment,images,None)
+            self.assertTrue(locked.called,'two authored singers must enter Python-locked camera path')
+            self.assertIn('<Subject 2> sings',result)
+            self.assertNotEqual(segment.get('prompt_profile',{}).get('source'),
+                                'isolated_native_director')
+            self.assertEqual(locked.call_args.args[5],
+                             {'S1':'<Picture 1>','S2':'<Picture 2>'})
+
     def test_tagged_duet_sends_roles_without_lyrics_or_previous_events(self):
         from banana_mv.python_slots import split_source
         with tempfile.TemporaryDirectory() as tmp:
