@@ -233,12 +233,38 @@ class TakeTests(unittest.TestCase):
         self.assertFalse(app.GPU_LOCK.locked())
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'old master')
 
-    def test_preview_serves_silent_trimmed_part_without_audio_processing(self):
-        source=takes.preview(self.job,1)
-        self.assertEqual(source,self.work/'01_part.mp4')
-        self.assertEqual(source.read_bytes(),b'old1')
+    def test_preview_prefers_matching_raw_and_falls_back_to_part(self):
+        # Existing project without RAW remains playable.
+        self.assertEqual(takes.preview(self.job,1),self.work/'01_part.mp4')
+        status=takes.describe(self.job)
+        self.assertEqual(status['segments'][1]['preview_kind'],'part')
+
+        raw=self.work/'01_raw.mp4'
+        raw.write_bytes(b'original H3 audio')
+        self.assertEqual(takes.preview(self.job,1),raw)
+        status=takes.describe(self.job)
+        self.assertEqual(status['segments'][1]['preview_kind'],'raw')
+        self.assertEqual(status['segments'][1]['preview_filename'],'01_raw.mp4')
+        self.assertTrue(status['segments'][1]['takes'][0]['preview'].startswith('/api/mv/clip?'))
+
+        # RAW is for preview only; assembly and continuity keep trimmed PART.
+        self.assertEqual(takes.take_source(self.job,1),self.work/'01_part.mp4')
         app.audio_window.assert_not_called()
         self.assemble.assert_not_called()
+
+    def test_preview_never_uses_original_raw_for_another_take(self):
+        original_raw=self.work/'00_raw.mp4'
+        original_raw.write_bytes(b'original audio')
+        takes.retake(self.job['id'],[0])
+        job=self.run_background()
+        candidate=job['segments'][0]['takes'][-1]['id']
+        candidate_raw=takes.existing_file(job,0,candidate,'raw.mp4')
+        self.assertEqual(takes.preview(job,0,candidate),candidate_raw)
+        self.assertNotEqual(candidate_raw,original_raw)
+        candidate_raw.unlink()
+        self.assertEqual(takes.preview(job,0,candidate),
+                         takes.take_source(job,0,candidate))
+        self.assertEqual(takes.describe(job)['segments'][0]['takes'][-1]['preview_kind'],'part')
 
     def configure_repair(self):
         guide=self.root/'guide.md';guide.write_text('NATIVE_GUIDE')
