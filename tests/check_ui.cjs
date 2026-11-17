@@ -204,6 +204,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
   assert(els['recipe-text'].textContent.includes('@圖片1'));assert(els['recipe-text'].textContent.includes('<b>plain text</b>'));
   assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);
+  // A ready plan must replace the mobile action with approval, never a new submission.
+  assert.equal(els['mobile-furnace-start'].textContent,'丹方無誤，開爐');
+  assert.equal(els['mobile-furnace-start'].disabled,false);
+  assert.equal(els['mobile-furnace-open-title'].textContent,'丹方審閱');
   const translatedRecipe={id:'recipe123',status:'plan_ready',plan_revision:'r1',plan_preview_setup:'English source setup',segments:[{index:0,start:0,seconds:10,director_plan:{event:'English source event'}}],plan_translation:{status:'ready',source_plan_revision:'r1',blocks:{setup:'中文共通設定','0':'中文事件 <Picture 2>'}}};
   els['recipe-language'].value='zh';context.translatedRecipe=translatedRecipe;vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('中文事件 @圖片2'));assert(els['recipe-language-status'].textContent.includes('僅供審閱'));
   els['recipe-language'].value='en';els['recipe-language'].onchange();assert(els['recipe-text'].textContent.includes('English source event'));assert(!els['recipe-text'].textContent.includes('中文事件'));
@@ -211,8 +215,17 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
 
   assert.equal(els.stop.hidden,true);assert.equal(els['resume-project'].hidden,true);assert.equal(els['current-activity'].hidden,true);
   await vm.runInContext("openProject('recipe123')",context);assert.equal(els['recipe-review'].hidden,false);assert.equal(approvals.length,0);
-  await els['approve-recipe'].onclick();assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
+  const beforeMobileApprove={starts:posts.length,uploads:uploads.length};
+  await els['mobile-furnace-start'].onclick();
+  assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
+  assert.equal(posts.length,beforeMobileApprove.starts,'mobile approval must not start a new job');
+  assert.equal(uploads.length,beforeMobileApprove.uploads,'mobile approval must not reupload any media');
+  assert.equal(els['mobile-furnace-start'].textContent,'查看進度');
   assert.equal(els['recipe-review'].hidden,true);await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
+  await els['mobile-furnace-start'].onclick();assert.equal(posts.length,beforeMobileApprove.starts,'progress action must never resubmit');
+  vm.runInContext("mobileJobStatus='done';syncMobileFurnace()",context);
+  assert.equal(els['mobile-furnace-start'].textContent,'建立新 MV');
+  await els['mobile-furnace-start'].onclick();assert.equal(posts.length,beforeMobileApprove.starts,'new-MV shortcut must scroll, not start');
   vm.runInContext('busy(false)',context);
   console.log('UI checks passed: image mentions with thumbnails, caret insertion, keyboard/IME, fixed slots, saved references, chain limits, prompt review and retakes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
