@@ -1,0 +1,49 @@
+name: Heretic 9B experiment smoke
+
+on:
+  push:
+    branches:
+      - experiment/heretic-9b-director
+    paths:
+      - 'experiments/heretic_9b/**'
+      - '.github/workflows/heretic-lab-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate offline experimental configuration
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib
+          import tomllib
+          root = pathlib.Path('experiments/heretic_9b')
+          cfg = tomllib.loads((root / 'config.banana_noslop.toml').read_text(encoding='utf-8'))
+          assert cfg['quantization'] == 'bnb_4bit'
+          assert cfg['max_memory']['0'] == '10GB'
+          assert 0 < cfg['n_startup_trials'] <= cfg['n_trials'] <= 20
+          assert any('KeywordRate' in x['plugin'] for x in cfg['scorers'])
+          assert any('KLDivergence' in x['plugin'] for x in cfg['scorers'])
+          assert all('Refusal' not in x['plugin'] for x in cfg['scorers'])
+          assert len((root / 'prompts.txt').read_text(encoding='utf-8').splitlines()) >= 16
+          print('PASS: Heretic 2.x TOML parses and experimental data files exist')
+          PY
+      - name: Run pure Python unit tests (no GPU or downloads)
+        run: python -m unittest discover -s experiments/heretic_9b/tests -v
+      - name: Run example A/B report (synthetic, not real model outputs)
+        run: |
+          python experiments/heretic_9b/evaluate.py \
+            --cases experiments/heretic_9b/examples/cases.jsonl \
+            --baseline experiments/heretic_9b/examples/baseline.jsonl \
+            --candidate experiments/heretic_9b/examples/candidate.jsonl \
+            --json-out /tmp/heretic-example-report.json
+          python -c "import json; d=json.load(open('/tmp/heretic-example-report.json')); assert d['baseline']['cases'] == 3 and d['candidate']['cases'] == 3; print('PASS: synthetic A/B score computed')"
