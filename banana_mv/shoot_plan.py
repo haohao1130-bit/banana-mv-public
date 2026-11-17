@@ -513,6 +513,50 @@ def _filming_reference_settings(fixed_setup):
     return '\n'.join(result).strip()
 
 
+def _role_bindings(fixed_setup):
+    """Resolve source S1/S2 from either common or reversed Chinese picture tags."""
+    found={}
+    for raw in fixed_setup.splitlines():
+        line=raw.strip()
+        direct=re.match(r'^(S[12])\s*[=:：]\s*(<Picture \d+>)',line,re.I)
+        if direct:
+            found[direct[1].upper()]=direct[2]
+        elif re.match(r'^<Picture \d+>',line):
+            picture=re.search(r'<Picture \d+>',line)
+            role=re.search(r'(?<!\w)(S[12])(?!\w)',line,re.I)
+            if picture and role:
+                found[role[1].upper()]=picture[0]
+    return found
+
+
+def _srt_singers(req,segment,roles):
+    """Typed singing windows, separate from the 9B-authored camera clock."""
+    out=[]
+    for row in excerpt(req,segment):
+        tag=re.match(r'^\s*\[\s*(S[12])(?:\s*\+\s*(S[12]))?\s*\]',row['text'],re.I)
+        if not tag:
+            continue
+        singers=[tag[1].upper()]+([tag[2].upper()] if tag[2] else [])
+        named=' + '.join(role+' = '+roles.get(role,role+' from the fixed cast')
+                         for role in singers)
+        out.append(f"{row['clip_start']:.3f}–{row['clip_end']:.3f}s: "+named)
+    return out
+
+
+def _insert_srt_authority(prompt,windows):
+    if not windows:return prompt
+    authority=('ORIGINAL AUDIO: CLIP-LOCAL SRT SINGERS (NOT CAMERA CUTS)\n'
+               +'\n'.join(windows)
+               +'\nOnly the designated singer visibly lip-syncs during each '
+               'specified interval. All others react without lip-sync. '
+               'Unassigned gaps contain no new dialogue. The original '
+               '<Audio 1> source vocals remain unchanged. Shot boundaries '
+               'are freely chosen by the director and may cross voice changes.\n')
+    m=re.search(r'(?im)^detailed_description\s*:\s*',prompt)
+    if m:return prompt[:m.end()]+'\n'+authority+prompt[m.end():]
+    return prompt+'\n\ndetailed_description:\n'+authority
+
+
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
@@ -522,6 +566,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
     original_setup=segment.get('fixed_reference_settings','')
+    original_roles=_role_bindings(original_setup)
     event=_local_event(row['event'])
     fixed_setup=re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$',original_setup,maxsplit=1)[0].strip()
     # The actual Python current actor ledger overrides outdated opening clothes.
@@ -533,6 +578,11 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
           'ending':clip_ending(req,segment)}
+    # Preserve explicit identity bindings when a global story heading was discarded.
+    present_roles=_role_bindings(fixed_setup)
+    for role,picture in original_roles.items():
+        if present_roles.get(role)!=picture:
+            fixed_setup+=('\n' if fixed_setup else '')+role+' = '+picture
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
@@ -599,6 +649,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
+    local_singers=_srt_singers(req,segment,original_roles)
+    if local_singers:
+        text+='\nSRT-LOCKED LEAD VOCALS (these are NOT camera cuts):\n'+'\n'.join(local_singers)
+        text+='\nA camera shot may continue across singer handoffs and silent gaps. Never give one singer another singer\'s voice.'
     text+='\n\nClip timing and audio context:\n'+json.dumps(context,ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
@@ -613,6 +667,8 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             prompt=normalize_mv_prompt(_text(raw),len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
+            if req.get('director_schema')==6 and local_singers:
+                prompt=_insert_srt_authority(prompt,local_singers)
             return prompt
         except ValueError as error:
             if attempt>=rewrite_retry_count(req):
