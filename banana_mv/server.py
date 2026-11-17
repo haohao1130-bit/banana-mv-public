@@ -107,7 +107,7 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
         segment['director_mode'] = segment['director_plan']['mode']
         segment['prompt_profile'] = {'source':'whole_song_director', 'writer_calls':0, 'contract_check_calls':0}
         return whole_song.h3_prompt(req, segment, len(original) if isinstance(original, list) else 1, tail)
-    if req.get('director_schema')==5 and req.get('rewrite',True):
+    if req.get('director_schema') in (5,6) and req.get('rewrite',True):
         from banana_mv.shoot_plan import write_shoot_prompt
         originals=original if isinstance(original,list) else [original]
         return write_shoot_prompt(cfg,req,segment,originals,tail,backend.rewrite_local,progress)
