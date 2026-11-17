@@ -11,8 +11,13 @@ assert(html.indexOf('id="recipe-review"')<html.indexOf('id="event-plan-details"'
 assert(html.indexOf('id="event-plan-details"')<html.indexOf('id="alchemy-title"'),
   'full commission details belong above the live furnace on both layouts');
 assert(html.indexOf('id="alchemy-title"')<html.indexOf('id="stop"')
-    &&html.indexOf('id="stop"')<html.indexOf('id="progress-summary"'),
-  'safe stop-after-this-clip control must sit immediately beneath the furnace');
+    &&html.indexOf('id="stop"')<html.indexOf('id="stop-emergency"')
+    &&html.indexOf('id="stop-emergency"')<html.indexOf('id="progress-summary"'),
+  'both distinct stop controls must sit immediately beneath the furnace');
+assert(html.includes('#furnace-stop-controls .emergency-stop{background:#a82424;color:#fff'),
+  'the immediate interrupt button must be visibly red');
+assert.equal(html.split('id="stop-emergency"').length,2,
+  'exactly one emergency stop button should exist');
 assert(html.indexOf('id="progress-summary"')<html.indexOf('id="clip-review"'),
   'clip-by-clip take review remains below the furnace progress');
 assert(html.indexOf('id="rewritten-panel"')<html.indexOf('id="clip-review"'),
@@ -45,7 +50,7 @@ class Element{
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='5';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
-const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[],branches=[];let reviewJob;const approvals=[];let recipeOpened=false;
+const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[],branches=[],gracefulStops=[],emergencyStops=[];let reviewJob;const approvals=[];let recipeOpened=false;
 let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
 let serverInstance='mv-service-a',restartRequestInstance='mv-service-a',reloadCount=0;
 const storage=new Map(),restartRequests=[];
@@ -63,6 +68,8 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     if(url==='api/upload'){uploads.push(options.body.name);return {id:options.body.name};}
     if(url==='api/mv/start'){const body=JSON.parse(options.body);posts.push(body);return {id:body.plan_review?'recipe123':'abcd'};}
     if(url==='api/mv/open-furnace'){approvals.push(JSON.parse(options.body));recipeOpened=true;return {id:'recipe123',status:'running'};}
+    if(url==='api/mv/stop-after-current'){gracefulStops.push(JSON.parse(options.body));return {ok:true,interruption:'after_current_requested',message:'本段生成完成後停止'};}
+    if(url==='api/mv/stop'){emergencyStops.push(JSON.parse(options.body));return {ok:true,interruption:'interrupt_requested',message:'立即中斷已要求'};}
     if(url==='api/mv/status?id=recipe123')return {id:'recipe123',title:'丹方',seed:0,duration:30,status:recipeOpened?'running':'plan_ready',plan_revision:'recipe-v1',plan_preview_setup:'<Picture 1> is the singer.',request:{plan_review:true,director_schema:5,rewrite:true},segments:[{index:0,start:0,seconds:15,director_plan:{mode:'story',event:'<Picture 1> performs <b>plain text</b>'}},{index:1,start:15,seconds:15,director_plan:{mode:'action',event:'The hero wins only here.'}}]};
     
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
@@ -83,6 +90,26 @@ vm.runInContext(fs.readFileSync('banana_mv/web/clip_review.js','utf8'),context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
+  // Two separate controls must never be wired to one interrupt route.
+  vm.runInContext("active='running-stop-test';busy(true)",context);
+  assert.equal(els.stop.hidden,false);
+  assert.equal(els['stop-emergency'].hidden,false);
+  assert.equal(els.stop.disabled,false);
+  assert.equal(els['stop-emergency'].disabled,false);
+  await els.stop.onclick();
+  assert.deepEqual(gracefulStops,[{id:'running-stop-test'}]);
+  assert.equal(emergencyStops.length,0,'safe stop must not call emergency interrupt');
+  assert.equal(els.stop.disabled,true);
+  assert.equal(els['stop-emergency'].disabled,false,
+    'emergency must remain usable after a graceful stop request');
+  await els['stop-emergency'].onclick();
+  assert.deepEqual(emergencyStops,[{id:'running-stop-test'}]);
+  assert.equal(gracefulStops.length,1,'emergency must not request graceful stop');
+  assert.equal(els['stop-emergency'].disabled,true);
+  assert(els['stop-feedback'].textContent.includes('立即中斷'));
+  vm.runInContext("active=null;busy(false)",context);
+  assert.equal(els.stop.hidden,true);
+  assert.equal(els['stop-emergency'].hidden,true);
   // A missing V4 supervisor must never silently hide the restart control.
   await vm.runInContext('updateRestartControl()',context);
   assert.equal(els['restart-5070'].hidden,false);
