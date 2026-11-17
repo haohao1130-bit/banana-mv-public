@@ -4,12 +4,17 @@ This experiment branches from banana-mv-public:experiment/rtx5070-480p-local. It
 
 ## First gate: can Heretic read the model?
 
-BANANAMV currently talks to a 9B model through ComfyUI TextGenerate and may use a specialized W4A8 or ComfyUI-only file layout. Heretic 2.x loads **Hugging Face Transformers-compatible model directories**; a ComfyUI .safetensors file by itself is NOT proof of compatibility. Before touching CUDA, identify the exact 9B architecture and original weights:
+The checked RTX 5070 source branch selects `minimax_h3_rewriter_ref2va_qwen3.5_9b_w4a8.safetensors` in `banana_mv/services.py`. This is the ComfyUI W4A8 quantization of the original [LightX2V Qwen3.5-9B Ref2VA SFT model](https://huggingface.co/lightx2v/MiniMax-H3-Prompt-Rewriter-Qwen3.5-9B-Ref2VA). Heretic 2.x loads **Hugging Face Transformers-compatible model directories**; that one ComfyUI .safetensors file cannot be passed straight to Heretic. Before touching CUDA, identify the exact 9B architecture and original weights:
 
 - A usable local HF model directory usually has config.json, tokenizer assets, and safetensors weight shards.
-- If you only have a ComfyUI text-encoder W4A8 model, **stop here**. Do not rename files or force-load them.
+- If you only have a ComfyUI text-encoder W4A8 model, **stop here**. Do not rename files or force-load them. Heretic needs a compatible original HF directory. Test the local layout first:
+
+      python experiments/heretic_9b/preflight.py "D:\\models\\original-ref2va-9b"
+
+  A green preflight only verifies plausible file layout, **not** architecture support or actual successful Heretic model loading.
 - A 12 GB RTX 5070 may still run out of memory. bnb_4bit and CPU offload reduce memory needs, but don't guarantee success.
 - Do not install Heretic into the existing Banana9B-cu130 or ComfyUI environment. Use a separate venv and model-output directory. Do not upload model weights, song files, or private data to any service.
+- A successfully saved Heretic model in HF format is **NOT automatically a drop-in replacement** for the W4A8 ComfyUI CLIPLoader checkpoint. An independent conversion/requantization/inference validation step would be required. No such adapter is included in this experiment.
 
 ## Phase A: measure the current director first
 
@@ -55,3 +60,7 @@ The evaluation script reports text-based proxy metrics; it does not claim to val
 There is nothing to roll back at runtime: production is not wired to this branch. Switch back to experiment/rtx5070-480p-local and use the current 9B model exactly as before. Do not merge this experimental branch automatically.
 
 Upstream: Heretic 2.x configs are not compatible with 1.x configs; check their current docs before running. This scaffold is prepared from the public 2.x config structure but has NOT been GPU-tested on the RTX 5070.
+
+## Validated so far (CPU only)
+
+GitHub Actions [Heretic 9B experiment smoke](https://github.com/haohao1130-bit/banana-mv-public/actions/runs/44139076455) passed on the experiment branch (six unit tests; TOML parsing; three synthetic A/B examples). The existing project release workflow is not changed. The sandbox does not have a CUDA GPU or Heretic installed, so neither the actual 9B weights nor a Heretic tuning run has been executed here.
