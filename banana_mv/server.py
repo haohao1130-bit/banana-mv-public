@@ -44,6 +44,8 @@ RUNS.mkdir(parents=True, exist_ok=True)
 GPU_LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 CANCEL = set()
+# Deliberately separate: do not interrupt H3; finish and save the current clip.
+STOP_AFTER_CURRENT = set()
 RESTART_LOCK = threading.Lock()
 SERVER_INSTANCE = uuid.uuid4().hex
 RESTART_REQUEST = backend.DATA / 'restart-request.json'
@@ -395,6 +397,24 @@ def wait_generation(cfg, prompt_id, job):
     raise RuntimeError('單段生成等待超過兩小時；請檢查 ComfyUI 紀錄。')
 
 
+def stop_after_current_job(job_id):
+    """Request a safe pause AFTER the in-flight clip is fully committed.
+
+    The H3 prompt keeps running. Only the worker observes this flag between
+    clips; completed video, tail-frame continuity and source files stay intact.
+    Emergency stop remains an entirely separate endpoint.
+    """
+    job = read_state(job_id)
+    if job.get('status') not in ('running', 'retaking', 'planning_story',
+                                 'planning_state', 'analyzing_audio',
+                                 'translating_review'):
+        return {'ok': True, 'interruption': 'not_running',
+                'message': '目前沒有可在本段完成後停止的拍攝任務。'}
+    STOP_AFTER_CURRENT.add(job_id)
+    return {'ok': True, 'interruption': 'after_current_requested',
+            'message': '已設定：目前這段完整生成並保存後停止；不會立即中斷 H3。'}
+
+
 def stop_job(job_id):
     """Stop the current GPU task, not just the next clip.
 
@@ -406,6 +426,7 @@ def stop_job(job_id):
     job=read_state(job_id)
     if job.get('status') in ('done','cancelled','error','interrupted','plan_ready'):
         return {'ok':True,'message':'目前沒有正在煉製的段落。','interruption':'not_running'}
+    STOP_AFTER_CURRENT.discard(job_id)
     CANCEL.add(job_id)
     pid=None
     if job.get('status')=='retaking':
@@ -735,6 +756,13 @@ def worker(job, cfg, original, song, drive):
                     tail = work/f'{i:02d}_last.png'
                     last_frame(guide,tail)
             write_state(job)
+            # Safe pause: commit the video and last frame FIRST, stop only
+            # between clips. The next action must not be scheduled.
+            if job['id'] in STOP_AFTER_CURRENT:
+                job['status']='interrupted'
+                job['stop_reason']='after_current'
+                write_state(job)
+                return
             (inp/name).unlink(missing_ok=True)
             if first:
                 (inp/first).unlink(missing_ok=True)
@@ -794,6 +822,7 @@ def worker(job, cfg, original, song, drive):
         job['status']='error'; job['error']=f'{type(e).__name__}: {e}'; write_state(job)
     finally:
         CANCEL.discard(job['id'])
+        STOP_AFTER_CURRENT.discard(job['id'])
         GPU_LOCK.release()
 
 
@@ -967,7 +996,9 @@ def open_furnace(job_id,revision):
                   seg['model_frames'],'',job['seed'],**graph_options(job['request'],seg['seconds'])))
         preflight_five_frame(cfg, job['request'], job['images_comfy'], job['size'], seg, job['seed'])
         job.update(status='running',plan_approved=revision,resumed=time.time())
-        CANCEL.discard(job_id);write_state(job)
+        CANCEL.discard(job_id)
+        STOP_AFTER_CURRENT.discard(job_id)
+        write_state(job)
         try:
             threading.Thread(target=worker,args=(job,cfg,original,song,drive),daemon=True).start()
             handed_off=True
@@ -1191,6 +1222,8 @@ def resume(job_id,rewrite_retries=None):
                                  job['segments'][0], job['seed'])
         job.update(status='running',resuming=True,resumed=time.time())
         job.pop('error',None);job.pop('video',None);CANCEL.discard(job_id)
+        STOP_AFTER_CURRENT.discard(job_id)
+        job.pop('stop_reason',None)
         write_state(job)
         threading.Thread(target=worker,args=(job,cfg,originals,song,drive),daemon=True).start()
         return job
@@ -1307,6 +1340,8 @@ class Handler(WebHandler):
                 from banana_mv.takes import select_take
                 body=self.body_json()
                 return self.send_json(select_take(body['id'],body.get('index'),body.get('take')))
+            if path=='/api/mv/stop-after-current':
+                return self.send_json(stop_after_current_job(self.body_json()['id']))
             if path=='/api/mv/stop':
                 return self.send_json(stop_job(self.body_json()['id']))
             return self.send_error(404)
