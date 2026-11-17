@@ -96,6 +96,27 @@ class LockedShootTests(unittest.TestCase):
         self.assertNotIn('<Subject 2> sings',corrected[1])
         self.assertEqual(_errors(corrected,{}),{})
 
+    def test_reverse_binds_keep_bai_suzhen_rap_and_silence_monk(self):
+        # White snake sings S2 from 00:51.300; the monk's S1 turn is over.
+        fixed = '<Picture 1>＝蕉大師，S1，男性角色\n<Picture 2>＝白素貞，S2，女性角色\n'
+        slots=plan_slots(10,[cue(0,1.3,'S1'),cue(1.3,10,'S2')],{},False)
+        self.assertAlmostEqual(slots[1]['start'],1.3)
+        bad='<Subject 1> raps with the camera circling; he speaks as the rain falls.'
+        revised,audit=_repair_vocals({2:bad},slots[1:],fixed)
+        self.assertEqual(len(audit),2,audit)
+        self.assertNotIn(' raps ',revised[2])
+        self.assertNotIn(' speaks ',revised[2])
+        self.assertIn('camera circling',revised[2])
+        self.assertIn('rain falls',revised[2])
+        by_pronoun='He is rapping beside <Subject 2> who looks forward.'
+        revised,audit=_repair_vocals({2:by_pronoun},slots[1:],fixed)
+        self.assertEqual(len(audit),1,audit)
+        self.assertIn('He is moving to the beat',revised[2])
+        okay='<Subject 2> raps to the original track while <Subject 1> plays the wooden fish.'
+        revised,audit=_repair_vocals({2:okay},slots[1:],fixed)
+        self.assertEqual(revised[2],okay)
+        self.assertEqual(audit,[])
+
     def test_silent_reaction_watcher_and_negation_do_not_false_trigger(self):
         slots=plan_slots(10,[cue(0,10,'S1')],{},False)
         fixed='S1 = <Picture 1>, male singer\nS2 = <Picture 2>, female singer'
