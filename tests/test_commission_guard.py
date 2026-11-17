@@ -50,6 +50,32 @@ class CommissionGuardTests(unittest.TestCase):
                          {'S1':'<Picture 2>','S2':'<Picture 3>'})
         self.assertEqual(role_pictures('<Picture 1>＝和尚\n<Picture 2>＝白蛇\n'),{})
 
+    def test_long_form_subject_to_picture_and_srt_links(self):
+        director = (
+            '02｜SUBJECT DEFINITIONS\n'
+            'Subject 1｜蕉大師\n'
+            'Use @圖片1 as the exclusive visual identity reference.\n'
+            'A middle-aged bald monk.\n'
+            'Subject 2｜白素貞\n'
+            'Use @圖片2 as the exclusive visual identity reference.\n'
+            'An adult white snake woman.\n'
+            'Subject 3｜大乘蕉宗神社\n'
+            'The stormy main environment, not an actor.\n'
+            '04｜AUDIO AND SRT LOCK\n'
+            '[S1] = Subject 1 蕉大師\n'
+            '[S2] = Subject 2 白素貞\n'
+        )
+        expected={'S1':'<Picture 1>','S2':'<Picture 2>'}
+        self.assertEqual(role_pictures(director),expected)
+        from banana_mv.core import map_image_mentions
+        self.assertEqual(role_pictures(map_image_mentions(director,2)),expected)
+        self.assertEqual(role_pictures(director.replace('[S2] = Subject 2 白素貞','')), 
+                         {'S1':'<Picture 1>'})
+        self.assertEqual(role_pictures(director.replace('Use @圖片2 as the exclusive visual identity reference.','')),
+                         {'S1':'<Picture 1>'})
+        # Never infer a singer just because Subject 3 has a scene description.
+        self.assertNotIn('S3',role_pictures(director))
+
     def test_spoken_and_rap_vocals_cannot_be_stolen_from_srt_owner(self):
         setup = '<Picture 1>＝蕉大師，S1\n<Picture 2>＝白素貞，S2\n'
         defs = ('subject_definitions:\n'
