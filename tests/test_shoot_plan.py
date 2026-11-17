@@ -193,14 +193,14 @@ class ShootPlanTests(unittest.TestCase):
     def test_unheaded_english_story_spine_never_enters_9b_static_settings(self):
         from banana_mv.shoot_plan import _filming_reference_settings
         fixed = (
-            'S1 = <Picture 1>, monk lead\\n'
-            'S2 = <Picture 2>, white snake lead\\n'
-            'CURRENT WARDROBE: white gown and monk robe\\n'
-            'FIXED SETTING: temple courtyard in the rain\\n'
-            'Story spine: temple argument, then FUTURE_ENDING_STAGE\\n'
-            'Finale: FINAL_VICTORY_SECRET, ending embrace\\n'
-            'The final scene shows the two protagonists on a concert stage.\\n'
-        ).replace('\\\\n','\\n')
+            'S1 = <Picture 1>, monk lead\n'
+            'S2 = <Picture 2>, white snake lead\n'
+            'CURRENT WARDROBE: white gown and monk robe\n'
+            'FIXED SETTING: temple courtyard in the rain\n'
+            'Story spine: temple argument, then FUTURE_ENDING_STAGE\n'
+            'Finale: FINAL_VICTORY_SECRET, ending embrace\n'
+            'The final scene shows the two protagonists on a concert stage.\n'
+        )
         outgoing = _filming_reference_settings(fixed)
         for required in ('S1 = <Picture 1>', 'S2 = <Picture 2>',
                          'CURRENT WARDROBE', 'FIXED SETTING'):
