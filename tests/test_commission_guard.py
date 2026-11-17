@@ -38,6 +38,42 @@ class CommissionGuardTests(unittest.TestCase):
                               '[Shot 2] At 00:04.000, <Subject 1> watches her sing without speaking.\n')
         self.assertEqual(check_commission(prompt,cues,role_pictures(self.SETUP),10.0,{},True),[])
 
+
+    def test_reverse_picture_singer_bindings_match_real_one_click_brief(self):
+        fixed = ('<Picture 1>＝蕉大師，S1，男性角色\n'
+                 '<Picture 2>＝白素貞，S2，女性角色\n')
+        expected = {'S1':'<Picture 1>','S2':'<Picture 2>'}
+        self.assertEqual(role_pictures(fixed),expected)
+        self.assertEqual(role_pictures(
+            '@圖片1＝蕉大師，S1\n@圖片2＝白素貞，S2\n'),expected)
+        self.assertEqual(role_pictures('S1 = <Picture 2>\nS2 = <Picture 3>\n'),
+                         {'S1':'<Picture 2>','S2':'<Picture 3>'})
+        self.assertEqual(role_pictures('<Picture 1>＝和尚\n<Picture 2>＝白蛇\n'),{})
+
+    def test_spoken_and_rap_vocals_cannot_be_stolen_from_srt_owner(self):
+        setup = '<Picture 1>＝蕉大師，S1\n<Picture 2>＝白素貞，S2\n'
+        defs = ('subject_definitions:\n'
+                '<Subject 1> is 蕉大師 (S1) from <Picture 1>, an adult male monk.\n'
+                '<Subject 2> is 白素貞 (S2) from <Picture 2>, an adult female singer.\n'
+                'summary:\nThe stormy plaza.\n'
+                'retention_analysis:\nThe cast stays fixed.\n'
+                'detailed_description:\n')
+        cues=[{'clip_start':0.0,'clip_end':10.0,'subjects':['S2']}]
+        wrong = defs + (
+            '[Shot 1] At 00:00.000, <Subject 1> (S1) raps forcefully while <Subject 2> reacts.\n'
+            '[Shot 2] At 00:04.000, <Subject 1> (S1) begins rapping over the original audio.\n'
+            '[Shot 3] At 00:07.000, <Subject 1> (S1) speaks in a low voice.\n'
+            '[Shot 4] At 00:09.000, <Subject 1> (S1) performs spoken delivery.\n'
+        )
+        errors=check_commission(wrong,cues,role_pictures(setup),10.0,{},True)
+        self.assertTrue(any('[Shot 1]' in x for x in errors),errors)
+        self.assertTrue(any('[Shot 2]' in x for x in errors),errors)
+        self.assertTrue(any('[Shot 3]' in x for x in errors),errors)
+        self.assertTrue(any('[Shot 4]' in x for x in errors),errors)
+        okay = defs + ('[Shot 1] At 00:00.000, <Subject 1> watches '
+                       '<Subject 2> (S2) rapping; he plays the wooden fish silently.\n')
+        self.assertEqual(check_commission(okay,cues,role_pictures(setup),10.0,{},True),[])
+
     def test_beach_clothing_only_when_current(self):
         fixed = ('S1 = <Picture 2>\nS2 = <Picture 3>\n'
                  '海邊換成 S1 的輕便短袖與短褲、S2 的純白細繩綁帶比基尼。')
