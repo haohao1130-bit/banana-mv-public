@@ -457,6 +457,9 @@ _STORY_FILMING_HEADINGS = frozenset((
     '劇情連續性', '服裝連續性', '演唱與劇情安排',
     '導演自由發揮', '導演執行重點', '執行重點',
     '特殊要求', '全曲執行原則', '全曲固定原則',
+    'Story', 'Story spine', 'Storyline', 'Story synopsis',
+    'Plot', 'Plot arc', 'Whole song story', 'Full story',
+    'Ending', 'Finale', 'Resolution', 'Future events',
 ))
 _FUTURE_FILMING = re.compile(
     r'前半段|後半段|中段|後段|末段|後面|最後|最終|結局|謝幕|尾聲|'
@@ -465,7 +468,10 @@ _FUTURE_FILMING = re.compile(
     r'→|->|⇒|'
     r'從.{0,90}(?:出發|開始).{0,100}(?:到|再|回)|'
     r'先.{0,75}(?:再|然後|接著)|'
-    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)',
+    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)|'
+    r'\b(?:eventually|finally|ultimately|later|afterwards|final scene|'
+    r'final shot|future concert|in the end|end of the (?:film|mv|story)|'
+    r'the ending|the finale|whole[- ]song plot|story spine|plot arc)\b',
     re.I,
 )
 _NATIVE_SECTION = re.compile(r'^(0[1-9]|10)\s*[｜|]\s*([A-Z][A-Z\s\'-]+)$', re.I)
@@ -497,6 +503,17 @@ def _filming_reference_settings(fixed_setup):
         title = line.rstrip('：:').strip()
         if title.startswith('【') and title.endswith('】'):
             title = title[1:-1].strip()
+        # English director notes often use inline headings rather than ACT blocks.
+        # An inline "Story spine: ... / Finale: ..." is a global plot, never
+        # a reusable static actor fact for a per-clip 9B cinematographer.
+        if re.match(
+            r'(?i)^(?:story(?:\s+spine|\s+synopsis|\s+arc|\s+outline)?|'
+            r'storyline|plot(?:\s+arc|\s+outline)?|whole[- ]song\s+story|'
+            r'full\s+story|ending|finale|resolution|future\s+events)\s*[:：]',
+            line,
+        ):
+            section = 'story'
+            continue
         # Long-form English director packages embed the full future screenplay
         # before and after the ACTs. Only static project/cast facts go to 9B.
         native = _NATIVE_SECTION.match(title)
