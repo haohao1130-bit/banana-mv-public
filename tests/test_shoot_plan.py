@@ -190,6 +190,25 @@ class ShootPlanTests(unittest.TestCase):
             self.assertEqual(writer.call_count, 1)
 
 
+    def test_unheaded_english_story_spine_never_enters_9b_static_settings(self):
+        from banana_mv.shoot_plan import _filming_reference_settings
+        fixed = (
+            'S1 = <Picture 1>, monk lead\\n'
+            'S2 = <Picture 2>, white snake lead\\n'
+            'CURRENT WARDROBE: white gown and monk robe\\n'
+            'FIXED SETTING: temple courtyard in the rain\\n'
+            'Story spine: temple argument, then FUTURE_ENDING_STAGE\\n'
+            'Finale: FINAL_VICTORY_SECRET, ending embrace\\n'
+            'The final scene shows the two protagonists on a concert stage.\\n'
+        ).replace('\\\\n','\\n')
+        outgoing = _filming_reference_settings(fixed)
+        for required in ('S1 = <Picture 1>', 'S2 = <Picture 2>',
+                         'CURRENT WARDROBE', 'FIXED SETTING'):
+            self.assertIn(required, outgoing)
+        for secret in ('FUTURE_ENDING_STAGE', 'FINAL_VICTORY_SECRET',
+                       'final scene', 'concert stage'):
+            self.assertNotIn(secret, outgoing)
+
     def test_global_route_is_filtered_but_srt_cast_survives(self):
         from banana_mv.python_slots import split_source
         from banana_mv.core import map_image_mentions
