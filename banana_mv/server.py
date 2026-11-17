@@ -415,6 +415,16 @@ def stop_after_current_job(job_id):
             'message': '已設定：目前這段完整生成並保存後停止；不會立即中斷 H3。'}
 
 
+def pause_after_committed_clip(job):
+    """Only called after this clip's video and continuation frame are saved."""
+    if job['id'] not in STOP_AFTER_CURRENT:
+        return False
+    job['status']='interrupted'
+    job['stop_reason']='after_current'
+    write_state(job)
+    return True
+
+
 def stop_job(job_id):
     """Stop the current GPU task, not just the next clip.
 
@@ -756,18 +766,15 @@ def worker(job, cfg, original, song, drive):
                     tail = work/f'{i:02d}_last.png'
                     last_frame(guide,tail)
             write_state(job)
-            # Safe pause: commit the video and last frame FIRST, stop only
-            # between clips. The next action must not be scheduled.
-            if job['id'] in STOP_AFTER_CURRENT:
-                job['status']='interrupted'
-                job['stop_reason']='after_current'
-                write_state(job)
-                return
             (inp/name).unlink(missing_ok=True)
             if first:
                 (inp/first).unlink(missing_ok=True)
             for filename in guide_files[1:]:
                 (inp/filename).unlink(missing_ok=True)
+            # Complete the current video, finalize its tail frame and clean
+            # temporary inputs BEFORE honoring the graceful pause.
+            if pause_after_committed_clip(job):
+                return
         if job['id'] in CANCEL:
             job['status']='cancelled'; write_state(job); return
         job['status']='assembling'; write_state(job)
