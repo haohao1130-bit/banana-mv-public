@@ -468,6 +468,15 @@ _FUTURE_FILMING = re.compile(
     r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)',
     re.I,
 )
+_NATIVE_SECTION = re.compile(r'^(0[1-9]|10)\s*[｜|]\s*([A-Z][A-Z\s\'-]+)$', re.I)
+_NATIVE_STATIC_PROJECT = re.compile(
+    r'^(?:Project|Format|Duration|Aspect Ratio|Visual Style|Resolution|Editing Style|Genre)\s*:',
+    re.I,
+)
+_NATIVE_FUTURE = re.compile(
+    r'\b(?:eventually|finally|ultimately|gradually|later|after the performance|'
+    r'second half|ending|finale|becomes a concert)\b', re.I,
+)
 _STATIC_FILMING_FACT = re.compile(
     r'^(?:S[12]\s*[=:：]|<Picture \d+>|@圖片\d+|'
     r'角色|人物|男主|女主|歌手|主唱|演唱者|外貌|五官|髮型|'
@@ -488,6 +497,26 @@ def _filming_reference_settings(fixed_setup):
         title = line.rstrip('：:').strip()
         if title.startswith('【') and title.endswith('】'):
             title = title[1:-1].strip()
+        # Long-form English director packages embed the full future screenplay
+        # before and after the ACTs. Only static project/cast facts go to 9B.
+        native = _NATIVE_SECTION.match(title)
+        if native:
+            section = ('native_project' if native[1] == '01' else
+                       'native_cast' if native[1] == '02' else 'story')
+            continue
+        if section == 'native_project':
+            if _NATIVE_STATIC_PROJECT.match(line):
+                result.append(raw)
+            continue
+        if section == 'native_cast':
+            if _NATIVE_FUTURE.search(line):
+                continue
+            # The shrine is an environment, not a third singer or actor.
+            if re.match(r'(?i)^Subject\s+3\s*[｜|:：]',line):
+                result.append(re.sub(r'(?i)^Subject\s+3\s*[｜|:：]', 'Environment: ', raw))
+            else:
+                result.append(raw)
+            continue
         # Author's concluding story explanation is useful for Python's plan,
         # never a current-shot instruction for the isolated 9B cameraman.
         if re.match(r'^[一二三四五六七八九十]+[、.．]\s*(?:最終導演意圖|結語)', title):
@@ -528,12 +557,19 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
         return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
     fixed_setup=segment.get('fixed_reference_settings','')
+    # Read explicit singer mappings BEFORE stripping global SRT and future-story
+    # sections; then forward only canonical, static role/image identities.
+    source_singers=role_pictures(fixed_setup)
     event = _local_event(row['event'])
     vocals = vocal_timeline(excerpt(req, segment))
     context = {'authored_vocal_timeline': vocals, 'ending': clip_ending(req, segment)}
     fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
     fixed_setup = _filming_reference_settings(fixed_setup)
+    present=role_pictures(fixed_setup)
+    for role,picture in source_singers.items():
+        if present.get(role)!=picture:
+            fixed_setup += ('\n' if fixed_setup else '') + role + ' = ' + picture
     if fixed_setup:
         context['fixed_reference_settings'] = connected(fixed_setup)
     pictures = role_pictures(context.get('fixed_reference_settings', ''))
