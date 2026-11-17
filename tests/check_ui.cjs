@@ -202,7 +202,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext(`active='review123';renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(els['clip-review'].hidden,false);assert.equal(els['clip-chain-note'].hidden,false);
   const rows=vm.runInContext('[...clipView.rows.values()]',context);
-  assert.equal(rows.length,4);assert.equal(rows[0].video.muted,true);assert.equal(rows[0].video.preload,'none');
+  assert.equal(rows.length,4);assert.equal(rows[0].video.muted,false);assert.equal(rows[0].video.preload,'none');
   rows[1].check.checked=true;rows[2].check.checked=true;rows[1].check.onchange();
   assert(els['clips-retake'].textContent.includes('2 顆'));assert.equal(els['clips-retake'].disabled,false);
   vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,status:'running'})})`,context);
