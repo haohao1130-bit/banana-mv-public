@@ -117,8 +117,13 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
                        '合成正式新版全片','確認凝丹']){
     assert(aiGuide.includes(phrase),'AI player guide is missing '+phrase);
   }
-  assert(aiGuide.includes('不要提供 GitHub、API、程式碼'));
-  assert(aiGuide.includes('不能直接操作我的網頁'));
+  assert(aiGuide.includes('不提供 GitHub、API、程式碼'));
+  assert(aiGuide.includes('不能直接操作使用者的網頁'));
+  assert(aiGuide.includes('AI 新手創作與操作指南'));
+  assert(aiGuide.includes('本機前端現在預設：末幀接續、每段 10 秒、720P'));
+  assert(/<select id="segment"><option value="5"[^>]*>[^<]*<\/option><option value="10" selected>/.test(html),'5070 default clip length must be 10 seconds');
+  assert(/<select id="resolution"><option value="480p"[^>]*>[^<]*<\/option><option value="720p" selected>/.test(html),'5070 default render must be 720P');
+  assert(html.includes('<input id="width" type="number" value="1280" readonly'),'16:9 initial width must match 720P');
   assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
   assert.equal(els['ai-guide-fallback-box'].hidden,true);
   const originalClipboard=context.navigator.clipboard;
