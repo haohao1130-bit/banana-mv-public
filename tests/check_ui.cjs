@@ -6,10 +6,21 @@ assert(html.indexOf('id="final-previews"')<html.indexOf('id="clip-review"'),
 assert(html.indexOf('id="upscale-again"')<html.indexOf('id="upscale-preview"'),
   'upgrade action must be near the master, not at the end of the 1080P result panel');
 assert.equal(html.split('id="upscale-again"').length,2,'exactly one working upgrade button');
-assert(html.indexOf('id="event-plan-details"')<html.indexOf('id="progress-summary"'),
-  'event plan belongs above the long progress report');
+assert(html.indexOf('id="recipe-review"')<html.indexOf('id="event-plan-details"'),
+  'recipe confirmation and full cast review must sit above the event plan');
+assert(html.indexOf('id="event-plan-details"')<html.indexOf('id="alchemy-title"'),
+  'full commission details belong above the live furnace on both layouts');
+assert(html.indexOf('id="alchemy-title"')<html.indexOf('id="stop"')
+    &&html.indexOf('id="stop"')<html.indexOf('id="progress-summary"'),
+  'safe stop-after-this-clip control must sit immediately beneath the furnace');
 assert(html.indexOf('id="progress-summary"')<html.indexOf('id="clip-review"'),
-  'clip-by-clip take review remains below the event plan and progress');
+  'clip-by-clip take review remains below the furnace progress');
+assert(html.indexOf('id="rewritten-panel"')<html.indexOf('id="clip-review"'),
+  'finished clips and H3 prompts belong above the final per-clip take review');
+assert(!html.includes("insertAdjacentElement('afterend',recipe)"),
+  'mobile viewport must not move approval below furnace progress');
+assert(html.includes('#recipe-text{max-height:min(52vh,520px);overflow-y:auto'),
+  'long 29-clip recipe scrolls internally without burying controls');
 assert(html.includes('#event-plan-text{max-height:340px;overflow-y:auto'),
   'a 24-clip event list should scroll inside its own panel');
 assert(html.includes('#status{max-height:340px;overflow-y:auto'),
@@ -467,7 +478,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['mobile-furnace-start'].textContent,'丹方無誤，開爐','ready plan must replace direct generate');
   assert(html.includes('main>.card:nth-child(2){order:-1}'),'mobile saved projects must render before new MV setup');
   mobileViewport.matches=true;vm.runInContext('arrangeRecipe()',context);
-  assert.equal(els['recipe-review'].insertPosition,'afterend','mobile approval must sit immediately below progress');
+  assert.equal(els['recipe-review'].insertPosition,undefined,'mobile recipe stays before the furnace without DOM reparenting');
   assert.equal(els['recipe-plan-details'].open,false,'full recipe should default closed on phone');
   vm.runInContext("renderEventPlan({id:'mobile-new-plan',segments:[{index:0,director_plan:{mode:'story',event:'A'}}]})",context);
   assert.equal(els['event-plan-details'].open,false,'event details should default closed on phone');
@@ -490,7 +501,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(posts.length,beforeApproval.posts,'progress link must NOT create a new MV');
   await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
   mobileViewport.matches=false;vm.runInContext('arrangeRecipe()',context);
-  assert.equal(els['recipe-review'].insertPosition,'beforebegin','desktop recipe remains in original panel');
+  assert.equal(els['recipe-review'].insertPosition,undefined,'desktop and mobile share the same review order');
   vm.runInContext('busy(false)',context);
   // The same browser/server instance may restore its selected project on F5.
   await vm.runInContext('restoreActiveProjectOnSameServer()',context);
