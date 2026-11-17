@@ -642,6 +642,71 @@ class PythonSlotsTests(unittest.TestCase):
         _,inline=split_source('第一幕｜副歌\n「我要打十個！」\n')
         self.assertEqual(inline[0]['actions'],['「我要打十個！」'])
 
+
+    def test_plain_act_clock_uses_srt_not_legacy_action_order(self):
+        # Regression: the real Bai Suzhen brief uses ACT timecodes without
+        # Markdown and <Picture 1>＝蕉大師，S1 (not S1 = <Picture 1>).
+        from banana_mv.commission_guard import role_pictures
+        from banana_mv.shoot_plan import _filming_reference_settings
+        brief = (
+            'BANANAMV｜白蛇千年復仇戰\n'
+            '一、角色與圖片身份\n'
+            '@圖片1＝蕉大師，S1，男性角色\n'
+            '@圖片2＝白素貞，S2，女性角色\n'
+            '二、世界觀、場景與整體故事\n'
+            '古寺與雷峰塔。\n'
+            '四、完整時間軸與電影分鏡\n'
+            'ACT 01｜00:00–00:51.300\n'
+            '00:00–00:10.000｜S2 出場\n'
+            '白素貞接近雷峰塔。\n'
+            '00:41.888–00:51.300｜S1 高速 Machine-Gun Rap\n'
+            '「慢著慢著先別鬧！法海跟我不同號！別拿雷電亂開炮！」\n'
+            '蕉大師敲木魚，金色音波推開洪水。\n'
+            'ACT 02｜00:51.300–01:09.988\n'
+            '00:51.300–01:00.688｜S2 高速 Rap\n'
+            '「一紙封印一座塔！一場風雨一場殺！千年舊恨誰來答！」\n'
+            '白素貞站在水霧中央，揮動雙手。\n'
+            '01:00.688–01:09.988｜S2 高速 Rap 持續\n'
+            '「斷橋斷夢斷前緣！千年千劫千重念！」\n'
+            '白素貞將水霧凝成巨大的雷峰塔幻影。\n'
+            '五、全片連續性與演出規則\n'
+            '1. 不可提早進入最終演唱會舞台。\n'
+            '六、最終導演意圖\n'
+            '雙人最後化敵為友，不能提前拍攝結局。\n'
+        )
+        cues = [
+            {'start':41.888,'end':51.3,'text':'[S1] 別拿雷電亂開炮！'},
+            {'start':51.3,'end':60.688,'text':'[S2] 一紙封印一座塔！'},
+            {'start':60.688,'end':69.988,'text':'[S2] 斷橋斷夢斷前緣！'},
+        ]
+        settings = request()
+        settings.update(prompt=brief, srt_cues=cues, direct_script=False)
+        slots = [{'index':i,'start':i*10.0,'seconds':10.0,
+                  'song_seconds':70.0,'segment_count':7} for i in range(7)]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            plan = ensure_python_slot_plan(settings, slots,
+                                           [root/'monk.png',root/'snake.png'],root)
+        self.assertEqual(plan['source_timing'],'explicit_markdown')
+        self.assertEqual(role_pictures(
+            _filming_reference_settings(plan['shared_setup'])),
+            {'S1':'<Picture 1>','S2':'<Picture 2>'})
+        before = plan['segments'][4]['event']
+        crossing = plan['segments'][5]['event']
+        after = plan['segments'][6]['event']
+        self.assertIn('S1 高速 Machine-Gun Rap',before)
+        self.assertIn('ACT 02',crossing)
+        self.assertIn('S2 高速 Rap',crossing)
+        self.assertIn('S2 高速 Rap 持續',after)
+        # No unscoped future lyric, extra dialogue or post-story finale in any
+        # 10-second filming commission. The song already holds the SRT words.
+        for event in (before,crossing,after):
+            self.assertNotIn('一紙封印一座塔',event)
+            self.assertNotIn('慢著慢著先別鬧',event)
+            self.assertNotIn('雙人最後化敵為友',event)
+            self.assertNotIn('全片連續性與演出規則',event)
+        self.assertNotIn('S1 高速 Machine-Gun Rap',after)
+
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
         nb=json.loads((root/'BANANAMV_CLASSIC_PYTHON_SLOT_EXPERIMENT.ipynb').read_text(encoding='utf-8'))
