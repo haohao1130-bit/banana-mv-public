@@ -9,7 +9,49 @@ class PreciseStopTests(unittest.TestCase):
     def tearDown(self):
         app.CANCEL.discard('stop_test')
         app.CANCEL.discard('resume_test')
+        app.STOP_AFTER_CURRENT.discard('stop_test')
+        app.STOP_AFTER_CURRENT.discard('resume_test')
         services._REWRITE_PROMPT_ID=None
+
+    def test_graceful_stop_never_interrupts_comfy_and_records_after_current(self):
+        job={'id':'stop_test','status':'running',
+             'segments':[{'index':0,'status':'generating','prompt_id':'active-h3'},
+                         {'index':1,'status':'waiting'}]}
+        with patch.object(app,'read_state',return_value=job), \
+             patch.object(comfy,'cancel_prompt',side_effect=AssertionError('graceful must not interrupt')), \
+             patch.object(app.backend,'active_rewrite_prompt_id',side_effect=AssertionError('no rewrite cancel')):
+            response=app.stop_after_current_job('stop_test')
+        self.assertEqual(response['interruption'],'after_current_requested')
+        self.assertIn('stop_test',app.STOP_AFTER_CURRENT)
+        self.assertNotIn('stop_test',app.CANCEL)
+        self.assertEqual(job['segments'][0]['status'],'generating')
+        with patch.object(app,'write_state') as write:
+            self.assertTrue(app.pause_after_committed_clip(job))
+        write.assert_called_once_with(job)
+        self.assertEqual(job['status'],'interrupted')
+        self.assertEqual(job['stop_reason'],'after_current')
+        self.assertEqual(job['segments'][1]['status'],'waiting')
+        self.assertFalse(app.GPU_LOCK.locked())
+
+    def test_emergency_overrides_graceful_wait_and_targets_active_h3(self):
+        app.STOP_AFTER_CURRENT.add('stop_test')
+        job={'id':'stop_test','status':'running',
+             'segments':[{'index':0,'status':'generating','prompt_id':'h3-current'}]}
+        with patch.object(app,'read_state',return_value=job), \
+             patch.object(app.backend,'load_config',return_value={}), \
+             patch.object(comfy,'cancel_prompt',return_value='interrupt_requested') as cancel:
+            response=app.stop_job('stop_test')
+        cancel.assert_called_once_with({},'h3-current')
+        self.assertEqual(response['interruption'],'interrupt_requested')
+        self.assertNotIn('stop_test',app.STOP_AFTER_CURRENT)
+        self.assertIn('stop_test',app.CANCEL)
+
+    def test_graceful_stop_is_not_available_for_finished_or_unapproved_recipe(self):
+        for status in ('done','plan_ready','cancelled','interrupted','assembling'):
+            with patch.object(app,'read_state',return_value={'id':'stop_test','status':status}):
+                response=app.stop_after_current_job('stop_test')
+            self.assertEqual(response['interruption'],'not_running')
+            self.assertNotIn('stop_test',app.STOP_AFTER_CURRENT)
 
     def test_comfy_interrupts_only_the_matching_active_prompt(self):
         calls=[]
