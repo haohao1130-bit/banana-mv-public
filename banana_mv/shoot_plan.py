@@ -422,6 +422,8 @@ _STORY_FILMING_HEADINGS = frozenset((
     '劇情連續性', '服裝連續性', '演唱與劇情安排',
     '導演自由發揮', '導演執行重點', '執行重點',
     '特殊要求', '全曲執行原則', '全曲固定原則',
+    'Story', 'Story spine', 'Plot', 'Plot arc', 'Storyline', 'Synopsis',
+    'Ending', 'Finale', 'Resolution',
 ))
 _FUTURE_FILMING = re.compile(
     r'前半段|後半段|中段|後段|末段|後面|最後|最終|結局|謝幕|尾聲|'
@@ -430,7 +432,10 @@ _FUTURE_FILMING = re.compile(
     r'→|->|⇒|'
     r'從.{0,90}(?:出發|開始).{0,100}(?:到|再|回)|'
     r'先.{0,75}(?:再|然後|接著)|'
-    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)',
+    r'(?:接著|然後|隨後|之後).{0,75}(?:抵達|換上|脫下|去|回)|'
+    r'\b(?:story spine|storyline|whole story|full story|plot arc|'
+    r'ending|finale|finally|ultimately|eventually|later|afterwards|'
+    r'then|final scene|final shot|future concert|wins the fight)\b',
     re.I,
 )
 _NATIVE_SECTION = re.compile(r'^(0[1-9]|10)\s*[｜|]\s*([A-Z][A-Z\s\'-]+)$', re.I)
