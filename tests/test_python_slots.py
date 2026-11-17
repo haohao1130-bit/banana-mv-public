@@ -804,7 +804,7 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertNotIn('concert partners',plan['segments'][0]['event'])
         self.assertNotIn('The dry final joke',plan['segments'][0]['event'])
         self.assertIn('Only 白素貞',plan['segments'][0]['event'])
-        self.assertIn('The dry final joke',plan['segments'][27]['event'])
+        self.assertIn('The dry final joke',plan['segments'][28]['event'])
 
     def test_notebook_is_named_branch_pinned_and_drive_is_separate(self):
         root=Path(__file__).resolve().parents[1]
