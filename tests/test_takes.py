@@ -86,7 +86,7 @@ class TakeTests(unittest.TestCase):
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'new|old1|new|old3')
         job=takes.select_take(job['id'],0,third);job=self.finish(job)
         self.assertEqual((self.work/'final.mp4').read_bytes(),b'third|old1|new|old3')
-        self.assertEqual(takes.preview(job,0,first),self.work/'00_part_v2.mp4')
+        self.assertEqual(takes.preview(job,0,first),self.work/'00_raw_v2.mp4')
 
     def test_legacy_migration_does_not_pair_old_root_raw_with_adopted_retake(self):
         row=self.job['segments'][0]
@@ -419,7 +419,7 @@ with patch('http.server.ThreadingHTTPServer') as http:
             result=subprocess.run([sys.executable,'-c',script],env={**os.environ,'BANANA_DATA':tmp},capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
 
-    def test_silent_preview_real_ffmpeg_range_head_and_safe_routes(self):
+    def test_raw_audio_preview_real_ffmpeg_range_head_and_safe_routes(self):
         import urllib.request
         import urllib.error
         from banana_mv.core import command, probe
@@ -427,8 +427,8 @@ with patch('http.server.ThreadingHTTPServer') as http:
             work=Path(tmp)/'abcdef123456';work.mkdir()
             command(['ffmpeg','-y','-v','error','-f','lavfi','-i','color=c=navy:s=32x32:r=24:d=1',
                      '-f','lavfi','-i','sine=frequency=440:duration=1','-c:v','libx264','-threads','1',
-                     '-c:a','aac','-shortest',work/'raw.mp4'])
-            app.trim_video(work/'raw.mp4',work/'00_part.mp4',24)
+                     '-c:a','aac','-shortest',work/'00_raw.mp4'])
+            app.trim_video(work/'00_raw.mp4',work/'00_part.mp4',24)
             streams=probe(work/'00_part.mp4')['streams']
             self.assertEqual([s['codec_type'] for s in streams],['video'])
             job={'id':work.name,'status':'done','seed':42,'request':{},'segments':[
@@ -443,7 +443,7 @@ with patch('http.server.ThreadingHTTPServer') as http:
             try:
                 url=base+f'/api/mv/clip?id={job["id"]}&index=0'
                 with urllib.request.urlopen(url) as r:
-                    self.assertEqual(r.read(),(work/'00_part.mp4').read_bytes())
+                    self.assertEqual(r.read(),(work/'00_raw.mp4').read_bytes())
                     self.assertEqual(r.headers['Content-Type'],'video/mp4')
                 with urllib.request.urlopen(urllib.request.Request(url,headers={'Range':'bytes=0-15'})) as r:
                     self.assertEqual(r.status,206);self.assertEqual(len(r.read()),16)
@@ -453,7 +453,7 @@ with patch('http.server.ThreadingHTTPServer') as http:
                     with self.assertRaises(urllib.error.HTTPError) as error:urllib.request.urlopen(url+suffix)
                     self.assertEqual(error.exception.code,400)
                 with urllib.request.urlopen(base+f'/api/mv/status?id={job["id"]}') as r:
-                    status=json.load(r);self.assertIn('preview',status['segments'][0])
+                    status=json.load(r);self.assertIn('preview',status['segments'][0]);self.assertEqual(status['segments'][0]['preview_kind'],'raw')
                 with urllib.request.urlopen(base+'/clip_review.js') as r:self.assertIn(b'renderClipPreviews',r.read())
                 master=base+f'/api/mv/file?id={job["id"]}&version=1'
                 with urllib.request.urlopen(master) as r:self.assertEqual(r.read(),(work/'final_v001.mp4').read_bytes())
