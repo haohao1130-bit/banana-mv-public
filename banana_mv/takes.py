@@ -323,7 +323,9 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
             seg.setdefault('takes',[]).append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
                    'auto_resume':auto_resume,'takes':{str(i):t['id'] for i,t in batch}})
-        app.CANCEL.discard(job_id);app.write_state(job)
+        app.CANCEL.discard(job_id)
+        app.STOP_AFTER_CURRENT.discard(job_id)
+        app.write_state(job)
         threading.Thread(target=retake_worker,args=(job,cfg,song,drive,batch,old_status,originals),daemon=True).start()
         return describe(job)
     except Exception:
@@ -739,6 +741,14 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                 seg['prompt_id']=take['prompt_id']
                 seg.pop('interrupted_render',None)
             job['retake']['completed']=len(choices);app.write_state(job)
+            # A safe pause is distinct from ComfyUI cancellation. The freshly
+            # rendered Take stays ready and saved; next Take is not queued.
+            if job['id'] in app.STOP_AFTER_CURRENT:
+                job['retake']['status']='interrupted'
+                job['status']='interrupted'
+                job['stop_reason']='after_current'
+                app.write_state(job)
+                return
         if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
         # Completed clips remain separate candidates in the usual audition
         # path. Only a user's FIRST render of an interrupted clip is adopted
@@ -779,6 +789,7 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             if take['status']=='waiting':take['status']='cancelled'
         for p in temporary:p.unlink(missing_ok=True)
         app.CANCEL.discard(job['id'])
+        app.STOP_AFTER_CURRENT.discard(job['id'])
         try:app.write_state(job)
         finally:
             if not handoff:app.GPU_LOCK.release()
