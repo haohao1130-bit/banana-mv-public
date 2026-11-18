@@ -14,7 +14,7 @@ from banana_mv.scene_state import SceneStateError, rewrite_retry_count
 from banana_mv.locked_shoot import (
     SHOT, VOCAL_ACTION, PROPS, _active_scene, _cfg, _errors, _extract,
     _native, _native_output_template, _quiet_verb, _repair_vocals,
-    _vocal_role, _pronoun_roles, singer_rows,
+    _vocal_role, _pronoun_roles, singer_rows, clip_screen_cast_rule,
 )
 
 DIRECTOR_SYSTEM = (
@@ -32,6 +32,7 @@ DIRECTOR_SYSTEM = (
     'Within a shot, allow several SRT vocal changes without cutting camera. '
     'Preserve the exact source audio; do not add dialogue, lyrics or voices. '
     'Non-singers remain silent during their unassigned SRT windows. '
+    'SRT silence does not grant visual presence; obey any CURRENT ON-SCREEN CAST constraints. '
     'Provide SIX native H3 sections: subject_definitions, summary, '
     'retention_analysis, detailed_description, overall_soundscape, '
     'non_diegetic_music. In detailed_description use sequential [Shot N] '
@@ -170,6 +171,10 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'Singer S2 = <Subject 2>, identity picture ' + pictures['S2'] + '.',
         'CURRENT WARDROBE / PICTURE CONTINUITY:',
     ]
+    cast_rule = clip_screen_cast_rule(event)
+    if cast_rule:
+        lines.extend(('=== CURRENT ON-SCREEN CAST: PYTHON FILMING AUTHORITY ===',
+                      cast_rule))
     for role, number in (('S1', 1), ('S2', 2)):
         if role in wardrobe:
             lines.append(
