@@ -59,35 +59,29 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['open-help'].onclick();assert.equal(els['help-dialog'].scrollTop,0);els['close-help'].onclick();assert.equal(els['help-dialog'].open,false);
   assert.equal(els.prompt.value,originalPrompt);assert.equal(posts.length,0);
 
-  // The Colab AI handoff must contain the full 12-section creative guide,
-  // with actual Colab controls instead of RTX 5070-only instructions.
+  // Copy a lean, timed screenplay contract; keep Colab-only UI controls.
   assert(html.includes('id="copy-ai-guide"'));
   await els['copy-ai-guide'].onclick();
   const aiGuide=copied.at(-1);
   for(const phrase of [
-    '🍌 BANANAMV｜一鍵 AI 輔助新手教學',
+    '🍌 BANANAMV｜一鍵複製給 AI',
     'THE BANANA TAKE｜Colab 線上公開版',
-    '一、你的工作範圍',
-    '二、新手開始',
-    '三、創作素材與圖片辨識',
-    '四、歌曲與音樂理解',
-    '五、故事導演',
-    '六、電影攝影與分鏡規劃',
-    '七、完整全咒的標準結構',
-    '八、BANANAMV 前端操作教學',
-    '九、生成結果檢查與回爐',
-    '十、續跑與影片版本管理',
-    '十一、AI 與使用者的合作規則',
-    '十二、新手最簡單的開始方式',
-    '沒有 5 秒選項',
+    'Python 不是編劇',
+    '## 角色綁定',
+    '## 劇情內容',
+    '### 00:00.000–00:10.000｜第01段',
+    '場景外觀在首次出現時寫在該段',
+    '沒有 5 秒',
     '將所選丹藥回爐重煉',
     '選用此丹',
     '確認凝丹',
     'Google Drive',
-    '讓每個創意，都能拍成一部作品。'
-  ])assert(aiGuide.includes(phrase),'Colab AI guide is missing '+phrase);
+  ])assert(aiGuide.includes(phrase),'Colab AI guide missing: '+phrase);
+  assert(!aiGuide.includes('## 二、故事與整體導演設定'));
+  assert(!aiGuide.includes('## 場景設定'));
   assert(!aiGuide.includes('THE BANANA TAKE｜RTX 5070 本機版'));
-  assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
+  assert(aiGuide.length<3000,'Colab AI guide must stay concise');
+    assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
   const originalClipboard=context.navigator.clipboard;
   context.navigator.clipboard=null;
   await els['copy-ai-guide'].onclick();
