@@ -49,6 +49,28 @@ REPAIR_SYSTEM = (
     'Follow the SRT singer permissions. No explanations, apologies or JSON.'
 )
 
+def clip_screen_cast_rule(event):
+    """Use an explicit per-clip on-screen list, not SRT singer presence."""
+    visible = re.search(r'(?:^|[｜\n])\s*入鏡[：:]\s*([^｜\n]+)', event)
+    if not visible:
+        return ''
+    blocked = re.search(r'(?:^|[｜\n])\s*不入鏡[：:]\s*([^｜\n]+)', event)
+    early = re.search(r'(?:^|[｜\n])\s*(S[12]\s*在[^｜\n]*?之前不入鏡)', event)
+    rules = ['CURRENT ON-SCREEN CAST (visual permission, not vocal roles): '
+             + visible[1].strip() + '.']
+    if blocked:
+        rules.append('MUST STAY OFF SCREEN: ' + blocked[1].strip()
+                     + '. No background, silhouette, reflection, edge-of-frame '
+                     'presence, or reaction shots.')
+    if early:
+        rules.append('FIRST APPEARANCE GATE: ' + early[1].strip()
+                     + '. Do not show the character before this exact time.')
+    rules.append('Only the declared on-screen cast may appear in this clip. '
+                 'An SRT-silent character is NOT necessarily present. '
+                 'Uploaded pictures do NOT imply every person is on screen.')
+    return '\n'.join(rules)
+
+
 def singer_rows(a,b,cues):
     """Merge adjacent same-singer SRT cues, not per-subtitle vocal rows."""
     edges={a,b}
@@ -280,6 +302,7 @@ def _cfg(cfg,temperature):
 
 def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_schedule=None):
     scene_schedule = scene_schedule or []
+    cast_rule = clip_screen_cast_rule(event)
     scene='beach / shoreline' if scene_is_beach(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
     if scene_schedule:
         scene='beach / shoreline, followed by a cut to the nighttime apartment'
@@ -315,12 +338,13 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_s
         film.append(mark+blocks[n])
     output='\n\n'.join((
         'subject_definitions:\n'+'\n'.join(definitions),
-        'summary:\nThe current event unfolds in '+scene+' through photography and physical character interaction, following existing voices in the original track.',
+        'summary:\nThe current event unfolds in '+scene+' through photography and physical character interaction, following existing voices in the original track.' + ('\n' + cast_rule if cast_rule else ''),
         'retention_analysis:\n'+'\n'.join(retention),
         'detailed_description:\nUse the original song from <Audio 1> unchanged (fully_copy). '+
         'SRT VOCAL WINDOWS (clip-local, these are NOT camera cuts):\n'+
         '\n'.join(_global_vocal_rows(slots))+
         '\nNo added vocals, spoken dialogue, text overlays or subtitles.\n'+
+        (cast_rule + '\n' if cast_rule else '')+
         '\n'.join(film),
         'overall_soundscape:\nThe supplied source song plays unchanged.',
         'non_diegetic_music:\nThe supplied source song.'
