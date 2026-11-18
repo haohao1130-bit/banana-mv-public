@@ -10,8 +10,6 @@ import re
 from pathlib import Path
 
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
-from banana_mv.cast_presence import clip_cast
-from banana_mv.commission_guard import role_pictures
 from banana_mv.director import MODES
 from banana_mv.mv_scope import ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest
@@ -484,15 +482,12 @@ def ensure_python_slot_plan(req, segments, originals, work):
                            'Previously established: '+previous)
     filmed_events = slot_events if authored_cues else _inject_actor_state(slot_events, fixed, chapters)
     rows = []
-    singer_bindings = role_pictures(fixed)
     for seg, source_event, event in zip(segments, slot_events, filmed_events):
         rows.append({
             'index': seg['index'], 'mode': mode_for(source_event, req),
             'handoff_version': 1,
             **({'authored_cues': True} if authored_cues else {}),
             'event': normalize_mv_prompt(event, count),
-            'cast_presence': clip_cast(source_event, fixed, singer_bindings,
-                                       seg['start'], seg['seconds']),
         })
     plan = {
         'version': 6,
