@@ -153,38 +153,23 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(html.includes('5070 連續模式：重拍 V2 後怎麼接？'));
   await els['copy-ai-guide'].onclick();
   const aiGuide=copied.at(-1);
-  for(const phrase of ['🍌 BANANAMV｜一鍵 AI 輔助新手教學',
-                        'THE BANANA TAKE｜RTX 5070 本機版',
-                        '一、你的工作範圍',
-                        '二、新手開始',
-                        '三、創作素材與圖片辨識',
-                        '四、歌曲與音樂理解',
-                        '五、故事導演',
-                        '六、電影攝影與分鏡規劃',
-                        '七、交給 5070 一鍵 MV 的標準全咒',
-                        '八、BANANAMV 前端操作教學',
-                        '九、生成結果檢查與回爐',
-                        '十、續跑與影片版本管理',
-                        '十一、AI 與使用者的合作規則',
-                        '十二、新手最簡單的開始方式',
-                        'AI 輸出可貼入前端的 BANANAMV 時間軸全咒',
-                        '「依此提示詞回爐這一段」',
-                        '「正式採用此版本」',
-                        '「續跑未完成段落」',
-                        '讓每個創意，都能拍成一部作品。']){
-    assert(aiGuide.includes(phrase),'The new AI guide is missing '+phrase);
-  }
-  assert(aiGuide.includes('## 劇情內容'));
-  assert(aiGuide.includes('### 00:00.000–00:10.000｜第01段'));
-  assert(aiGuide.includes('故事大綱只供你這個上游 LLM 理解與規劃'));
-  assert(aiGuide.includes('Python 只負責依格式與時間切出當段通告'));
-  assert(aiGuide.includes('H3 六段式提示詞是下游 9B 的交稿'));
+  for(const phrase of [
+    '🍌 BANANAMV｜一鍵複製給 AI',
+    'THE BANANA TAKE｜RTX 5070 本機版',
+    'Python 不是編劇',
+    '## 角色綁定',
+    '## 劇情內容',
+    '### 00:00.000–00:10.000｜第01段',
+    '場景外觀在首次出現時寫在該段',
+    'subject_definitions、summary、retention_analysis、detailed_description',
+    '重配丹方（9B 重寫）',
+    '正式採用此版本',
+    '續跑未完成段落',
+  ])assert(aiGuide.includes(phrase),'5070 AI guide missing: '+phrase);
   assert(!aiGuide.includes('## 二、故事與整體導演設定'));
-  assert(aiGuide.includes('不負責：'));
-  assert(aiGuide.includes('- 修改程式碼。'));
-  assert(aiGuide.includes('- 維修 Python 或 CUDA。'));
-  assert(aiGuide.includes('如果使用者要求 CODE BLOCK'));
-  assert(/<select id="segment"><option value="5"[^>]*>[^<]*<\/option><option value="10" selected>/.test(html),'5070 default clip length must be 10 seconds');
+  assert(!aiGuide.includes('## 場景設定'));
+  assert(aiGuide.length<3000,'5070 AI guide must stay concise');
+    assert(/<select id="segment"><option value="5"[^>]*>[^<]*<\/option><option value="10" selected>/.test(html),'5070 default clip length must be 10 seconds');
   assert(/<select id="resolution"><option value="480p"[^>]*>[^<]*<\/option><option value="720p" selected>/.test(html),'5070 default render must be 720P');
   assert(html.includes('<input id="width" type="number" value="1280" readonly'),'16:9 initial width must match 720P');
   assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
