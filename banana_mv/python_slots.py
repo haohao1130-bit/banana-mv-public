@@ -28,12 +28,13 @@ SENTENCES = re.compile(r'(?<=[。！？!?；;])\s*')
 # Normalize presentation syntax only when the brief has identifiable story sections.
 SECTION_PREFIX = re.compile(r'^(?:(?:\d+|[一二三四五六七八九十]+)\s*[｜|、.．:：\-—]\s*)?')
 SECTION_STORY = frozenset(('故事內容', '故事劇情', '劇情內容', '故事大綱', '劇情大綱', '劇情', '故事', '劇本內容', 'MV 故事', '完整故事劇情'))
+OUTLINE_SECTIONS = frozenset(('故事大綱', '劇情大綱'))
 SECTION_SETUP = frozenset(('共同設定', '整體風格', '表演原則', '角色與造型', '攝影原則', '角色設定', '人物設定', '人物介紹', '角色介紹', '人物',
                            '角色綁定', 'MV 主題', '主題', '風格', '世界觀', '場景設定',
                            '演唱與劇情安排', '演唱與攝影', '演唱安排', '劇情連續性',
                            '特殊要求', '攝影與舞蹈', '導演自由發揮', '全曲執行原則',
                            '全曲固定原則', 'GLOBAL RULES', '導演執行重點', '執行重點',
-                           '導演執行要求', '視覺基調'))
+                           '導演執行要求', '視覺基調', '最終導演意圖', '導演意圖'))
 MARKDOWN_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+')
 ONLY_CLOSING_MARKS = re.compile(r'^[」』）)】\]]+$')
 ONLY_PUNCTUATION = re.compile(r'^[、，,。．；;：:！？!?…—-]+$')
@@ -91,6 +92,10 @@ def _sectioned_source(prompt):
                           for line, md in lines if line)
     if not has_story_section and not has_new_chapter:
         return None
+    # A preface story outline is metadata if actual story sections/ACTs follow.
+    has_filming_sections = any(
+        CHAPTER.match(line) or (_source_section(line)[1] in (SECTION_STORY - OUTLINE_SECTIONS))
+        for line, _ in lines if line)
     fixed, chapters = [], []
     in_story = not has_story_section
     current = None
@@ -102,15 +107,21 @@ def _sectioned_source(prompt):
             fixed.append(line)
             continue
         if kind == 'story':
-            in_story = True
-            current = None
+            if title in OUTLINE_SECTIONS and has_filming_sections:
+                in_story = False
+                current = None
+                fixed.append(title + '：')
+            else:
+                in_story = True
+                current = None
             continue
         if kind == 'setup':
             in_story = False
             current = None
             fixed.append(title + '：')
             continue
-        if CHAPTER.match(line) and in_story:
+        if CHAPTER.match(line) and (in_story or has_filming_sections):
+            in_story = True
             current = {'title': line, 'actions': []}
             chapters.append(current)
             continue
@@ -307,7 +318,8 @@ def split_source(prompt):
         if _source_section(_plain_source_line(line)) == ('setup', '共同設定'):
             continue
         if (GLOBAL_RULES.fullmatch(line) or
-                _source_section(_plain_source_line(line))[1] in ('導演執行重點', '執行重點')):
+                _source_section(_plain_source_line(line))[1] in
+                ('導演執行重點', '執行重點', '最終導演意圖', '導演意圖')):
             in_rules = True
             continue
         match = CHAPTER.match(line)

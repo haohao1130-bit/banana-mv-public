@@ -15,7 +15,7 @@ class FreeDirectorShotsTests(unittest.TestCase):
     def setUp(self):
         self.cast = {'S1': '<Picture 2>', 'S2': '<Picture 3>'}
         self.fixed = 'S1 = <Picture 2>, male singer\nS2 = <Picture 3>, female singer'
-        self.config = {'rewriter': {'temperature': .4, 'thinking': False}}
+        self.config = {'rewriter': {'temperature': .7, 'thinking': False}}
 
     def test_emotional_spoken_exchange_stays_two_shots_despite_five_vocal_windows(self):
         cues = [cue(0, 5.645, 'S2'), cue(6.868, 8.360, 'S1'),
@@ -38,8 +38,8 @@ class FreeDirectorShotsTests(unittest.TestCase):
         self.assertEqual(len(slots), 2)
         self.assertEqual(len(slots[1]['rows']), 4)
         blocks, audit = _safe_vocals(blocks, slots, self.fixed)
-        self.assertTrue(audit)
-        self.assertNotIn('He is speaking', blocks[2])
+        self.assertEqual(audit, [])
+        self.assertIn('He is speaking', blocks[2])
         self.assertIn('camera holds still', blocks[2])
         self.assertIn('instrumental breaths', blocks[2])
         writer_calls = []
@@ -68,11 +68,45 @@ class FreeDirectorShotsTests(unittest.TestCase):
         self.assertNotIn('At 00:06.868', output)
         self.assertNotIn('At 00:08.360', output)
         self.assertNotIn('Invented new score', output)
+        self.assertIn('He is speaking', output)
         self.assertEqual(segment['prompt_profile']['director_shot_count'], 2)
         self.assertEqual(segment['prompt_profile']['source'], 'python_srt_free_camera')
         commission = writer_calls[0][1][-1][1]
         self.assertNotIn('LOCKED SHOT SLOTS', commission)
         self.assertIn('YOU CHOOSE SHOT COUNT', commission)
+
+    def test_cross_srt_handoff_keeps_authorized_rap_and_singing_in_one_shot(self):
+        cues = [cue(0, 4, 'S1'), cue(4.2, 10, 'S2')]
+        raw = ('detailed_description:\n[Shot 1] <Subject 1> raps with visible '
+               'jaw tension; the camera sweeps behind the snake as '
+               '<Subject 2> sings and the water coils upward.')
+        blocks, slots = parse_director_shots(raw, 10, cues)
+        corrected, audit = _safe_vocals(blocks, slots, self.fixed)
+        self.assertEqual(audit, [])
+        self.assertIn('<Subject 1> raps', corrected[1])
+        self.assertIn('<Subject 2> sings', corrected[1])
+        self.assertIn('water coils upward', corrected[1])
+
+    def test_first_9b_draft_uses_configured_temperature_and_director_policy(self):
+        calls = []
+        def writer(cfg, system, parts, seed):
+            calls.append((cfg['rewriter']['temperature'], system, parts[-1][1]))
+            return ('subject_definitions:\nKnown cast.\nsummary:\nCurrent scene.\n'
+                    'retention_analysis:\nOriginal track.\ndetailed_description:\n'
+                    '[Shot 1] <Subject 2> sings while gliding through rain and '
+                    'the camera tracks her full snake body.\n'
+                    'overall_soundscape:\nOriginal.\nnon_diegetic_music:\nOriginal.')
+        req = {'srt_cues': [{'start': 0, 'end': 10, 'text': '[S2] 歌聲'}],
+               'rewrite_retries': 0, 'dynamic_cuts': True}
+        output = write_director_shoot_prompt(
+            self.config, req, {'index': 0, 'start': 0, 'seconds': 10},
+            '白素貞在雨中滑行。', self.fixed, self.cast, {}, ['monk', 'snake'],
+            [], writer, direction_policy='ADAPTATION: FREE. Dynamic editing is enabled.')
+        self.assertEqual(calls[0][0], .7)
+        self.assertIn('CREATIVE MV FILM DIRECTOR', calls[0][1])
+        self.assertIn('ADAPTATION: FREE', calls[0][2])
+        self.assertIn('Dynamic editing is enabled', calls[0][2])
+        self.assertIn('full snake body', output)
 
     def test_one_take_is_valid_even_when_singer_changes(self):
         cues = [cue(0, 4, 'S2'), cue(4.5, 10, 'S1')]

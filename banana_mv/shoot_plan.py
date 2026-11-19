@@ -455,6 +455,7 @@ _STORY_FILMING_HEADINGS = frozenset((
     '劇情內容', '故事大綱', '劇情大綱', '劇本內容',
     '完整故事劇情', '劇情', '故事', '故事路線', '全片故事',
     '劇情連續性', '服裝連續性', '演唱與劇情安排',
+     '最終導演意圖', '導演意圖', '故事主軸', '全片因果',
     '導演自由發揮', '導演執行重點', '執行重點',
     '特殊要求', '全曲執行原則', '全曲固定原則',
     'Story', 'Story spine', 'Storyline', 'Story synopsis',
@@ -546,6 +547,11 @@ def _filming_reference_settings(fixed_setup):
         if title in _STORY_FILMING_HEADINGS:
             section = 'story'
             continue
+        # Inline story headings also contain future events, not reusable setup.
+        inline_title = line.split('：', 1)[0].split(':', 1)[0].strip()
+        if inline_title in _STORY_FILMING_HEADINGS:
+            section = 'story'
+            continue
         subfield = re.match(
             r'^(故事背景|背景設定|整體風格|場景設定|視覺風格|固定場景)\s*[：:]\s*(.*)$',
             line,
@@ -605,9 +611,19 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
                     for c in req['srt_cues'])):
         refs = ([tail] if tail else []) + list(originals)
         segment['director_mode'] = row['mode']
+        direction_policy = '\n\n'.join((
+            adaptation_direction(req),
+            REFERENCE_PERFORMANCE,
+            AUTO_FILMING,
+            DYNAMIC_EDITING if req.get('dynamic_cuts', True) else
+                'EDITORIAL DIRECTION: Favor motivated continuous takes; '
+                'use a camera cut whenever the event requires a new viewpoint '
+                'or reaction. Keep dramatic changes and actor movement alive.',
+            CLIP_INTENSITY[req.get('intensity', 'high')],
+        ))
         native = write_director_shoot_prompt(
             cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
-            _pictures(refs), rewrite, progress)
+            _pictures(refs), rewrite, progress, direction_policy=direction_policy)
         native, removed = clean_lyric_output(
             native, dict(req, lyrics_reference_version=2))
         segment['lyric_reference_cleanup'] = {'removed_spans': removed}
@@ -714,7 +730,6 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
-    text+='\nWhen a permitted singer appears, prefer waist-up or closer for clear lip sync.'
     text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)

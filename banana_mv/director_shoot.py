@@ -18,29 +18,26 @@ from banana_mv.locked_shoot import (
 )
 
 DIRECTOR_SYSTEM = (
-    'You are the MiniMax H3 Ref2VA CINEMATOGRAPHER for THIS CLIP ONLY. '
-    'Python already owns the current event, identities, wardrobe, scene state '
-    'and the original audio SRT vocal windows. Choose your OWN number of shots '
-    'and exact CAMERA cut points, based on meaningful physical changes, '
-    'character interaction, performance and visual storytelling. '
-    'SRT vocal-window boundaries are NOT mandatory camera cuts. '
-    'A continuous emotional exchange may be ONE unbroken shot or two '
-    'meaningfully distinct reverse angles. A rapid action/rap sequence can '
-    'use several purposeful cuts. Avoid multiple nearly identical push-ins, '
-    'refilming the same pose or cutting just to zoom closer. '
-    'Every cut must create a new visual idea, action, perspective or reaction. '
-    'Within a shot, allow several SRT vocal changes without cutting camera. '
-    'Preserve the exact source audio; do not add dialogue, lyrics or voices. '
-    'Non-singers remain silent during their unassigned SRT windows. '
-    'SRT silence does not grant visual presence; obey any CURRENT ON-SCREEN CAST constraints. '
-    'Provide SIX native H3 sections: subject_definitions, summary, '
-    'retention_analysis, detailed_description, overall_soundscape, '
-    'non_diegetic_music. In detailed_description use sequential [Shot N] '
-    'labels, one paragraph per meaningful camera shot. Shot 1 begins at '
-    '0 seconds; every subsequent [Shot N] must begin with '
-    'At mm:ss.mmm, and its cinematic action. You may write just [Shot 1]. '
-    'Do not copy previous/future plot, add performers or change outfits. '
-    'The final fixed H3 identity/audio sections are supplied by Python.'
+    'You are the MiniMax H3 Ref2VA CREATIVE MV FILM DIRECTOR for THIS CLIP. '
+    'Bring the current commissioned event to life with purposeful character blocking, '
+    'evolving emotion, reactions, physical interplay, visual ideas and cinematography. '
+    'Develop expressive acting and local micro-beats freely within the assigned event; '
+    'its established starting state and required outcome remain authoritative. '
+    'Choose your own number of camera shots and exact cut points to serve the performance. '
+    'Vary scale, perspective, motion, lighting and duration with dramatic purpose, '
+    'including wide views, full-body action, inserts and intimate lip-sync as appropriate. '
+    'SRT vocal windows own WHO lip-syncs and WHEN, not who appears or when the camera cuts. '
+    'A single camera shot may cover multiple vocal handoffs and silent reactions; '
+    'singing/rap/spoken performance follows each original recorded vocal window. '
+    'Maintain reference identities, current wardrobe and physical cause/effect; '
+    'performers may move, react and change expressions as the scene develops. '
+    'Honor the explicitly authorized on-screen cast and source audio; '
+    'later plot milestones and extra recorded dialogue stay outside this clip. '
+    'Return native H3 sections: subject_definitions, summary, retention_analysis, '
+    'detailed_description, overall_soundscape, non_diegetic_music. '
+    'In detailed_description, use [Shot 1] at 0 seconds and, for each further cut, '
+    '[Shot N] At mm:ss.mmm, with a concrete visual action. One continuous take is valid. '
+    'Python supplies the final fixed H3 identity and audio fields.'
 )
 REPAIR_SYSTEM = (
     'You are editing ONE existing MiniMax H3 Ref2VA shot paragraph. '
@@ -129,43 +126,21 @@ def parse_director_shots(raw, seconds, cues, scene_schedule=()):
 
 
 def _safe_vocals(blocks, slots, fixed):
-    """When one camera shot spans multiple vocal windows, SRT owns the lips.
+    """Preserve acting and vocal delivery in shots spanning multiple SRT windows.
 
-    Explicit 'sings/raps/speaks' prose in an unbroken mixed/quiet camera shot
-    can accidentally imply a voice across an unassigned gap. Neutralize those
-    directives WITHOUT adding camera cuts. Source lip-sync is still precisely
-    specified in the separate Python-owned SRT window list.
+    Python's timed SRT rows control *when* visible lip-sync is allowed; a
+    camera shot may span several voices and silence without losing the actor's
+    expressive speaking, rapping or singing direction. Correct only an
+    explicitly unauthorized singer/duet, leaving valid performance prose intact.
     """
-    revised, audit = _repair_vocals(blocks, slots, fixed)
-    pronouns = _pronoun_roles(fixed)
-    for slot in slots:
-        number = slot['number']
-        # Exactly one unbroken vocalist may be described as singing.
-        rows = slot['rows']
-        pure = len(rows) == 1 and (
-            ('(S1) ONLY' in rows[0]) or ('(S2) ONLY' in rows[0])
-            or ('lip-sync together' in rows[0])
-        )
-        if pure:
-            continue
-        def neutralize(match):
-            assigned = _vocal_role(match['actor'], pronouns)
-            if not assigned:
-                return match[0]
-            replacement = (match[0][:match.start('verb')-match.start()]
-                           + _quiet_verb(match['verb']))
-            audit.append({'shot': number, 'from': match[0], 'to': replacement,
-                          'reason': 'SRT vocal handoff or silence within one camera shot'})
-            return replacement
-        revised[number] = VOCAL_ACTION.sub(neutralize, revised[number])
-    return revised, audit
+    return _repair_vocals(blocks, slots, fixed)
 
 
 def _free_commission(req, segment, event, pictures, wardrobe, cues,
-                     continuity=False, scene_schedule=()):
+                     continuity=False, scene_schedule=(), direction_policy=''):
     duration = float(segment['seconds'])
     lines = [
-        '=== 1. CURRENT CLIP AUTHORITY — PYTHON FACTS ===',
+        '=== 1. CURRENT CLIP FACTS — VOCALS / CAST / CONTINUITY ===',
         f'CLIP DURATION: {duration:.3f}s (ALL times local).',
         'Singer S1 = <Subject 1>, identity picture ' + pictures['S1'] + '.',
         'Singer S2 = <Subject 2>, identity picture ' + pictures['S2'] + '.',
@@ -188,7 +163,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
                 'in the opening frame/current event; do not reset it.')
     lines.append('SRT VOCAL WINDOWS — they control lip-sync, NEVER camera cuts:')
     lines.extend(singer_rows(0, duration, cues))
-    lines.append('Never add singing, Rap or Spoken in a non-assigned interval.')
+    lines.append('SRT assigns the original vocal lip-sync in each window; other on-screen performers react silently.')
     if scene_schedule:
         lines.append('AUTHOR-ASSIGNED PHYSICAL LOCATION / WARDROBE STATES:')
         for row in scene_schedule:
@@ -202,32 +177,31 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
                 'This is a physical scene change, not an SRT singer cut.')
     lines += [
         '',
-        '=== 2. THIS CLIP EVENT — DO NOT LEAK OTHER CLIPS ===',
+        '=== 2. CURRENT EVENT — DIRECT ITS PERFORMANCE ===',
         ('OPENING CONTINUITY: the preceding frame shows the CURRENT physical '
-         'pose, prop positions, lighting and present clothes; advance the action, '
-         'never replay completed events.' if continuity else
+         'pose, prop positions, lighting and present clothes; advance naturally '
+         'from those established results.' if continuity else
          'OPENING CONTINUITY: begin directly with the assigned current event.'),
-        'ACT ONLY ON THIS CURRENT CLIP EVENT:',
+        'DEVELOP AND FILM THIS CURRENT CLIP EVENT:',
         event,
         '',
-        '=== 3. 9B CINEMATOGRAPHY — YOU CHOOSE SHOT COUNT AND CUT TIMES ===',
-        'Choose meaningful camera cuts ONLY when the visual storytelling needs them.',
-        'DO NOT make a new Shot when the camera simply pushes closer to the '
-        'same pose/face and nothing meaningful changes.',
-        'A still, emotional Spoken exchange can be one sustained take or a '
-        'motivated reaction reverse-shot. Rap/action can have several distinct angles.',
-        'Do not equate SRT vocal handoffs, line endings, rests, or song beats '
-        'with obligatory CAMERA cuts. A continuous take can contain multiple SRT vocals.',
-        'The actor in an SRT gap can listen, breathe or move but not vocalize.',
-        'No previous/next events, invented dialogue, new person or costume reset.',
-        'Preserve current position, direction, prop handling, lighting and stage.',
-        'Write native SIX H3 Ref2VA sections. Python supplies final '
-        'identity/wardrobe/audio sections, so spend creativity on '
-        'detailed_description: camera position, action, expression, consequence.',
-        'Use [Shot 1] for the first shot (starts at 0.000s). '
-        'For EACH later camera CUT label [Shot N] At mm:ss.mmm, ...',
-        'One-shot is valid: output only [Shot 1], no forced [Shot 2]. '
-        'Choose freely up to 12 meaningful shots for a clip.',
+        '=== 3. 9B DIRECTING — YOU CHOOSE SHOT COUNT, CAMERA AND PERFORMANCE ===',
+        'Design local acting, body movement, expression changes, visual responses, '
+        'camera coverage and dramatic timing around the assigned beat.',
+        'Choose an unbroken emotional take or several distinct views as the events demand. '
+        'Use scale and perspective to reveal full action, environment and character intimacy.',
+        'Vocal changes and SRT line endings do not force camera cuts; '
+        'characters continue their performance through the original song.',
+        'Begin with established positions, props, wardrobe and scene geography. '
+        'Let their movement, interactions, lighting and visible consequences evolve '
+        'when motivated by this clip event.',
+        'Keep the user-specified causal milestones in sequence, '
+        'without staging a later chapter or adding new recorded dialogue.',
+        'Write native SIX H3 Ref2VA sections. Python will assemble fixed '
+        'identity, wardrobe and audio fields, so direct specific visual acting '
+        'and cinematography in detailed_description.',
+        'Use [Shot 1] at 0.000s; later camera cuts use [Shot N] At mm:ss.mmm. '
+        'Choose freely up to 12 meaningful shots, including a valid one-shot.',
         'Camera energy: ' + str(req.get('intensity', 'high')) + '.',
         '',
         '=== NATIVE SIX-SECTION DELIVERY EXAMPLE (ONE-SHOT SHAPE) ===',
@@ -240,11 +214,14 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'overall_soundscape:\nThe supplied source song remains unchanged.',
         'non_diegetic_music:\nThe supplied original song.',
     ]
+    if direction_policy:
+        lines.extend(('', '=== 4. ADAPTATION / PERFORMANCE / EDITING AUTHORITY ===',
+                      direction_policy))
     return '\n'.join(lines)
 
 
 def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
-                                wardrobe, refs, images, rewrite, progress=None):
+                                wardrobe, refs, images, rewrite, progress=None, direction_policy=''):
     """Actual 5070 two-singer path: independent SRT windows + 9B camera."""
     cues = vocal_timeline(excerpt(req, segment))
     schedule = scene_wardrobe_schedule(event, fixed, pictures, segment['seconds'])
@@ -253,9 +230,11 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
     else:
         segment.pop('scene_wardrobe_schedule', None)
     task = _free_commission(req, segment, event, pictures, wardrobe, cues,
-                            continuity=len(refs) > 2, scene_schedule=schedule)
+                            continuity=len(refs) > 2, scene_schedule=schedule,
+                            direction_policy=direction_policy)
     calls = 0
     retry_limit = rewrite_retry_count(req)
+    draft_temperature = float(cfg['rewriter'].get('temperature', .7))
     max_calls = (retry_limit+1) * (3 + 2 * MAX_SHOTS)
     def call(parts, temperature, system=DIRECTOR_SYSTEM):
         nonlocal calls
@@ -275,7 +254,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                       'All non-first shots require At mm:ss.mmm.')
             try:
                 blocks, slots = parse_director_shots(
-                    call(images + [('text', prompt)], .4 if attempt == 0 else .15),
+                    call(images + [('text', prompt)], draft_temperature if attempt == 0 else .15),
                     segment['seconds'], cues, schedule)
                 break
             except ValueError as error:

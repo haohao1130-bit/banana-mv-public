@@ -139,6 +139,11 @@ class ShootPlanTests(unittest.TestCase):
                                 'isolated_native_director')
             self.assertEqual(locked.call_args.args[5],
                              {'S1':'<Picture 1>','S2':'<Picture 2>'})
+            policy = locked.call_args.kwargs['direction_policy']
+            self.assertIn('ADAPTATION: FREE', policy)
+            self.assertIn('IDENTITY AND PERFORMANCE', policy)
+            self.assertIn('Dynamic editing is enabled', policy)
+            self.assertIn('PHOTOGRAPHIC INTENSITY', policy)
 
     def test_tagged_duet_sends_roles_without_lyrics_or_previous_events(self):
         from banana_mv.python_slots import split_source

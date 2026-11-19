@@ -259,6 +259,15 @@ def parse_timed_source(prompt, *, authored_intervals=False):
             elif PLAIN_SECTION.fullmatch(title) or AUTHORED_SECTION.fullmatch(title):
                 line = '## ' + title
                 heading = HEADING.match(line)
+        # Story synopsis / concluding director intention is context, never an ACT.
+        # Use explicit section titles instead of attempting semantic plot review.
+        section_title = (heading.group('title') if heading else line).strip().rstrip('：:')
+        if chapters and section_title in ('故事大綱', '劇情大綱',
+                                          '最終導演意圖', '導演意圖'):
+            current = None
+            interval = None
+            fixed.append(line)
+            continue
         plain_scene = bool(
             PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
             and (authored_intervals or _TIMED_ACT_SCENE.match(line))

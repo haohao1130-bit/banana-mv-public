@@ -643,6 +643,46 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertEqual(inline[0]['actions'],['「我要打十個！」'])
 
 
+    def test_story_outline_before_real_acts_is_never_an_early_clip_event(self):
+        from banana_mv.python_slots import split_source
+        brief = (
+            '共同設定\nS1 = @圖片1，蕉大師。\nS2 = @圖片2，白素貞。\n'
+            '故事大綱\n未來的演唱會與最後的冷面笑點。\n'
+            '劇情內容\nACT 01｜古塔開場\n白素貞沿石階逼近。\n'
+            'ACT 02｜戲台轉化\n古寺變成演唱會舞台。\n'
+            '最終導演意圖\n雙人最後成為搭檔，留下笑點。\n'
+        )
+        fixed, chapters = split_source(brief)
+        self.assertEqual(len(chapters), 2)
+        self.assertIn('故事大綱：', fixed)
+        self.assertIn('未來的演唱會', fixed)
+        self.assertNotIn('未來的演唱會', '\n'.join(
+            action for chapter in chapters for action in chapter['actions']))
+        self.assertNotIn('雙人最後成為搭檔', '\n'.join(
+            action for chapter in chapters for action in chapter['actions']))
+        self.assertIn('白素貞沿石階逼近', chapters[0]['actions'][0])
+        self.assertIn('古寺變成演唱會舞台', chapters[1]['actions'][0])
+
+    def test_timed_story_outline_and_postscript_never_become_clip_events(self):
+        from banana_mv.timed_slots import parse_timed_source
+        from banana_mv.shoot_plan import _filming_reference_settings
+        brief = (
+            '故事大綱\n開場復仇，最終在舞台合唱。\n'
+            'ACT 01｜00:00–00:10\n白素貞沿古塔滑行。\n'
+            'ACT 02｜00:10–00:20\n蕉大師敲響木魚。\n'
+            '最終導演意圖\n最後兩人化敵為友。\n'
+        )
+        fixed, chapters = parse_timed_source(brief)
+        self.assertEqual(len(chapters), 2)
+        self.assertIn('開場復仇', fixed)
+        self.assertNotIn('最後兩人化敵為友', '\n'.join(
+            action for chapter in chapters for action in chapter['actions']))
+        self.assertNotIn('開場復仇', '\n'.join(
+            action for chapter in chapters for action in chapter['actions']))
+        safe = _filming_reference_settings(fixed)
+        self.assertNotIn('舞台合唱', safe)
+        self.assertNotIn('化敵為友', safe)
+
     def test_plain_act_clock_uses_srt_not_legacy_action_order(self):
         # Regression: the real Bai Suzhen brief uses ACT timecodes without
         # Markdown and <Picture 1>＝蕉大師，S1 (not S1 = <Picture 1>).
