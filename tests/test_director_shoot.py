@@ -100,7 +100,7 @@ class FreeDirectorShotsTests(unittest.TestCase):
                'rewrite_retries': 0, 'dynamic_cuts': True}
         output = write_director_shoot_prompt(
             self.config, req, {'index': 0, 'start': 0, 'seconds': 10},
-            '白素貞在雨中滑行。', self.fixed, self.cast, {}, ['monk', 'snake'],
+            '白素貞在雨中滑行。', self.fixed, self.cast, {}, ['tail', 'monk', 'snake'],
             [], writer, direction_policy='ADAPTATION: FREE. Dynamic editing is enabled.')
         self.assertEqual(calls[0][0], .7)
         self.assertIn('CREATIVE MV FILM DIRECTOR', calls[0][1])
