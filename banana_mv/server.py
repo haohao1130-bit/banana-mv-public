@@ -1280,6 +1280,15 @@ class Handler(WebHandler):
                 return self.send_json(describe(read_state(dict(urllib.parse.parse_qsl(url.query))['id'])))
             except Exception as e:
                 return self.send_json({'error':str(e)},400)
+        if url.path=='/remaining_story.js':
+            return self.send_file(WEB/'remaining_story.js')
+        if url.path=='/api/mv/remaining-story':
+            try:
+                from banana_mv.remaining_story import view
+                args=dict(urllib.parse.parse_qsl(url.query))
+                return self.send_json(view(args['id']))
+            except Exception as e:
+                return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/clip':
             try:
                 from banana_mv.takes import preview
@@ -1347,6 +1356,14 @@ class Handler(WebHandler):
                 from banana_mv.takes import select_take
                 body=self.body_json()
                 return self.send_json(select_take(body['id'],body.get('index'),body.get('take')))
+            if path=='/api/mv/remaining-story/preview':
+                from banana_mv.remaining_story import preview
+                body=self.body_json()
+                return self.send_json(preview(body['id'],body.get('revision'),body.get('text')))
+            if path=='/api/mv/remaining-story/update':
+                from banana_mv.remaining_story import update
+                body=self.body_json()
+                return self.send_json(update(body['id'],body.get('revision'),body.get('text')))
             if path=='/api/mv/stop-after-current':
                 return self.send_json(stop_after_current_job(self.body_json()['id']))
             if path=='/api/mv/stop':
