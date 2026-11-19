@@ -145,8 +145,11 @@ def job_dir(job_id):
 
 
 def read_state(job_id):
+    directory = job_dir(job_id)
+    from banana_mv.remaining_story import recover_pending
+    recover_pending(directory)
     with STATE_LOCK:
-        return json.loads((job_dir(job_id)/'status.json').read_text(encoding='utf-8'))
+        return json.loads((directory/'status.json').read_text(encoding='utf-8'))
 
 
 def preflight(cfg, graph):
