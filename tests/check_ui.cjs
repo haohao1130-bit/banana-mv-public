@@ -31,6 +31,15 @@ assert(html.includes('#event-plan-text{max-height:340px;overflow-y:auto'),
 assert(html.includes('#status{max-height:340px;overflow-y:auto'),
   'a 24-clip progress log should not push take review off the page');
 
+assert.equal(html.split('id="remaining-story-open"').length,2,
+  'one remaining-story button appears only for stopped projects');
+assert.equal(html.split('id="remaining-story-dialog"').length,2,
+  'one compact remaining-story editor dialog must exist');
+assert(html.includes('remaining_story.js?v=20261119'),
+  'the editor is loaded as a separate script, not injected into legacy workflows');
+new vm.Script(fs.readFileSync('banana_mv/web/remaining_story.js','utf8'));
+// The editor visibility follows the real first unfilmed clip.
+
 class Element{
   constructor(){this.children=[];this.value='';this.files=[];this.checked=false;this.style={};this.events={};}
   append(...nodes){this.children.push(...nodes);}
@@ -87,6 +96,19 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
   }})});
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
 vm.runInContext(fs.readFileSync('banana_mv/web/clip_review.js','utf8'),context);
+vm.runInContext(fs.readFileSync('banana_mv/web/remaining_story.js','utf8'),context);
+context.window.renderRemainingStoryButton({
+  status:'cancelled',request:{director_schema:6},
+  segments:[{status:'done'},{status:'done'},{status:'waiting'}]
+});
+assert.equal(els['remaining-story-open'].hidden,false);
+assert(els['remaining-story-open'].textContent.includes('第 3 段'));
+context.window.renderRemainingStoryButton({
+  status:'running',request:{director_schema:6},
+  segments:[{status:'done'},{status:'generating'}]
+});
+assert.equal(els['remaining-story-open'].hidden,true,
+  'cannot rewrite story while H3 is generating');
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
 (async()=>{
