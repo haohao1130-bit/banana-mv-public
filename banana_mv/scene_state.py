@@ -513,6 +513,19 @@ def clip_input(ledger,segment):
         'completed_in_previous_clip':eid in previous.get('completed_events',[])}
         for eid in previous.get('planned_events',[])]
     state['narrative_states']['previous_clip_transitions']=deepcopy(previous.get('state_transitions',[]))
+    # A user-approved remaining-story edit changes future event options, not
+    # the already committed predecessor snapshot or its immutable checksum.
+    # Recalculate only the new clip's derived pending catalog from the revised plan.
+    if ledger.get('remaining_story_revision'):
+        narrative = state['narrative_states']
+        completed = set(narrative['completed_events'])
+        catalog = ledger['event_catalog']
+        narrative['pending_events'] = [eid for eid, item in catalog.items()
+                                       if eid not in completed and not item['reserved_final']]
+        narrative['reserved_final_events'] = [eid for eid, item in catalog.items()
+                                              if eid not in completed and item['reserved_final']]
+        if narrative.get('current_event') not in catalog:
+            narrative['current_event'] = None
     state['timeline'].update(current_clip_index=index,current_start_time=segment['start'],
                              current_end_time=segment['start']+segment['seconds'])
     return state
