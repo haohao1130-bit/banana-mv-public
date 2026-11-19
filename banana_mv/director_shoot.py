@@ -9,6 +9,7 @@ import re
 import uuid
 
 from banana_mv.commission_guard import scene_wardrobe_schedule
+from banana_mv.body_form import declared_body_forms
 from banana_mv.lyrics_reference import excerpt, vocal_timeline
 from banana_mv.scene_state import SceneStateError, rewrite_retry_count
 from banana_mv.locked_shoot import (
@@ -137,7 +138,8 @@ def _safe_vocals(blocks, slots, fixed):
 
 
 def _free_commission(req, segment, event, pictures, wardrobe, cues,
-                     continuity=False, scene_schedule=(), direction_policy=''):
+                     continuity=False, scene_schedule=(), direction_policy='', body_form=None):
+    body_form = body_form or {}
     duration = float(segment['seconds'])
     lines = [
         '=== 1. CURRENT CLIP FACTS — VOCALS / CAST / CONTINUITY ===',
@@ -161,6 +163,11 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
                 f'<Subject {number}> ({role}): face and hair from '
                 f'{pictures[role]}; preserve the actual CURRENT outfit '
                 'in the opening frame/current event; do not reset it.')
+    for role, number in (('S1', 1), ('S2', 2)):
+        if role in body_form:
+            lines.append(
+                f'<Subject {number}> ({role}) BODY FORM / ANATOMY '
+                f'(a stable identity fact, not clothing or an event): {body_form[role]}')
     lines.append('SRT VOCAL WINDOWS — they control lip-sync, NEVER camera cuts:')
     lines.extend(singer_rows(0, duration, cues))
     lines.append('SRT assigns the original vocal lip-sync in each window; other on-screen performers react silently.')
@@ -221,8 +228,12 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
 
 
 def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
-                                wardrobe, refs, images, rewrite, progress=None, direction_policy=''):
+                                wardrobe, refs, images, rewrite, progress=None, direction_policy='',
+                                body_form=None):
     """Actual 5070 two-singer path: independent SRT windows + 9B camera."""
+    body_form = body_form if body_form is not None else declared_body_forms(fixed)
+    if body_form:
+        segment['body_form'] = dict(body_form)
     cues = vocal_timeline(excerpt(req, segment))
     schedule = scene_wardrobe_schedule(event, fixed, pictures, segment['seconds'])
     if schedule:
@@ -231,7 +242,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
         segment.pop('scene_wardrobe_schedule', None)
     task = _free_commission(req, segment, event, pictures, wardrobe, cues,
                             continuity=len(refs) > 2, scene_schedule=schedule,
-                            direction_policy=direction_policy)
+                            direction_policy=direction_policy, body_form=body_form)
     calls = 0
     retry_limit = rewrite_retry_count(req)
     draft_temperature = float(cfg['rewriter'].get('temperature', .7))
@@ -290,7 +301,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                     + '\nKeep the original framing, timing and physical event. '
                     'Return the SIX native Ref2VA sections containing ONLY '
                     f'[Shot {number}] in detailed_description.\n'
-                    + _native_output_template([shot], pictures, wardrobe)
+                    + _native_output_template([shot], pictures, wardrobe, body_form)
                 )
                 try:
                     blocks[number] = _extract(
@@ -320,4 +331,4 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
             'fresh_restarts': restart,
         }
         return _native(blocks, slots, pictures, wardrobe, len(refs) > 2,
-                       event, len(refs), fixed, schedule)
+                       event, len(refs), fixed, schedule, body_form=body_form)

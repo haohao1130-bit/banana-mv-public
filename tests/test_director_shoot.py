@@ -1,6 +1,7 @@
 """Camera choices belong to 9B. Python owns vocal permissions, not cuts."""
 import unittest
 
+from banana_mv.body_form import declared_body_forms
 from banana_mv.director_shoot import (
     _free_commission, _safe_vocals, parse_director_shots,
     write_director_shoot_prompt,
@@ -107,6 +108,67 @@ class FreeDirectorShotsTests(unittest.TestCase):
         self.assertIn('ADAPTATION: FREE', calls[0][2])
         self.assertIn('Dynamic editing is enabled', calls[0][2])
         self.assertIn('full snake body', output)
+
+    def test_v6_body_form_is_copied_to_commission_and_h3_identity(self):
+        fixed = (
+            '【共同設定】\n'
+            '<Picture 1> = S1 = 蕉大師\n'
+            '<Picture 2> = S2 = 白素貞\n'
+            '■ S1 蕉大師\n成年男子，僧衣。\n'
+            '■ S2 白素貞（形態固定，全片一致）\n'
+            '修行千年的化形白蛇妖。上半身是人形女子。'
+            '腰部以下是一整條連續的純白色蛇軀（白色鱗片，無下肢結構），'
+            '一路細長收尾成蛇尾，是她身體的一部分，全片只有這一條。\n'
+            '■ S2 的用詞表\n・滑行、貼地滑行\n'
+            '【分段通告單】\nACT 01\n未來結局：舞台同台演唱。\n'
+        )
+        anatomy = declared_body_forms(fixed)
+        self.assertEqual(set(anatomy), {'S2'})
+        self.assertIn('腰部以下是一整條連續的純白色蛇軀', anatomy['S2'])
+        self.assertIn('無下肢結構', anatomy['S2'])
+        self.assertNotIn('舞台同台演唱', anatomy['S2'])
+        commission = _free_commission(
+            {'intensity': 'high'}, {'seconds': 10},
+            '白素貞貼地滑行到古寺門口，昂首演唱。',
+            {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [cue(1, 3, 'S2')],
+            body_form=anatomy)
+        self.assertIn('BODY FORM / ANATOMY', commission)
+        self.assertIn('無下肢結構', commission)
+        self.assertNotIn('未來結局', commission)
+        calls = []
+        def writer(cfg, system, parts, job):
+            calls.append(parts[-1][1])
+            return ('subject_definitions:\nBoth actors.\nsummary:\nCurrent scene.\n'
+                    'retention_analysis:\nOriginal music.\ndetailed_description:\n'
+                    '[Shot 1] <Subject 2> glides on the wet temple steps, '
+                    'snake scales catching the lightning.\n'
+                    'overall_soundscape:\nOriginal.\nnon_diegetic_music:\nOriginal.')
+        segment = {'index': 0, 'start': 0, 'seconds': 10}
+        native = write_director_shoot_prompt(
+            self.config,
+            {'srt_cues': [{'start': 1, 'end': 3, 'text': '[S2] 憤怒'}],
+             'rewrite_retries': 0},
+            segment, '白素貞貼地滑行到古寺門口，昂首演唱。',
+            fixed, {'S1': '<Picture 1>', 'S2': '<Picture 2>'},
+            {}, ['monk', 'snake'], [], writer, body_form=anatomy)
+        definitions = native.split('subject_definitions:\n', 1)[1].split('summary:', 1)[0]
+        self.assertIn('BODY FORM / ANATOMY', definitions)
+        self.assertIn('無下肢結構', definitions)
+        self.assertIn('只有這一條', definitions)
+        self.assertNotIn('舞台同台演唱', definitions)
+        self.assertIn('BODY FORM', native.split('retention_analysis:\n')[1])
+        self.assertIn('無下肢結構', calls[0])
+        self.assertEqual(segment['body_form'], anatomy)
+        self.assertIn('snake scales catching the lightning', native)
+
+    def test_human_with_no_body_form_uses_existing_reference_defaults(self):
+        fixed = 'S1 = <Picture 1>, adult singer\nS2 = <Picture 2>, adult singer'
+        self.assertEqual(declared_body_forms(fixed), {})
+        body = _free_commission(
+            {'intensity': 'normal'}, {'seconds': 10}, '兩人演唱。',
+            {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [],
+            body_form=declared_body_forms(fixed))
+        self.assertNotIn('BODY FORM / ANATOMY', body)
 
     def test_one_take_is_valid_even_when_singer_changes(self):
         cues = [cue(0, 4, 'S2'), cue(4.5, 10, 'S1')]

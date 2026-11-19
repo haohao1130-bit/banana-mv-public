@@ -300,8 +300,9 @@ def _cfg(cfg,temperature):
     c=dict(cfg);c['rewriter']=dict(cfg['rewriter'],temperature=temperature,thinking=False)
     return c
 
-def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_schedule=None):
+def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_schedule=None,body_form=None):
     scene_schedule = scene_schedule or []
+    body_form = body_form or {}
     cast_rule = clip_screen_cast_rule(event)
     scene='beach / shoreline' if scene_is_beach(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
     if scene_schedule:
@@ -318,8 +319,15 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_s
         cast_line=next((line for line in fixed.splitlines() if re.match(r'^\s*'+role+r'\s*[=:：]',line,re.I)), '')
         gender=('male ' if re.search(r'男主|男聲|男主唱|male',cast_line,re.I) else
                 'female ' if re.search(r'女主|女聲|女主唱|female',cast_line,re.I) else '')
-        definitions.append(f'<Subject {n}> is the adult '+gender+f'lead {role} from {ref}; identity, face and hair are preserved. CURRENT CLOTHING: {costume}. Location: {scene}.')
-        retention.append(f'<Subject {n}>: partially_preserved - identity from {ref}; current clothing is {costume}, overriding an obsolete outfit in reference images.')
+        anatomy = (f' BODY FORM / ANATOMY (stable across shots and locations): '
+                   f'{body_form[role]}. This is the character\'s body structure, '
+                   'not clothing or an added prop.' if role in body_form else '')
+        definitions.append(f'<Subject {n}> is the adult '+gender+
+                           f'lead {role} from {ref}; identity, face and hair are preserved.'
+                           + anatomy + f' CURRENT CLOTHING: {costume}. Location: {scene}.')
+        retention.append(f'<Subject {n}>: partially_preserved - identity from {ref};'
+                         + (f' preserve BODY FORM: {body_form[role]};' if role in body_form else '')
+                         + f' current clothing is {costume}, overriding an obsolete outfit in reference images.')
     if tail:
         definitions.append('<Picture 1> is the preceding frame only, not a new actor or wardrobe reset.')
     retention.append('<Audio 1>: fully_copy, including the original recorded vocals.')
@@ -354,18 +362,21 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_s
         raise SceneStateError('Python H3 定裝引用了未連接圖片。')
     return output
 
-def _native_output_template(slots,pictures,wardrobe):
+def _native_output_template(slots,pictures,wardrobe,body_form=None):
     """Native Ref2VA six-section format that the 9B SFT was trained to write.
 
     Only shot visual bodies are creative; fixed fields in this example will be
     authored again by Python for the final H3 generation prompt.
     """
+    body_form = body_form or {}
     rows=[
         'subject_definitions:',
         '<Subject 1> (S1): the same person as '+pictures['S1']+
         '; present outfit: '+wardrobe.get('S1','current established clothing')+'.',
         '<Subject 2> (S2): the same person as '+pictures['S2']+
         '; present outfit: '+wardrobe.get('S2','current established clothing')+'.',
+        *(f'<Subject {n}> BODY FORM (stable anatomy): {body_form[role]}'
+          for role,n in (('S1',1),('S2',2)) if role in body_form),
         '',
         'summary:',
         '[reference generation + audio reuse] Film the assigned current clip event.',

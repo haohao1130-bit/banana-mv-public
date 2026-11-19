@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from banana_mv.commission_guard import check_commission, role_pictures, wardrobe_for_clip
+from banana_mv.body_form import declared_body_forms
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
 from banana_mv.lyrics_reference import SUBJECT_VOCAL_PREFIX, clean_lyric_output, excerpt, vocal_timeline
@@ -589,6 +590,13 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
     fixed_setup = _filming_reference_settings(fixed_setup)
+    # Stable anatomical facts are separate from clothing, camera and plot.
+    # Store them on the clip for resume/debug and pass them unchanged to H3.
+    body_form = declared_body_forms(fixed_setup)
+    if body_form:
+        segment['body_form'] = body_form
+    else:
+        segment.pop('body_form', None)
     present=role_pictures(fixed_setup)
     for role,picture in source_singers.items():
         if present.get(role)!=picture:
@@ -623,7 +631,8 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         ))
         native = write_director_shoot_prompt(
             cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
-            _pictures(refs), rewrite, progress, direction_policy=direction_policy)
+            _pictures(refs), rewrite, progress, direction_policy=direction_policy,
+            body_form=body_form)
         native, removed = clean_lyric_output(
             native, dict(req, lyrics_reference_version=2))
         segment['lyric_reference_cleanup'] = {'removed_spans': removed}
