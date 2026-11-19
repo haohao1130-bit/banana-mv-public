@@ -124,5 +124,56 @@ class RemainingStoryTests(unittest.TestCase):
         self.assertEqual(ledger["event_catalog"]["E2"]["description"], "舊結局")
 
 
+    def test_interrupted_metadata_transaction_is_rolled_back_on_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original_status = {"id": "abcdef123456", "status": "cancelled"}
+            original_plan = {"version": 6, "segments": ["old"]}
+            original_ledger = {"event_catalog": {"E1": "old"}}
+            originals = {
+                "status.json": original_status,
+                "director_plan.json": original_plan,
+                "scene_state.json": original_ledger,
+            }
+            for name, payload in originals.items():
+                atomic_json(root / name, payload)
+            archive = root / "story_revisions" / "crash_demo"
+            archive.mkdir(parents=True)
+            for name in originals:
+                (archive / name).write_bytes((root / name).read_bytes())
+                atomic_json(root / name, {"corrupted_by_interrupted_transaction": True})
+            atomic_json(archive / "manifest.json", {"status": "backup_created"})
+            with patch.object(app, "job_dir", return_value=root):
+                self.assertEqual(app.read_state("abcdef123456"), original_status)
+            for name, payload in originals.items():
+                self.assertEqual(json.loads((root / name).read_text()), payload)
+            self.assertEqual(json.loads((archive / "manifest.json").read_text())["status"],
+                             "rolled_back")
+
+    def test_new_clip_derives_event_options_without_rewriting_old_commit(self):
+        from banana_mv.scene_state import clip_input
+        previous = {
+            "character_states": {}, "environment_states": {},
+            "narrative_states": {
+                "completed_events": ["E1"], "current_event": "E2",
+                "pending_events": ["E2"], "reserved_final_events": [],
+            }, "timeline": {},
+        }
+        committed = {"scene_state_out": previous, "output_sha256": digest(previous),
+                     "planned_events": ["E1"], "completed_events": ["E1"],
+                     "state_transitions": []}
+        new_event = {"description": "新的結尾", "repeatable": False, "reserved_final": False}
+        old_event = {"description": "已拍", "repeatable": False, "reserved_final": False}
+        ledger = {"initial_state": previous,
+                  "commits": [committed],
+                  "event_catalog": {"E1": old_event, "REV_new": new_event},
+                  "remaining_story_revision": "new"}
+        result = clip_input(ledger, {"index": 1, "start": 5., "seconds": 5.})
+        self.assertEqual(result["narrative_states"]["pending_events"], ["REV_new"])
+        self.assertIsNone(result["narrative_states"]["current_event"])
+        self.assertEqual(committed["scene_state_out"]["narrative_states"]["pending_events"], ["E2"])
+        self.assertEqual(committed["output_sha256"], digest(previous))
+
+
 if __name__ == "__main__":
     unittest.main()
