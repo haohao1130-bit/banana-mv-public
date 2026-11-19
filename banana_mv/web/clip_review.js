@@ -134,7 +134,7 @@ function renderClipPreviews(job){
       use.onclick=()=>adoptClip(row.index,row.select.value);
       branchOnly.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'only'});
       branchCascade.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'cascade'});
-      promptEditor.oninput=updateClipActions;
+      promptEditor.oninput=()=>{row.userEdited=true;updateClipActions();};
       rewriteButton.onclick=()=>{
         const previous=previousTakeForClip(i);
         return runClipAction('api/mv/rewrite-clip',{index:i,...(previous?{previous_take:previous}:{})});
@@ -165,8 +165,13 @@ function renderClipPreviews(job){
     const draft=segment.prompt_rewrite||{};
     if(draft.status==='ready'&&typeof draft.text==='string'&&draft.version!==row.loadedVersion){
       row.promptEditor.value=draft.text;row.loadedVersion=draft.version;row.editorLoaded=true;
-    }else if(!row.editorLoaded){
-      row.promptEditor.value=draft.text||segment.prompt||'';row.loadedVersion=draft.version||null;row.editorLoaded=true;
+      row.lastSeenPrompt=segment.prompt;row.userEdited=false;
+    }else if(!row.editorLoaded||(!row.userEdited&&segment.prompt&&row.lastSeenPrompt!==segment.prompt)){
+      // The card may appear at 'preparing' before 9B submits its H3 prompt.
+      // Refresh once it exists, without overwriting the user's live edits.
+      row.promptEditor.value=draft.text||segment.prompt||'';
+      row.loadedVersion=draft.version||null;row.editorLoaded=true;
+      row.lastSeenPrompt=segment.prompt;row.userEdited=false;
     }
     row.promptInfo.textContent=obsolete?'這是舊時間線丹方／影片，僅供查看。請先從正式採用新版尾幀續拍。':
       draft.status==='running'?'9B 正在重配這一段丹方；目前文字與舊影片仍保留。':
