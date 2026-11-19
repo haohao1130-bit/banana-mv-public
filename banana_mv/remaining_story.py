@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import shutil
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -18,6 +19,31 @@ _MARKER = re.compile(r"(?m)^=== CLIP ([1-9][0-9]*) \| ([0-9]+\.[0-9]{2})-([0-9]+
 _STOPPED = {"cancelled", "interrupted", "error"}
 _MAX_TEXT = 300000
 _MAX_CLIP = 20000
+# Readers and updater share this lock so a GET cannot roll back a live commit.
+_TRANSACTION_LOCK = threading.RLock()
+
+
+def recover_pending(work):
+    """Rollback a power-loss-interrupted metadata update before loading a job."""
+    with _TRANSACTION_LOCK:
+        directory = Path(work) / "story_revisions"
+        if not directory.is_dir():
+            return
+        for manifest_path in sorted(directory.glob("*/manifest.json")):
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("status") != "backup_created":
+                continue
+            archive = manifest_path.parent
+            for name in ("director_plan.json", "scene_state.json", "status.json"):
+                original = archive / name
+                if original.is_file():
+                    target = Path(work) / name
+                    restored = target.with_name(target.name + ".recover")
+                    restored.write_bytes(original.read_bytes())
+                    restored.replace(target)
+            manifest["status"] = "rolled_back"
+            manifest["recovered_at"] = time.time()
+            atomic_json(manifest_path, manifest)
 
 
 def _app():
@@ -168,7 +194,7 @@ def _update_ledger(ledger, job, first, revision_id):
     return ledger
 
 
-def update(job_id, revision, source):
+def _update(job_id, revision, source):
     app = _app()
     if not app.GPU_LOCK.acquire(blocking=False):
         raise ValueError("GPU 工作尚未停止，不能更新後續故事。")
@@ -270,3 +296,8 @@ def update(job_id, revision, source):
                 "message": "新通告單已更新，請按「續跑未完成段落」，從第 {} 段開始。".format(first + 1)}
     finally:
         app.GPU_LOCK.release()
+
+
+def update(job_id, revision, source):
+    with _TRANSACTION_LOCK:
+        return _update(job_id, revision, source)
