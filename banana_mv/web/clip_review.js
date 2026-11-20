@@ -21,7 +21,8 @@ function showClipVersion(row){
   const take=row.segment.takes.find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
   const format=take?.preview_kind==='raw'?'RAW 原始有聲預覽':'裁切版（無 RAW 音軌）';
-  row.note.textContent=take?`V${take.version||1} · ${format} · ${take.preview_filename||take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):'';
+  const note=take?`V${take.version||1} · ${format} · ${take.preview_filename||take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):'';
+  if(row.note.textContent!==note)row.note.textContent=note;
   updateClipActions();
 }
 function renderClipPreviews(job){
@@ -33,14 +34,15 @@ function renderClipPreviews(job){
     let row=clipView.rows.get(i);
     if(!row){
       const card=document.createElement('article');card.className='dan-card';
-      const label=document.createElement('label'),check=document.createElement('input'),title=document.createElement('span');
-      check.type='checkbox';label.append(check,title);
+      const title=document.createElement('h3');title.className='dan-clip-title';
+      const label=document.createElement('label'),check=document.createElement('input');
+      check.type='checkbox';label.append(check,`選取第 ${i+1} 段`);
       const video=document.createElement('video');video.controls=true;video.muted=false;video.preload='none';video.playsInline=true;
       const version=document.createElement('div');version.className='dan-version';
       const select=document.createElement('select');select.setAttribute('aria-label',`第 ${i+1} 顆丹藥的版本`);
       const use=document.createElement('button');use.type='button';use.className='secondary';use.textContent='選用此丹';
-      const note=document.createElement('p');note.className='muted';version.append(select,use);card.append(label,video,version,note);$('clip-list').append(card);
-      const fixLabel=document.createElement('label');fixLabel.textContent='局部修改建議（選填）';
+      const note=document.createElement('p');note.className='muted';version.append(select,use);card.append(title,label,video,version,note);$('clip-list').append(card);
+      const fixLabel=document.createElement('label');fixLabel.className='dan-correction-label';fixLabel.textContent='局部修改建議（選填）';
       const correction=document.createElement('textarea');correction.rows=3;correction.maxLength=3000;
       correction.setAttribute('aria-label',`第 ${i+1} 顆丹藥的局部修改建議`);
       correction.placeholder='例如：表情更憤怒；增加手部操作特寫；保留事件，只改這段拍法。';
@@ -53,7 +55,8 @@ function renderClipPreviews(job){
       use.onclick=()=>adoptClip(row.index,row.select.value);
     }
     const desired=segment.pending_take||segment.selected_take;const changed=(row.segment.pending_take||row.segment.selected_take)!==desired;row.segment=segment;
-    row.title.textContent=`第 ${i+1} 顆 · ${segment.start.toFixed(2)}–${(segment.start+segment.seconds).toFixed(2)} 秒｜此丹有異，建議回爐`;
+    const title=`第 ${i+1} / ${job.segments.length} 段 · ${segment.start.toFixed(2)}–${(segment.start+segment.seconds).toFixed(2)} 秒｜此丹有異，建議回爐`;
+    if(row.title.textContent!==title)row.title.textContent=title;
     const ready=segment.takes.filter(t=>t.status==='ready');
     const signature=ready.map(t=>t.id+':'+(t.id===segment.selected_take)+':'+(t.id===desired)).join('|');
     if(row.signature!==signature){

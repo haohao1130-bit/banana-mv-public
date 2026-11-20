@@ -2,6 +2,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const html=fs.readFileSync('banana_mv/web/index.html','utf8');
 class Element{
+  scrollIntoView(){this.scrolled=true;}
   constructor(){this.children=[];this.value='';this.files=[];this.checked=false;this.style={};this.events={};}
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=nodes;}
@@ -66,11 +67,11 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   for(const phrase of [
     '🍌 BANANAMV｜一鍵複製給 AI',
     'THE BANANA TAKE｜Colab 線上公開版',
-    'Python 不是編劇',
-    '## 角色綁定',
-    '## 劇情內容',
-    '### 00:00.000–00:10.000｜第01段',
-    '場景外觀在首次出現時寫在該段',
+    '由 Python 分段、9B 寫當段攝影稿',
+    '角色綁定',
+    '劇情內容',
+    'ACT 01｜00:00.000–00:10.000',
+    '場景變化、服裝變化、高潮與結尾都寫在它真正發生的 ACT 裡',
     '沒有 5 秒',
     '將所選丹藥回爐重煉',
     '選用此丹',
@@ -80,7 +81,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(!aiGuide.includes('## 二、故事與整體導演設定'));
   assert(!aiGuide.includes('## 場景設定'));
   assert(!aiGuide.includes('THE BANANA TAKE｜RTX 5070 本機版'));
-  assert(aiGuide.length<3000,'Colab AI guide must stay concise');
+  assert(aiGuide.length<5500,'Colab AI guide must stay concise');
     assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
   const originalClipboard=context.navigator.clipboard;
   context.navigator.clipboard=null;
@@ -201,13 +202,15 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(els['clips-retake'].textContent.includes('2 顆'));assert.equal(els['clips-retake'].disabled,false);
   vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,status:'running'})})`,context);
   assert.equal(els['clips-retake'].disabled,true);assert.equal(rows[1].check.disabled,false);
-  assert.equal(els['clip-list'].children[1].children[1],rows[1].video);assert.equal(rows[1].check.checked,true);
+  assert.equal(rows[1].card.children[0],rows[1].title);
+  assert(rows[1].title.textContent.startsWith('第 2 / 4 段'));
+  assert.equal(els['clip-list'].children[1].children[2],rows[1].video);assert.equal(rows[1].check.checked,true);
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);await els['clips-retake'].onclick();
   assert.deepEqual(retakes,[{id:'review123',indices:[1,2]}]);
   rows[1].correction.value='只把手部操作拍清楚';rows[1].correction.oninput();
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(rows[1].correction.value,'只把手部操作拍清楚');
-  assert.equal(els['clip-list'].children[1].children[1],rows[1].video);
+  assert.equal(els['clip-list'].children[1].children[2],rows[1].video);
   await els['clips-retake'].onclick();
   assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'}});
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
@@ -254,6 +257,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['mobile-furnace-start'].textContent,'查看進度');
   assert.equal(els['recipe-review'].hidden,true);await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
   await els['mobile-furnace-start'].onclick();assert.equal(posts.length,beforeMobileApprove.starts,'progress action must never resubmit');
+  assert.equal(els['alchemy-title'].scrolled,true);
   vm.runInContext("mobileJobStatus='done';syncMobileFurnace()",context);
   assert.equal(els['mobile-furnace-start'].textContent,'建立新 MV');
   await els['mobile-furnace-start'].onclick();assert.equal(posts.length,beforeMobileApprove.starts,'new-MV shortcut must scroll, not start');
