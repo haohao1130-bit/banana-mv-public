@@ -20,7 +20,8 @@ class Element{
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='3';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.motion_lora.checked=true;
 const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[];let reviewJob;const approvals=[];let recipeOpened=false;
-const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
+const context=vm.createContext({
+  window:{matchMedia:()=>({matches:true})},document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
   URL:{createObjectURL:file=>'blob:'+file.name,revokeObjectURL:()=>{}},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
   setTimeout:()=>0,clearTimeout:()=>{},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
@@ -238,9 +239,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
   assert(els['recipe-text'].textContent.includes('@圖片1'));assert(els['recipe-text'].textContent.includes('<b>plain text</b>'));
   assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);
-  // A ready plan must replace the mobile action with approval, never a new submission.
-  assert.equal(els['mobile-furnace-start'].textContent,'丹方無誤，開爐');
-  assert.equal(els['mobile-furnace-start'].disabled,false);
+  // A ready plan reveals the review and keeps approval in that panel.
+  assert.equal(els['mobile-furnace-start'].textContent,'查看丹方');
+  assert.equal(els['recipe-review'].scrolled,true);
+  assert.equal(els['recipe-plan-details'].open,true);
   assert.equal(els['mobile-furnace-open-title'].textContent,'丹方審閱');
   const translatedRecipe={id:'recipe123',status:'plan_ready',plan_revision:'r1',plan_preview_setup:'English source setup',segments:[{index:0,start:0,seconds:10,director_plan:{event:'English source event'}}],plan_translation:{status:'ready',source_plan_revision:'r1',blocks:{setup:'中文共通設定','0':'中文事件 <Picture 2>'}}};
   els['recipe-language'].value='zh';context.translatedRecipe=translatedRecipe;vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('中文事件 @圖片2'));assert(els['recipe-language-status'].textContent.includes('僅供審閱'));
@@ -251,6 +253,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   await vm.runInContext("openProject('recipe123')",context);assert.equal(els['recipe-review'].hidden,false);assert.equal(approvals.length,0);
   const beforeMobileApprove={starts:posts.length,uploads:uploads.length};
   await els['mobile-furnace-start'].onclick();
+  assert.equal(approvals.length,0,'the mobile review shortcut must not start rendering');
+  await els['approve-recipe'].onclick();
   assert.deepEqual(approvals,[{id:'recipe123',revision:'recipe-v1'}]);
   assert.equal(posts.length,beforeMobileApprove.starts,'mobile approval must not start a new job');
   assert.equal(uploads.length,beforeMobileApprove.uploads,'mobile approval must not reupload any media');
