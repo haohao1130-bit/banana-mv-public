@@ -84,7 +84,8 @@ function showClipVersion(row){
   const take=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
   const format=take?.preview_kind==='raw'?'RAW 原始有聲預覽':'裁切版（無 RAW 音軌）';
-  row.note.textContent=take?`V${take.version||1} · ${format} · ${take.preview_filename||take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:'')+(take.preview_kind==='raw'&&clipView.jobData?.request?.mode==='chain5'?' · 接續模式 RAW 開頭含重疊影格，正式成片已裁切':''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
+  const note=take?`V${take.version||1} · ${format} · ${take.preview_filename||take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:'')+(take.preview_kind==='raw'&&clipView.jobData?.request?.mode==='chain5'?' · 接續模式 RAW 開頭含重疊影格，正式成片已裁切':''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
+  if(row.note.textContent!==note)row.note.textContent=note;
   updateClipActions();
 }
 function renderClipPreviews(job){
@@ -96,8 +97,9 @@ function renderClipPreviews(job){
     let row=clipView.rows.get(i);
     if(!row){
       const card=document.createElement('article');card.className='dan-card';
-      const label=document.createElement('label'),check=document.createElement('input'),title=document.createElement('span');
-      check.type='checkbox';label.append(check,title);
+      const title=document.createElement('h3');title.className='dan-clip-title';
+      const label=document.createElement('label'),check=document.createElement('input');
+      check.type='checkbox';label.append(check,`選取第 ${i+1} 段`);
       const video=document.createElement('video');video.controls=true;video.muted=false;video.preload='none';video.playsInline=true;
       const version=document.createElement('div');version.className='dan-version';
       const select=document.createElement('select');select.setAttribute('aria-label',`第 ${i+1} 顆丹藥的版本`);
@@ -108,7 +110,7 @@ function renderClipPreviews(job){
       const note=document.createElement('p');note.className='muted';
       const branchHint=document.createElement('p');branchHint.className='muted';branchHint.textContent='回爐本段→正式採用→從本段尾幀重寫 9B 並續拍；後續舊版不參與新成片。';
       branchBar.append(branchOnly,branchCascade);
-      version.append(select,use);card.append(label,video,version,branchBar,branchHint,note);$('clip-list').append(card);
+      version.append(select,use);card.append(title,label,video,version,branchBar,branchHint,note);$('clip-list').append(card);
       const fixLabel=document.createElement('label');fixLabel.textContent='局部修改建議（選填）';
       const correction=document.createElement('textarea');correction.rows=3;correction.maxLength=3000;
       correction.setAttribute('aria-label',`第 ${i+1} 顆丹藥的局部修改建議`);
@@ -160,19 +162,23 @@ function renderClipPreviews(job){
     }
     row.segment=segment;
     const obsolete=continuous5070(job)&&job.continuation_restart&&i>job.continuation_restart.index;
-    row.title.textContent=`第 ${i+1} 段 · ${segment.start.toFixed(2)}–${(segment.start+segment.seconds).toFixed(2)} 秒｜${obsolete?'舊時間線・待重新接拍':segment.status==='done'?'已生成':'等待生成'}`;
+    const title=`第 ${i+1} / ${job.segments.length} 段 · ${segment.start.toFixed(2)}–${(segment.start+segment.seconds).toFixed(2)} 秒｜${obsolete?'舊時間線・待重新接拍':segment.status==='done'?'已生成':'等待生成'}`;
+    if(row.title.textContent!==title)row.title.textContent=title;
     row.video.hidden=!segment.preview;
     const draft=segment.prompt_rewrite||{};
-    if(draft.status==='ready'&&typeof draft.text==='string'&&draft.version!==row.loadedVersion){
-      row.promptEditor.value=draft.text;row.loadedVersion=draft.version;row.editorLoaded=true;
-    }else if(!row.editorLoaded){
-      row.promptEditor.value=draft.text||segment.prompt||'';row.loadedVersion=draft.version||null;row.editorLoaded=true;
+    const draftReady=draft.status==='ready'&&typeof draft.text==='string';
+    const hasNewDraft=draftReady&&draft.version!==row.loadedVersion;
+    if(document.activeElement!==row.promptEditor&&(hasNewDraft||!row.editorLoaded)){
+      const text=draftReady?draft.text:draft.text||segment.prompt||'';
+      if(row.promptEditor.value!==text)row.promptEditor.value=text;
+      row.loadedVersion=draft.version||null;row.editorLoaded=true;
     }
-    row.promptInfo.textContent=obsolete?'這是舊時間線丹方／影片，僅供查看。請先從正式採用新版尾幀續拍。':
+    const promptInfo=obsolete?'這是舊時間線丹方／影片，僅供查看。請先從正式採用新版尾幀續拍。':
       draft.status==='running'?'9B 正在重配這一段丹方；目前文字與舊影片仍保留。':
       draft.status==='ready'?`9B 新丹方 V${draft.version} 已完成${draft.previous_take?' · 上段來源 Take：'+draft.previous_take:''}；可手動修改，再按「依此提示詞回爐」。`:
       draft.status==='error'?`9B 重配失敗：${draft.error}。可直接貼稿，不影響舊片。`:
       '可用 9B 重寫，或直接貼入你自己的 H3 提示詞；按回爐才會生新片。';
+    if(row.promptInfo.textContent!==promptInfo)row.promptInfo.textContent=promptInfo;
     const ready=(segment.takes||[]).filter(t=>t.status==='ready');
     const signature=ready.map(t=>t.id+':'+(t.id===segment.selected_take)+':'+(t.id===desired)).join('|');
     if(row.signature!==signature){

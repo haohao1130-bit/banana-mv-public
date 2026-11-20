@@ -333,13 +333,13 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(els['clips-retake'].textContent.includes('2 顆'));assert.equal(els['clips-retake'].disabled,false);
   vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,status:'running'})})`,context);
   assert.equal(els['clips-retake'].disabled,true);assert.equal(rows[1].check.disabled,false);
-  assert.equal(els['clip-list'].children[1].children[1],rows[1].video);assert.equal(rows[1].check.checked,true);
+  assert.equal(els['clip-list'].children[1].children[2],rows[1].video);assert.equal(rows[1].check.checked,true);
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);await els['clips-retake'].onclick();
   assert.deepEqual(retakes,[{id:'review123',indices:[1,2],previous_takes:{'1':'original'}}]);
   rows[1].correction.value='只把手部操作拍清楚';rows[1].correction.oninput();
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert.equal(rows[1].correction.value,'只把手部操作拍清楚');
-  assert.equal(els['clip-list'].children[1].children[1],rows[1].video);
+  assert.equal(els['clip-list'].children[1].children[2],rows[1].video);
   await els['clips-retake'].onclick();
   assert.deepEqual(retakes.at(-1),{id:'review123',indices:[1,2],instructions:{'1':'只把手部操作拍清楚'},previous_takes:{'1':'original'}});
   // New one-clip prompt workbench: do not queue H3 when asking 9B to recompose.
@@ -350,6 +350,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.deepEqual(rewrites,[{id:'review123',index:1,previous_take:'original'}]);
   assert.equal(retakes.length,2,'9B text rewrite does not queue a video retake');
   reviewJob.segments[1].prompt_rewrite={status:'ready',version:1,text:'subject_definitions:\n9B rewritten clip\nsummary:\nClip changed'};
+  context.document.activeElement=rows[1].promptEditor;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert(rows[1].promptEditor.value.includes('Original H3 prompt'),'poll must defer a new draft while the editor is focused');
+  context.document.activeElement=null;
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   assert(rows[1].promptEditor.value.includes('9B rewritten clip'));
   rows[1].promptEditor.value='subject_definitions:\nMy own custom revised clip';
@@ -411,6 +415,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['clip-legacy-toolbar'].hidden,true,'the batch/condense UI is retired in 5070 chain');
   assert.equal(rows[1].branchOnly.hidden,true,'cannot replace one shot and keep obsolete successors');
   assert.equal(rows[1].checkLabel.hidden,true);
+  assert.equal(rows[1].card.children[0], rows[1].title, 'segment heading must remain above the video when selection is hidden');
+  assert.match(rows[1].title.textContent, /^第 2 \/ \d+ 段 · /);
   assert.equal(rows[1].correctionLabel.hidden,true);
   assert.equal(els['clips-condense'].disabled,true);
   assert.equal(els['clips-retake'].disabled,true);
@@ -518,7 +524,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['recipe-review'].hidden,true);
   assert.equal(els['mobile-furnace-start'].textContent,'查看進度');
   await els['mobile-furnace-start'].onclick();
-  assert.equal(els['progress-summary'].scrolled,true);
+  assert.equal(els['alchemy-title'].scrolled,true);
+  assert.equal(els['progress-summary'].scrolled,undefined);
   assert.equal(posts.length,beforeApproval.posts,'progress link must NOT create a new MV');
   await els['approve-recipe'].onclick();assert.equal(approvals.length,1);
   mobileViewport.matches=false;vm.runInContext('arrangeRecipe()',context);

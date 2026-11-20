@@ -43,6 +43,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 .furnace-art[data-state="upscaling"] .master-flow{transform:translateY(3px)}
 @media(prefers-reduced-motion:reduce){.furnace-art[data-state="upscaling"] .nv-aura,.furnace-art[data-state="upscaling"] .nv-glint,.furnace-art[data-state="upscaled"] .nv-glint,.furnace-art[data-state="upscaling"] .banana-bob{animation:none}}
 
+.dan-clip-title{margin:0 0 10px;font-size:16px;line-height:1.45;color:#efd198}
 .mobile-furnace-bar{display:none}
 @media(max-width:640px){
  body{padding-bottom:calc(88px + env(safe-area-inset-bottom, 0px))}
@@ -51,6 +52,9 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
  .mobile-furnace-bar .mobile-furnace-link{flex:1;min-width:0;text-align:left}
  .mobile-furnace-label{display:block;font-size:.78rem}
  #alchemy-title{scroll-margin-top:12px}
+ .dan-prompt-workbench{overflow-anchor:none}
+ .dan-card .dan-prompt-workbench label{display:block}
+ .dan-card .dan-prompt-workbench textarea{display:block;width:100%;margin-top:8px}
  main>.card:nth-child(2){order:-1}
  #recipe-review{scroll-margin-top:12px}
  #recipe-review #approve-recipe{width:100%;margin:10px 0}
@@ -639,7 +643,7 @@ mobileFurnaceStart.onclick=()=>{
   if(!$('approve-recipe').disabled)return $('approve-recipe').onclick();
   return;
  }
- const target=action==='setup'?'form':action==='project'?'projects':'progress-summary';
+ const target=action==='setup'?'form':action==='project'?'projects':'alchemy-title';
  if(typeof $(target).scrollIntoView==='function')$(target).scrollIntoView({block:'start'});
 };
 $('mobile-furnace-open').onclick=()=>{
@@ -652,7 +656,7 @@ if(typeof MutationObserver!=='undefined'){
  observer.observe($('progress-label'),{childList:true,characterData:true,subtree:true});
 }
 syncMobileFurnace();
-</script><script src="clip_review.js?v=5070-fresh-restart-20261117"></script><script>
+</script><script src="clip_review.js?v=5070-mobile-clip-review-20261120"></script><script>
 (() => {
  const settings = document.getElementById('face-refine-settings');
  const button = document.getElementById('switch-to-film');
