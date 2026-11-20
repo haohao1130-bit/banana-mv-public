@@ -4,6 +4,7 @@ import mimetypes
 import re
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import quote
 
 MAX_UPLOAD = 256 * 1024 * 1024
 
@@ -37,7 +38,7 @@ class WebHandler(BaseHTTPRequestHandler):
             raise ValueError('請求必須為 JSON 物件。')
         return value
 
-    def send_file(self, path):
+    def send_file(self, path, *, download_name=None):
         path = Path(path)
         if not path.is_file():
             return self.send_error(404)
@@ -62,6 +63,8 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
         self.send_header('Content-Length', str(count))
         self.send_header('Accept-Ranges', 'bytes')
+        if download_name:
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''"+quote(download_name,safe=''))
         self.send_header('Cache-Control', 'no-cache')
         if code == 206:
             self.send_header('Content-Range', f'bytes {begin}-{end}/{size}')

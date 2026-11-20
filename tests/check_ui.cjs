@@ -388,6 +388,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(retakes.length,retakeCount,'stale rewritten prompt must not render against another previous Take');
   assert(rows[1].promptInfo.textContent.includes('上一段版本已變更'));
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
+  assert.equal(els['download'].href,'/master?download=1');
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
 
   vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'clip',index:1,total:2}})",context);

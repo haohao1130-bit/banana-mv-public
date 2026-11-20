@@ -479,8 +479,7 @@ def video_info(entry):
     raise RuntimeError('生成已完成，但沒有找到影片輸出。')
 
 
-def export_finished_video(job,source,*,refined_version=None,upscaled_version=None):
-    """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
+def finished_video_target(job,*,refined_version=None,upscaled_version=None):
     configured = os.environ.get('BANANA_FINISHED_VIDEOS')
     if configured:
         folder = Path(configured)
@@ -488,14 +487,19 @@ def export_finished_video(job,source,*,refined_version=None,upscaled_version=Non
         folder = Path(r'F:\BANANAMV\videos')
     else:
         folder = backend.DATA / 'videos'
-    folder.mkdir(parents=True,exist_ok=True)
     title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
     suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
     if refined_version is not None:
         suffix += f'_face_refine_v{refined_version:03d}'
     if upscaled_version is not None:
         suffix += f'_1080p_v{upscaled_version:03d}'
-    target=folder/f'{title}_{job["id"]}{suffix}.mp4'
+    return folder/f'{title}_{job["id"]}{suffix}.mp4'
+
+
+def export_finished_video(job,source,*,refined_version=None,upscaled_version=None):
+    """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
+    target=finished_video_target(job,refined_version=refined_version,upscaled_version=upscaled_version)
+    target.parent.mkdir(parents=True,exist_ok=True)
     temp=target.with_name('.'+target.name+'.tmp')
     try:
         shutil.copyfile(source,temp)
@@ -1291,8 +1295,23 @@ class Handler(WebHandler):
             try:
                 from banana_mv import masters
                 args=dict(urllib.parse.parse_qsl(url.query))
-                path=masters.source(read_state(args['id']),job_dir(args['id']),args.get('version'))
-                return self.send_file(path)
+                job=read_state(args['id'])
+                work=job_dir(args['id'])
+                version=args.get('version')
+                if args.get('download')=='1':
+                    if job.get('final_stale'):
+                        raise ValueError('目前成片等待重新合成。')
+                    current=job.get('current_master')
+                    if version is None or (current is not None and version==str(current)):
+                        target=finished_video_target(job)
+                        if job.get('output_video')==str(target) and not job.get('export_error') and target.is_file():
+                            return self.send_file(target,download_name=target.name)
+                        path=masters.source(job,work,version)
+                    else:
+                        path=masters.source(job,work,version)
+                        target=finished_video_target(dict(job,current_master=int(version)))
+                    return self.send_file(path,download_name=target.name)
+                return self.send_file(masters.source(job,work,version))
             except Exception as e:
                 return self.send_json({'error':str(e)},400)
         return self.send_error(404)
