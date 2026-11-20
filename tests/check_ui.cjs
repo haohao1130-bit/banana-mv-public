@@ -389,6 +389,12 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(rows[1].promptInfo.textContent.includes('上一段版本已變更'));
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els['download'].href,'/master?download=1');
+  vm.runInContext("renderFinalPreviews({video:'/master',native_sound_download:'/audio'})",context);
+  assert.equal(els['native-sound-download'].href,'/audio');
+  assert.equal(els['native-sound-download'].hidden,false);
+  vm.runInContext("renderFinalPreviews({video:'/master',final_stale:true,native_sound_download:'/audio'})",context);
+  assert.equal(els['native-sound-download'].hidden,true);
+  vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
 
   vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'clip',index:1,total:2}})",context);
@@ -504,6 +510,12 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;
   await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);assert.equal(posts.at(-1).preview_zh,true);
   assert.equal(posts.at(-1).plan_review,true);assert.equal(approvals.length,0);
+  assert.equal(posts.at(-1).native_sound,false);
+  els.native_sound.checked=true;
+  await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});
+  assert.equal(posts.at(-1).native_sound,true);
+  await vm.runInContext('poll()',context);
+  els.native_sound.checked=false;
   assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
   assert(els['recipe-text'].textContent.includes('@圖片1'));assert(els['recipe-text'].textContent.includes('<b>plain text</b>'));
   assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);

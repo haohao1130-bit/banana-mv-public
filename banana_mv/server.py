@@ -180,7 +180,9 @@ def graph_options(req, seconds, segment=None):
             'kitchen_attention': req.get('kitchen_attention',req.get('acceleration',True)),
             'sparse_attention': req.get('sparse_attention',req.get('acceleration',True)),
             'motion_lora': req.get('motion_lora', True),
-            'director_mode': mode, 'intensity': req.get('intensity', 'high')}
+            'director_mode': mode, 'intensity': req.get('intensity', 'high'),
+            **({'native_sound': cue} if segment is not None and req.get('native_sound_cues') and
+               (cue := req['native_sound_cues'].get(str(segment['index'] + 1))) else {})}
 
 
 def preflight_five_frame(cfg, req, images, size, seg, seed):
@@ -794,6 +796,8 @@ def worker(job, cfg, original, song, drive):
             export_finished_video(job,work/'final.mp4')
         except OSError as error:
             job['export_error']=f'成品已合成，但另存 videos 資料夾失敗：{error}；仍可由前端下載。'
+        from banana_mv.native_sound import export_track
+        export_track(sys.modules[__name__], job, master)
         if job['request'].get('face_refine') and job['id'] not in CANCEL:
             try:
                 face_refine.render_version(
@@ -839,6 +843,10 @@ def worker(job, cfg, original, song, drive):
 
 def start(req):
     cfg = copy.deepcopy(backend.load_config())
+    req = dict(req)
+    req.pop('native_sound_cues', None)
+    if not isinstance(req.get('native_sound', False), bool) or (req.get('native_sound') and backend.PORT != 8193):
+        raise ValueError('原生聲音只支援 5070 本機版。')
     if not isinstance(req.get('upscale_1080p', False), bool):
         raise ValueError('1080P 放大設定必須是布林值。')
     if not isinstance(req.get('face_refine', False), bool):
@@ -924,6 +932,13 @@ def start(req):
     authored_prompt = str(req.get('prompt',''))
     if req['director_schema'] == 6 and not (backend.PORT == 8193 and req.get('rewrite', True)):
         authored_prompt = authored_prompt[:10000]
+    if req.get('native_sound'):
+        from banana_mv.native_sound import split_cues
+        authored_prompt, req['native_sound_cues'] = split_cues(authored_prompt, len(plan))
+        clip = next(seg for seg in plan if str(seg['index'] + 1) in req['native_sound_cues'])
+        preflight(cfg, build_workflow([img['comfy_name'] for img in images], 'preflight.wav',
+                                     *size, clip['model_frames'], '', seed,
+                                     **graph_options(req, clip['seconds'], clip)))
     req = normalize_references(dict(req, prompt=authored_prompt), seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
     fallback_prompt(req['prompt'], False, '', len(images))
@@ -1291,6 +1306,19 @@ class Handler(WebHandler):
                 return self.send_file(preview(job,int(args['index']),args.get('take','current')))
             except (ValueError,KeyError,OSError,RuntimeError) as e:
                 return self.send_json({'error':str(e)},400)
+        if url.path=='/api/mv/native-sound':
+            from banana_mv.native_sound import download_url, track_path
+            try:
+                args = dict(urllib.parse.parse_qsl(url.query))
+                job = read_state(args['id'])
+                version = job.get('current_master')
+                if not download_url(job) or args.get('version') != str(version):
+                    return self.send_error(404)
+                path = track_path(job_dir(job['id']), version)
+                name = finished_video_target(job).stem + '_原生聲音.mp3'
+                return self.send_file(path, download_name=name)
+            except (KeyError, ValueError, OSError):
+                return self.send_error(404)
         if url.path=='/api/mv/file':
             try:
                 from banana_mv import masters

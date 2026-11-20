@@ -273,7 +273,8 @@ def fallback_prompt(prompt, continuation=False, lyrics='', image_count=1, scene_
 def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    first_frame=None, steps=8, *, acceleration=True, motion_lora=True,
                    director_mode='performance', intensity='high',
-                   kitchen_attention=None, sparse_attention=None, guide_frames=None):
+                   kitchen_attention=None, sparse_attention=None, guide_frames=None,
+                   native_sound=None):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
     if intensity not in ('normal', 'high', 'extreme'):
         raise ValueError('未知動作強度')
@@ -316,6 +317,17 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
         '16': node('SaveVideo', video=['15',0], filename_prefix='BananaMV/segment',
                    format='mp4', **{'format.codec':'h264'}),
     }
+    if native_sound:
+        from banana_mv.native_sound import prompt_for_sound
+
+        del w['6']
+        conditioning = w['7']['inputs']
+        conditioning.pop('drive_audio')
+        conditioning.update(audio_mode='native', audio_denoise_strength=1.0,
+                            add_source_as_reference=False, prompt_primary_audio_ordinal=0,
+                            prompt=prompt_for_sound(prompt, native_sound))
+        w['native_audio_decode'] = node('VAEDecodeAudio', samples=['13', 0], vae=['4', 0])
+        w['15']['inputs']['audio'] = ['native_audio_decode', 0]
     for i, filename in enumerate(images[1:], 1):
         key = f'ref_{i}'
         w[key] = node('LoadImage', image=filename)

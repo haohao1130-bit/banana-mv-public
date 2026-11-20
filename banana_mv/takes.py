@@ -125,6 +125,9 @@ def describe(job):
     result=copy.deepcopy(job)
     work=app.job_dir(job['id'])
     if job.get('video') and (work/'final.mp4').is_file():result['final_video']=str(work/'final.mp4')
+    from banana_mv.native_sound import download_url
+    if url := download_url(job):
+        result['native_sound_download'] = url
     for master in result.get('final_versions',[]):
         master['download']='/api/mv/file?'+urllib.parse.urlencode({'id':job['id'],'version':master['version']})
     for i,seg in enumerate(result['segments']):
@@ -626,6 +629,8 @@ def apply_takes(job,choices,song):
             else:
                 job.pop('video',None);job['final_stale']=True
         if complete:
+            from banana_mv.native_sound import export_track
+            export_track(app, job, master)
             try:app.export_finished_video(job,work/'final.mp4')
             except OSError as e:job['export_error']=f'成品已合成，但另存失敗：{e}；仍可下載。'
         return complete
