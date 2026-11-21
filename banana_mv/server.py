@@ -853,9 +853,8 @@ def worker(job, cfg, original, song, drive):
 def start(req):
     cfg = backend.project_config(req)
     req = dict(req)
+    req.pop('native_sound', None)
     req.pop('native_sound_cues', None)
-    if not isinstance(req.get('native_sound', False), bool) or (req.get('native_sound') and backend.PORT != 8193):
-        raise ValueError('原生聲音只支援 5070 本機版。')
     if not isinstance(req.get('upscale_1080p', False), bool):
         raise ValueError('1080P 放大設定必須是布林值。')
     if not isinstance(req.get('face_refine', False), bool):
@@ -941,15 +940,6 @@ def start(req):
     authored_prompt = str(req.get('prompt',''))
     if req['director_schema'] == 6 and not (backend.PORT == 8193 and req.get('rewrite', True)):
         authored_prompt = authored_prompt[:10000]
-    if req.get('native_sound'):
-        from banana_mv.native_sound import split_cues
-        authored_prompt, cues = split_cues(authored_prompt, len(plan))
-        if cues:
-            req['native_sound_cues'] = cues
-            clip = next(seg for seg in plan if str(seg['index'] + 1) in cues)
-            preflight(cfg, build_workflow([img['comfy_name'] for img in images], 'preflight.wav',
-                                         *size, clip['model_frames'], '', seed,
-                                         **graph_options(req, clip['seconds'], clip)))
     req = normalize_references(dict(req, prompt=authored_prompt), seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
     fallback_prompt(req['prompt'], False, '', len(images))

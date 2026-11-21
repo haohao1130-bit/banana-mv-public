@@ -522,12 +522,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;
   await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);assert.equal(posts.at(-1).preview_zh,true);
   assert.equal(posts.at(-1).plan_review,true);assert.equal(approvals.length,0);
-  assert.equal(posts.at(-1).native_sound,false);
-  els.native_sound.checked=true;
-  await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});
-  assert.equal(posts.at(-1).native_sound,true);
-  await vm.runInContext('poll()',context);
-  els.native_sound.checked=false;
+  assert.equal(Object.hasOwn(posts.at(-1), 'native_sound'), false);
   assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
   assert(els['recipe-text'].textContent.includes('@圖片1'));assert(els['recipe-text'].textContent.includes('<b>plain text</b>'));
   assert.equal(els.generate.disabled,false);assert.equal(els['plan-first'].disabled,false);assert.equal(els['approve-recipe'].disabled,false);
