@@ -1,6 +1,7 @@
 """Banana-owned settings, compatible asset storage and local prompt rewriting."""
 import copy
 import json
+import logging
 import os
 import random
 import re
@@ -189,12 +190,25 @@ def build_rewrite_graph(cfg, system, parts, job_id):
 
 _REWRITE_PROMPT_LOCK = threading.Lock()
 _REWRITE_PROMPT_ID = None
+_REWRITE_STOP = None
 
 
 def active_rewrite_prompt_id():
     """The 9B prompt currently owned by this BANANAMV process."""
     with _REWRITE_PROMPT_LOCK:
         return _REWRITE_PROMPT_ID
+
+
+def request_rewrite_stop():
+    with _REWRITE_PROMPT_LOCK:
+        if _REWRITE_STOP is not None:
+            _REWRITE_STOP.set()
+
+
+class _EmptyRewrite(ValueError):
+    def __init__(self, message, *, thinking_only=False):
+        super().__init__(message)
+        self.thinking_only = thinking_only
 
 
 def _preview_text(outputs, node):
@@ -208,15 +222,48 @@ def _preview_text(outputs, node):
 
 
 def rewrite_local(cfg, system, parts, job_id):
+    global _REWRITE_STOP
+    stopped = threading.Event()
+    with _REWRITE_PROMPT_LOCK:
+        _REWRITE_STOP = stopped
+    try:
+        try:
+            return _rewrite_once(cfg, system, parts, job_id, stopped)
+        except _EmptyRewrite as error:
+            if not error.thinking_only:
+                raise
+            if stopped.is_set():
+                raise InterruptedError('已停止 9B 改寫。')
+            logging.getLogger(__name__).warning('%s 將關閉思考重試一次。', error)
+            retry_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
+            try:
+                return _rewrite_once(retry_cfg, system, parts, job_id, stopped)
+            except _EmptyRewrite as retry_error:
+                raise ValueError(f'{error} 關閉思考重試後仍無法取得正式稿。{retry_error}') from retry_error
+    finally:
+        with _REWRITE_PROMPT_LOCK:
+            if _REWRITE_STOP is stopped:
+                _REWRITE_STOP = None
+
+
+def _rewrite_once(cfg, system, parts, job_id, stopped):
     graph, names = build_rewrite_graph(cfg, system, parts, job_id)
     entry = None
     prompt_id = None
     global _REWRITE_PROMPT_ID
     try:
+        if stopped.is_set():
+            raise InterruptedError('已停止 9B 改寫。')
         prompt_id = queue_prompt(cfg, graph)
         with _REWRITE_PROMPT_LOCK:
             _REWRITE_PROMPT_ID = prompt_id
+        if stopped.is_set():
+            from banana_mv.comfy import cancel_prompt
+            cancel_prompt(cfg, prompt_id)
+            raise InterruptedError('已停止 9B 改寫。')
         entry = wait_prompt(cfg, prompt_id)
+        if stopped.is_set():
+            raise InterruptedError('已停止 9B 改寫。')
         outputs = entry.get('outputs', {})
         text = _preview_text(outputs, 'result')
         if text:
@@ -225,9 +272,10 @@ def rewrite_local(cfg, system, parts, job_id):
             thinking = _preview_text(outputs, 'thinking_preview')
             final_status = '空白' if text is not None else '讀不到預覽欄位'
             thinking_status = f'{len(thinking)} 字' if thinking is not None else '讀不到預覽欄位'
-            raise ValueError(f'本地 9B 改寫回傳空白。正式稿端：{final_status}；'
-                             f'思考端：{thinking_status}。ComfyUI 任務 ID：{prompt_id}')
-        raise ValueError('本地 9B 改寫回傳空白。')
+            raise _EmptyRewrite(f'本地 9B 改寫回傳空白。正式稿端：{final_status}；'
+                                f'思考端：{thinking_status}。ComfyUI 任務 ID：{prompt_id}',
+                                thinking_only=text == '' and bool(thinking))
+        raise _EmptyRewrite(f'本地 9B 改寫回傳空白。ComfyUI 任務 ID：{prompt_id}')
     finally:
         with _REWRITE_PROMPT_LOCK:
             if prompt_id is not None and _REWRITE_PROMPT_ID == prompt_id:

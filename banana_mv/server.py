@@ -449,6 +449,7 @@ def stop_job(job_id):
         return {'ok':True,'message':'目前沒有正在煉製的段落。','interruption':'not_running'}
     STOP_AFTER_CURRENT.discard(job_id)
     CANCEL.add(job_id)
+    backend.request_rewrite_stop()
     pid=None
     if job.get('status')=='retaking':
         i=(job.get('retake') or {}).get('current')
