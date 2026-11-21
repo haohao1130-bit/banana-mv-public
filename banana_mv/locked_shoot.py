@@ -29,7 +29,7 @@ SYSTEM = (
     'non_diegetic_music. Only invent the visual shot bodies inside '
     'detailed_description; Python supplies the other fixed fields. '
     'Do not alter the supplied shot boundaries, identity or SRT singer authority. '
-    'Natural singing and lip-sync are encouraged only when SRT permits. '
+    'Use natural lip-sync where it fits the scene. SRT tags guide which performer to show. '
     'Never switch performers or invent a duet; silent characters may react. '
     'Python owns exact singer timing and identity. Use only <Subject 1> and '
     '<Subject 2> for the two actors; never use <Picture N> in shot prose. '
@@ -46,7 +46,7 @@ REPAIR_SYSTEM = (
     'In detailed_description, output exactly ONE corrected [Shot N] body, '
     'using that shot number and no other shot. Keep its original cinematic '
     'action and camera; fix only the listed costume/cast problem. '
-    'Follow the SRT singer permissions. No explanations, apologies or JSON.'
+    'Use tagged SRT cast hints if showing lip-sync. No explanations, apologies or JSON.'
 )
 
 def clip_screen_cast_rule(event):
@@ -101,17 +101,17 @@ def singer_rows(a,b,cues):
     rows=[]
     for x,y,(who,explicit_duet) in intervals:
         if who==('S1',):
-            v='<Subject 1> (S1) ONLY lip-syncs; <Subject 2> is silent.'
+            v='If showing lip-sync, use <Subject 1> (SRT S1).'
         elif who==('S2',):
-            v='<Subject 2> (S2) ONLY lip-syncs; <Subject 1> is silent.'
+            v='If showing lip-sync, use <Subject 2> (SRT S2).'
         elif who==('S1','S2'):
             if explicit_duet:
-                v='<Subject 1> (S1) AND <Subject 2> (S2) lip-sync together.'
+                v='If showing the duet, <Subject 1> and <Subject 2> lip-sync together (SRT S1+S2).'
             else:
                 v=('Independent S1 and S2 source vocals overlap. No authored duet; '
                    'each character follows their own source voice only.')
         else:
-            v='No assigned visible lip-sync; use physical acting and reaction.'
+            v='No SRT cast hint; follow the scene for natural lip-sync and reactions.'
         rows.append(f'{x:.3f}–{y:.3f}s: '+v)
     return rows
 
@@ -254,6 +254,8 @@ def _repair_vocals(blocks,slots,fixed):
     revised=dict(blocks);audit=[]
     for slot in slots:
         number=slot['number'];allowed=set(slot['allowed_singers'])
+        if not allowed:
+            continue
         def correct(match):
             assigned=_vocal_role(match['actor'],pronouns)
             if not assigned:return match[0]
@@ -349,7 +351,7 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_s
         'summary:\nThe current event unfolds in '+scene+' through photography and physical character interaction, following existing voices in the original track.' + ('\n' + cast_rule if cast_rule else ''),
         'retention_analysis:\n'+'\n'.join(retention),
         'detailed_description:\nUse the original song from <Audio 1> unchanged (fully_copy). '+
-        'SRT VOCAL WINDOWS (clip-local, these are NOT camera cuts):\n'+
+        'SRT CAST HINTS (only when showing lip-sync):\n'+
         '\n'.join(_global_vocal_rows(slots))+
         '\nNo added vocals, spoken dialogue, text overlays or subtitles.\n'+
         (cast_rule + '\n' if cast_rule else '')+
@@ -433,7 +435,7 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False,
         'SRT VOCAL WINDOWS — NOT CAMERA CUT POINTS:',
         *_global_vocal_rows(slots),
         'LOCKED SHOT SLOTS — preserve the numbered camera slots below.',
-        'Only the singer assigned by the separate SRT vocal windows lip-syncs.',
+        'If showing lip-sync in a tagged window, choose the specified performer. Untagged moments follow the scene.',
     ))
     for slot in slots:
         lines.append(
@@ -445,7 +447,7 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False,
             for role in ('S1','S2'):
                 if role in scene_row['wardrobe']:
                     lines.append('  '+role+' CURRENT OUTFIT: '+scene_row['wardrobe'][role])
-        lines.append('  VOCAL LOCK: follow the single global SRT vocal window list above.')
+        lines.append('  OPTIONAL LIP-SYNC: use the cast hints above when useful.')
         lines.append('  FILL VISUALS: camera, expression, body movement, light and reactions.')
     lines.append('')
     lines.append('=== 2. CURRENT EVENT / ESTABLISHED OPENING STATE ===')
@@ -472,7 +474,7 @@ def _commission_text(req,segment,event,pictures,wardrobe,slots,continuity=False,
         'Camera energy: '+str(req.get('intensity','high'))+'.',
         'Fill each assigned [Shot N] with specific camera placement, framing, '
         'moving subjects, light, reactions and physical cause/effect. '
-        'Natural lip-sync is welcome only for its Python-assigned SRT singer.',
+        'Use natural lip-sync where appropriate and use tagged SRT to choose the visible performer.',
         'Use <Subject 1>/<Subject 2> for people in shot prose. '
         'The <Picture N> labels above identify reference assets, not actor actions.',
         'Keep the present scene, wardrobe and object state consistent. '

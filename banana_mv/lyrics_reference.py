@@ -67,7 +67,7 @@ VOCAL_LABELS = {
     '男聲': 'male', '女聲': 'female', '女生': 'female',
     '合唱': 'duet', '男女合唱': 'duet', '和聲': 'harmony',
 }
-SUBJECT_VOCAL_PREFIX = re.compile(r'^\s*\[\s*(S1(?:\s*\+\s*S2)?|S2)\s*\]', re.I)
+SUBJECT_VOCAL_PREFIX = re.compile(r'^\s*\[\s*(S[1-8](?:\s*\+\s*S[1-8])*)\s*\]', re.I)
 VOCAL_PREFIX = re.compile(
     r'^\s*(?:\[(男聲|女聲|女生|男女合唱|合唱|和聲)\]|'
     r'【(男聲|女聲|女生|男女合唱|合唱|和聲)】|'

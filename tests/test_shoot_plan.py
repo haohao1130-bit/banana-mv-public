@@ -107,7 +107,7 @@ class ShootPlanTests(unittest.TestCase):
             task=json.loads(text.split('Clip timing and audio context:\n',1)[1])
             self.assertNotIn('local_srt', task)
             self.assertNotIn('CURRENT_CUE', text)
-            self.assertEqual(task['authored_vocal_timeline'], [])
+            self.assertNotIn('authored_vocal_timeline', task)
             self.assertEqual(task['ending']['phase'],'resolving')
             self.assertEqual(task['ending']['local_settle_by'],3.5)
             self.assertEqual(seg['prompt_profile']['writer_calls'],1)

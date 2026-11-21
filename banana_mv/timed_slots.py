@@ -136,7 +136,7 @@ def _lift_next_line_chapter_times(prompt):
 
 
 def _lyric_key(value):
-    value=re.sub(r'\[\s*S[12](?:\s*\+\s*S[12])?\s*\]','',value,flags=re.I)
+    value=re.sub(r'\[\s*S[1-8](?:\s*\+\s*S[1-8])*\s*\]','',value,flags=re.I)
     return re.sub(r'[^\w\u3400-\u9fff]+','',value,flags=re.U).lower()
 
 

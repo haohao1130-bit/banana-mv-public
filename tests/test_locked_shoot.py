@@ -15,7 +15,7 @@ class LockedShootTests(unittest.TestCase):
         self.assertIn(5.24,times)
         self.assertIn(7.087,times)
         self.assertEqual(times[0],0.0)
-        self.assertTrue(any('ONLY lip-syncs' in x for s in slots for x in s['rows']))
+        self.assertTrue(any('If showing lip-sync' in x for s in slots for x in s['rows']))
         self.assertEqual(slots[-1]['end'],10.0)
 
     def test_short_srt_switch_stays_inside_one_cinematic_shot(self):
@@ -32,8 +32,8 @@ class LockedShootTests(unittest.TestCase):
         slots=plan_slots(10,cues,{},True)
         merged=_global_vocal_rows(slots)
         self.assertEqual(len(merged),2)
-        self.assertIn('0.000–7.920s: <Subject 2> (S2)',merged[0])
-        self.assertIn('7.920–10.000s: <Subject 1> (S1)',merged[1])
+        self.assertIn('0.000–7.920s: If showing lip-sync, use <Subject 2> (SRT S2)',merged[0])
+        self.assertIn('7.920–10.000s: If showing lip-sync, use <Subject 1> (SRT S1)',merged[1])
         self.assertNotIn('0.920–3.360s',' '.join(merged))
         self.assertEqual(len(singer_rows(0,10,cues)),2)
 
@@ -70,11 +70,11 @@ class LockedShootTests(unittest.TestCase):
               cue(6,8,'S1','S2'),cue(8,10,'S1')]
         rows=singer_rows(0,10,cues)
         self.assertEqual(len(rows),5)
-        self.assertIn('0.000–4.000s: <Subject 2>',rows[0])
-        self.assertIn('4.000–4.500s: No assigned',rows[1])
-        self.assertIn('4.500–6.000s: <Subject 2>',rows[2])
-        self.assertIn('6.000–8.000s: <Subject 1> (S1) AND',rows[3])
-        self.assertIn('8.000–10.000s: <Subject 1> (S1) ONLY',rows[4])
+        self.assertIn('0.000–4.000s: If showing lip-sync, use <Subject 2>',rows[0])
+        self.assertIn('4.000–4.500s: No SRT cast hint',rows[1])
+        self.assertIn('4.500–6.000s: If showing lip-sync, use <Subject 2>',rows[2])
+        self.assertIn('6.000–8.000s: If showing the duet, <Subject 1> and <Subject 2>',rows[3])
+        self.assertIn('8.000–10.000s: If showing lip-sync, use <Subject 1> (SRT S1)',rows[4])
 
     def test_final_h3_prompt_lists_singers_once_separate_from_shots(self):
         cues=[cue(0,3,'S2'),cue(3,5,'S2'),cue(5,10,'S1')]
@@ -84,8 +84,8 @@ class LockedShootTests(unittest.TestCase):
         result=_native(blocks,slots,{'S1':'<Picture 1>','S2':'<Picture 2>'},
                        {},False,'兩人在室內工作。',2)
         detail=result.split('detailed_description:',1)[1].split('overall_soundscape:',1)[0]
-        self.assertIn('SRT VOCAL WINDOWS',detail)
-        self.assertEqual(detail.count('ONLY lip-syncs'),2)
+        self.assertIn('SRT CAST HINTS',detail)
+        self.assertEqual(detail.count('If showing lip-sync'),2)
         self.assertIn('[Shot 1]',detail)
         self.assertIn('[Shot 2]',detail)
         self.assertNotIn('0.000–3.000s:',detail)
@@ -178,8 +178,8 @@ class LockedShootTests(unittest.TestCase):
         self.assertFalse(records)
         empty=plan_slots(1.208,[],{},False)
         repaired,records=_repair_vocals({1:'<Subject 1> sings to camera.'},empty,fixed)
-        self.assertEqual(len(records),1)
-        self.assertIn('moves to the beat',repaired[1])
+        self.assertFalse(records)
+        self.assertEqual(repaired[1], '<Subject 1> sings to camera.')
 
     def test_mixed_singers_within_one_shot_keep_python_timing(self):
         slots=plan_slots(10,[cue(0,.2,'S1'),cue(.2,9.8,'S2'),
@@ -286,7 +286,7 @@ class LockedShootTests(unittest.TestCase):
         self.assertIn('face and hairstyle from <Picture 3> ONLY',text)
         self.assertIn('CURRENT OUTFIT: pure-white tie-string bikini',text)
         self.assertIn('[Shot 2] 2.300–8.760s',text)
-        self.assertIn('ONLY lip-syncs',text)
+        self.assertIn('If showing lip-sync',text)
         self.assertIn('OPENING CONTINUITY: <Picture 1>',text)
         self.assertEqual(text.count('THIS CLIP EVENT'),1)
         self.assertNotIn('authored_vocal_timeline',text)
@@ -464,4 +464,4 @@ class LockedShootTests(unittest.TestCase):
 
     def test_no_lip_sync_assigned_to_terminal_instrumental_tail(self):
         slots=plan_slots(1.208,[],{},False)
-        self.assertIn('No assigned visible lip-sync',slots[0]['rows'][0])
+        self.assertIn('No SRT cast hint',slots[0]['rows'][0])

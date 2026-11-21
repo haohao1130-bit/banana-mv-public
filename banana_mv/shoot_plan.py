@@ -420,8 +420,9 @@ def _apply_source_performance(prompt, timeline, fixed_setup):
         rows.append(f"{cue['clip_start']:.3f}–{cue['clip_end']:.3f}s: {assigned}.")
     policy = (
         'Use the original song from <Audio 1> unchanged (fully_copy). '
-        'Only the assigned visible performer(s) lip-sync to vocals already in the track. '
-        'The following clip-local intervals are authoritative. '
+        'Use natural lip-sync where the scene calls for it. The following SRT hints identify '
+        'which performer to show if filming lip-sync in a tagged interval. Follow the scene '
+        'when no performer is tagged. <Audio 1> is the audible voice source. '
         'No spoken rendition, repeated line, new vocals or subtitles.\n' + '\n'.join(rows)
     )
     for field, replacement in (
@@ -486,12 +487,12 @@ _NATIVE_FUTURE = re.compile(
     r'second half|ending|finale|becomes a concert)\b', re.I,
 )
 _STATIC_FILMING_FACT = re.compile(
-    r'^(?:S[12]\s*[=:：]|<Picture \d+>|@圖片\d+|'
+    r'^(?:S[1-8]\s*[=:：]|<Picture \d+>|@圖片\d+|'
     r'角色|人物|男主|女主|歌手|主唱|演唱者|外貌|五官|髮型|'
     r'服裝|開場穿著|初始服裝|初始穿著|'
     r'全片只有|唯一|不得新增|禁止新增|不新增|'
     r'畫面風格|攝影風格|視覺風格|整體風格|'
-    r'固定場景|固定背景|依 SRT|[\[]S[12])',
+    r'固定場景|固定背景|依 SRT|[\[]S[1-8])',
     re.I,
 )
 
@@ -530,11 +531,7 @@ def _filming_reference_settings(fixed_setup):
         if section == 'native_cast':
             if _NATIVE_FUTURE.search(line):
                 continue
-            # The shrine is an environment, not a third singer or actor.
-            if re.match(r'(?i)^Subject\s+3\s*[｜|:：]',line):
-                result.append(re.sub(r'(?i)^Subject\s+3\s*[｜|:：]', 'Environment: ', raw))
-            else:
-                result.append(raw)
+            result.append(raw)
             continue
         # Author's concluding story explanation is useful for Python's plan,
         # never a current-shot instruction for the isolated 9B cameraman.
@@ -564,7 +561,7 @@ def _filming_reference_settings(fixed_setup):
             continue
         if not line or _FUTURE_FILMING.search(line):
             continue
-        binding = re.match(r'^S[12]\s*[=:：]\s*<Picture \d+>', line, re.I)
+        binding = re.match(r'^S[1-8]\s*[=:：]\s*<Picture \d+>', line, re.I)
         if binding or section == 'fixed' or (
             section == 'unknown' and _STATIC_FILMING_FACT.match(line)
         ):
@@ -617,8 +614,8 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     if (req.get('director_schema') == 6 and len(originals) == 2
             and {'S1', 'S2'} <= set(pictures)
             and req.get('srt_cues')
-            and any(SUBJECT_VOCAL_PREFIX.match(c.get('text',''))
-                    for c in req['srt_cues'])):
+            and any(SUBJECT_VOCAL_PREFIX.match(c.get('text','')) for c in req['srt_cues'])
+            and all(set(cue.get('subjects', ())) <= {'S1', 'S2'} for cue in vocals)):
         refs = ([tail] if tail else []) + list(originals)
         segment['director_mode'] = row['mode']
         direction_policy = '\n\n'.join((
@@ -693,8 +690,10 @@ reference clothing.
 All shot times are LOCAL and within the target duration; alignment
 padding adds no story time. Continue actions across cuts, without replaying the event.
 Use only connected pictures and <Audio 1>: fully_copy. The source audio is supplied to
-H3, not heard by you. Only the assigned vocalist may lip-sync. Add no new speech,
-lyrics, subtitles or a replacement song. Supplied SRT is timing evidence, not dialogue.
+H3, not heard by you. Use natural lip-sync where it suits the scene. <Audio 1> is the
+only audible voice source. SRT singer tags guide the visible performer when covering
+lip-sync. Describe mouth movement without adding an independent (Sx) voice or <d>
+for lip-sync or silent gestures. Add no speech, lyrics, subtitles or replacement song.
 Describe <Audio 1> only as the supplied unchanged source track; you have not heard it.
 Do not claim it contains a whistle, crowd, instruments, low energy or silence unless
 explicitly supported by the supplied evidence. Visible instruments are not heard evidence.
@@ -710,11 +709,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     text+='\n'+adaptation_direction(req)
     text+='\n'+REFERENCE_PERFORMANCE
     if vocals:
-        text += ('\nUse authored_vocal_timeline as the source of voice timing, even when '
-                 'acoustic analysis is unavailable or disagrees. Apply it only to visible '
-                 'lip-sync permitted by the current scene. Resolve subjects S1 and S2 using the explicit '
+        text += ('\nUse authored_vocal_timeline as optional coverage guidance for '
+                 'lip-sync permitted by the current scene. Resolve each SRT role using the explicit '
                  'user-defined cast bindings, never picture order or gender. If a binding is absent, '
-                 'do not guess. Two subject IDs mean both assigned performers sing together. '
+                 'do not guess. Combined role tags identify the performers for a shared vocal cue. '
                  'Duet means both assigned voices. Harmony identifies backing vocals and '
                  'does not assign a lead singer or imply both leads sing. Untagged time '
                  'has no explicit voice assignment. Keep the original soundtrack.')
@@ -728,11 +726,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             singer_roles = cue.get('subjects', [])
             named = ' + '.join(role+' = '+pictures.get(role, 'UNBOUND') for role in singer_roles)
             rows.append(f"{cue['clip_start']:.3f}–{cue['clip_end']:.3f}s: {named or 'UNASSIGNED'}")
-        text += '\nCLIP-LOCAL VOCAL AUTHORITY (precise, not a script or dialogue):\n' + '\n'.join(rows)
-        text += ('\nOnly these assigned singers perform vocals inside their intervals. '
-                 'Everyone else may smile, react and move silently. '
-                 'A camera may film reactions, but never describe an unassigned actor singing. '
-                 'Do not move vocal events between intervals.\n')
+        text += '\nCLIP-LOCAL SRT CAST HINTS FOR OPTIONAL LIP-SYNC:\n' + '\n'.join(rows)
+        text += ('\nIf covering lip-sync in a tagged interval, show its assigned performer(s). '
+                 'Camera coverage and other actors remain scene-led. Untagged intervals '
+                 'follow the scene and original track.\n')
     if wardrobe:
         text += '\nCURRENT COSTUME AT THIS LOCATION (already changed, no repeat changing scene):\n'
         text += '\n'.join(role+' '+pictures.get(role, '')+': '+garment for role, garment in wardrobe.items())

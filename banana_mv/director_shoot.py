@@ -27,9 +27,9 @@ DIRECTOR_SYSTEM = (
     'Choose your own number of camera shots and exact cut points to serve the performance. '
     'Vary scale, perspective, motion, lighting and duration with dramatic purpose, '
     'including wide views, full-body action, inserts and intimate lip-sync as appropriate. '
-    'SRT vocal windows own WHO lip-syncs and WHEN, not who appears or when the camera cuts. '
-    'A single camera shot may cover multiple vocal handoffs and silent reactions; '
-    'singing/rap/spoken performance follows each original recorded vocal window. '
+    'Use natural lip-sync where it suits the scene. Tagged SRT windows guide who to show '
+    'if filming lip-sync in that window. Keep camera cuts and coverage scene-led. '
+    'The original song is the only audible voice source; add no independent voice from lip-sync. '
     'Maintain reference identities, current wardrobe and physical cause/effect; '
     'performers may move, react and change expressions as the scene develops. '
     'Honor the explicitly authorized on-screen cast and source audio; '
@@ -168,9 +168,9 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
             lines.append(
                 f'<Subject {number}> ({role}) BODY FORM / ANATOMY '
                 f'(a stable identity fact, not clothing or an event): {body_form[role]}')
-    lines.append('SRT VOCAL WINDOWS — they control lip-sync, NEVER camera cuts:')
+    lines.append('SRT CAST HINTS — use when choosing whom to show lip-syncing:')
     lines.extend(singer_rows(0, duration, cues))
-    lines.append('SRT assigns the original vocal lip-sync in each window; other on-screen performers react silently.')
+    lines.append('Cover lip-sync only when useful to the scene. Follow the scene where nobody is tagged.')
     if scene_schedule:
         lines.append('AUTHOR-ASSIGNED PHYSICAL LOCATION / WARDROBE STATES:')
         for row in scene_schedule:
@@ -294,7 +294,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                 note = (
                     f'REPAIR ONE SHOT ONLY: [Shot {number}] '
                     f'({shot["start"]:.3f}–{shot["end"]:.3f}s, clip-local).\n'
-                    'SRT VOCAL AUTHORITY:\n' + '\n'.join(shot['rows'])
+                    'SRT CAST HINTS FOR LIP-SYNC:\n' + '\n'.join(shot['rows'])
                     + '\nCURRENT WARDROBE: ' + repr(wardrobe)
                     + '\nERRORS (repair only these):\n' + '\n'.join(messages)
                     + '\nORIGINAL VISUAL SHOT:\n' + blocks[number]

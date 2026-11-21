@@ -152,3 +152,23 @@ class CommissionGuardTests(unittest.TestCase):
                 timeline = vocal_timeline(excerpt({'srt_cues': [cue]}, clip))
                 errors = check_commission(prompt, timeline, role_pictures(self.SETUP), 10.0, {}, True)
                 self.assertEqual(bool(errors), expected_error, errors)
+
+    def test_untagged_shot_in_partly_tagged_clip_allows_natural_lip_sync(self):
+        cues = [{'clip_start': 0, 'clip_end': 4, 'subjects': ['S1']}]
+        prompt = self.DEFS + ('[Shot 1] <Subject 1> (S1) sings.\n'
+                              '[Shot 2] At 00:05.000, <Subject 1> (S1) continues singing.\n')
+        self.assertEqual(check_commission(prompt, cues, role_pictures(self.SETUP), 10, {}, True), [])
+
+    def test_eight_role_tags_follow_explicit_cast_binding(self):
+        from banana_mv.lyrics_reference import vocal_timeline
+
+        fixed = ('Subject 3｜角色甲\nUse @圖片8 as visual reference.\n'
+                 '[S4] = Subject 3\nS8 = <Picture 2>')
+        self.assertEqual(role_pictures(fixed), {'S4': '<Picture 8>', 'S8': '<Picture 2>'})
+        timeline = vocal_timeline([{'clip_start': 0, 'clip_end': 4, 'text': '[S8 + S4] 歌詞'}])
+        self.assertEqual(timeline[0]['subjects'], ['S8', 'S4'])
+        prompt = ('subject_definitions:\n<Subject 3> is the actor from <Picture 8>.\n'
+                  'detailed_description:\n[Shot 1] <Subject 3> lip-syncs.')
+        self.assertEqual(check_commission(prompt, timeline, role_pictures(fixed), 4, {}, True), [])
+        timeline[0]['subjects'] = ['S8']
+        self.assertTrue(check_commission(prompt, timeline, role_pictures(fixed), 4, {}, True))

@@ -2,12 +2,12 @@
 import re
 
 
-_ROLE_BIND = re.compile(r'(?im)^\s*(S[12])\s*[=:：＝]\s*(<Picture \d+>)')
+_ROLE_BIND = re.compile(r'(?im)^\s*(S[1-8])\s*[=:：＝]\s*(<Picture \d+>)')
 # Existing one-click MV briefs normally declare <Picture 1>＝角色，S1 instead.
 # Treat either orientation as an explicit identity bind; never infer from image order.
 _IMAGE_ROLE_BIND = re.compile(
     r'(?im)^\s*(?:(<Picture\s+\d+>)|@(?:圖片|图片|image)\s*(\d+))'
-    r'\s*[=:：＝]\s*[^\n]*?\b(S[12])\b'
+    r'\s*[=:：＝]\s*[^\n]*?\b(S[1-8])\b'
 )
 # Long-form director briefs define image, character, and SRT role on separate
 # lines: Subject 1｜name / Use @圖片1 / [S1] = Subject 1.
@@ -15,7 +15,7 @@ _SUBJECT_HEADING = re.compile(
     r'(?im)^\s*(?:<Subject\s+(\d+)>|Subject\s+(\d+))\s*[｜|:：]\s*\S'
 )
 _ROLE_SUBJECT = re.compile(
-    r'(?im)^\s*\[\s*(S[12])\s*\]\s*[=:：＝]\s*(?:<Subject\s+([12])>|Subject\s+([12]))\b'
+    r'(?im)^\s*\[\s*(S[1-8])\s*\]\s*[=:：＝]\s*(?:<Subject\s+(\d+)>|Subject\s+(\d+))(?!\w)'
 )
 _PICTURE_USE = re.compile(
     r'(?i)^\s*(?:Use|使用)\s+(?:<Picture\s+(\d+)>|@(?:圖片|图片|image)\s*(\d+))(?=\s|$)'
@@ -40,8 +40,8 @@ def role_pictures(fixed_setup):
     """Resolve explicit SRT-to-image links, including multi-line director briefs.
 
     A Subject heading is not a singer identity by itself. Only a user-written
-    [S1] = Subject 1 rule can connect it to a vocal role. Never guess from
-    picture order, genders, a scene named Subject 3, or soundtrack timbre.
+    role-to-subject or role-to-picture rule can connect it to a vocal role.
+    Never guess from picture order, gender, or the soundtrack.
     """
     roles = {role.upper(): picture for role, picture in _ROLE_BIND.findall(fixed_setup)}
     for picture, index, role in _IMAGE_ROLE_BIND.findall(fixed_setup):
@@ -54,7 +54,7 @@ def role_pictures(fixed_setup):
         subject = _SUBJECT_HEADING.match(line)
         if subject:
             index = subject[1] or subject[2]
-            current = index if index in ('1', '2') else None
+            current = index
             continue
         if current:
             picture = _PICTURE_USE.match(line)
@@ -72,7 +72,7 @@ def _subject_roles(prompt, pictures):
     mapped = {}
     genders = {}
     for number, description in _SUBJECT_LINE.findall(definition):
-        roles = set(re.findall(r'\bS[12]\b', description, re.I))
+        roles = set(re.findall(r'\bS[1-8]\b', description, re.I))
         bound = [role for role, picture in pictures.items() if picture in description]
         role = next(iter(roles), None) if len(roles) == 1 else (bound[0] if len(bound) == 1 else None)
         if role:
@@ -115,7 +115,9 @@ def _event_roles(text, mapped, genders):
             continue
         duet = re.search(r'(?i)\b(?:both|together|the\s+two|duet)\s+(?:\w+\s+){0,3}$', before)
         if duet:
-            found.append((match.start(), {'S1','S2'}, 'duet'))
+            visible_roles = set(mapped.values())
+            if len(visible_roles) == 2:
+                found.append((match.start(), visible_roles, 'duet'))
             continue
         pronoun = re.search(r'(?i)\b(he|she)\s+(?:begins?\s+to\s+|starts?\s+to\s+|continues?\s+to\s+)?$', before)
         if pronoun and pronoun[1].lower() in genders:
@@ -130,7 +132,7 @@ def _event_roles(text, mapped, genders):
                 if role:
                     found.append((match.start(), {role}, '<Subject '+last[1]+'>'))
                     continue
-        role = re.search(r'(?i)\b(S[12])\s+(?:begins?\s+to\s+|starts?\s+to\s+)?$', before)
+        role = re.search(r'(?i)\b(S[1-8])\s+(?:begins?\s+to\s+|starts?\s+to\s+)?$', before)
         if role:
             found.append((match.start(), {role[1].upper()}, role[1]))
     return found
@@ -153,13 +155,17 @@ def vocal_errors(prompt, cues, pictures, seconds, has_srt=True):
         for at, roles, label in _event_roles(body, mapped, genders):
             # An event near the beginning of a shot is timed at the shot cut.
             immediate = at < 230
+            scope_end = min(end, start + 0.18) if immediate else end
+            if not any(cue.get('subjects') and float(cue['clip_start']) < scope_end
+                       and float(cue['clip_end']) > start for cue in cues):
+                continue
             for role in sorted(roles):
                 start_ok = _overlap(start, min(end,start+0.18), role, cues) > 0.01
                 sustained = _overlap(start, end, role, cues) >= min(0.45, (end-start)*0.35)
                 if (immediate and start_ok) or (not immediate and sustained):
                     continue
                 allowed = sorted({r for cue in cues
-                                  if float(cue['clip_start']) < end and float(cue['clip_end']) > start
+                                  if float(cue['clip_start']) < scope_end and float(cue['clip_end']) > start
                                   for r in cue.get('subjects', [])})
                 problems.append(
                     f'[ERROR][Vocal] [Shot {number}] at {start:.3f}s assigns {label} '

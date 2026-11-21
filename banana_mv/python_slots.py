@@ -19,8 +19,8 @@ from banana_mv.timed_slots import allocate_authored_cues, allocate_timed_chapter
 CHAPTER = re.compile(
     r'^\s*(?:第[一二三四五六七八九十百零〇\d]+[幕段]|終幕|尾聲|'
     r'ACT\s+\d+|FINALE)\s*[|｜:：\-—]\s*(.+)$', re.I)
-CAST_BINDING = re.compile(r'^S[12]\s*[=：:]\s*(?:@(?:圖片|图片|image)\s*\d+|<Picture \d+>)', re.I)
-VOCAL_RULE = re.compile(r'^(?:依\s*SRT|\[\s*S[12](?:\s*\+\s*S[12])?\s*\])', re.I)
+CAST_BINDING = re.compile(r'^S[1-8]\s*[=：:]\s*(?:@(?:圖片|图片|image)\s*\d+|<Picture \d+>)', re.I)
+VOCAL_RULE = re.compile(r'^(?:依\s*SRT|\[\s*S[1-8](?:\s*\+\s*S[1-8])*\s*\])', re.I)
 GLOBAL_RULES = re.compile(r'^\s*(?:全曲執行原則|GLOBAL\s+RULES|全曲固定原則)\s*$', re.I)
 SENTENCES = re.compile(r'(?<=[。！？!?；;])\s*')
 
