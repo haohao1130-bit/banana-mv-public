@@ -274,7 +274,7 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    first_frame=None, steps=8, *, acceleration=True, motion_lora=True,
                    director_mode='performance', intensity='high',
                    kitchen_attention=None, sparse_attention=None, guide_frames=None,
-                   native_sound=None):
+                   native_sound=None, native_sound_event=None):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
     if intensity not in ('normal', 'high', 'extreme'):
         raise ValueError('未知動作強度')
@@ -317,17 +317,6 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
         '16': node('SaveVideo', video=['15',0], filename_prefix='BananaMV/segment',
                    format='mp4', **{'format.codec':'h264'}),
     }
-    if native_sound:
-        from banana_mv.native_sound import prompt_for_sound
-
-        del w['6']
-        conditioning = w['7']['inputs']
-        conditioning.pop('drive_audio')
-        conditioning.update(audio_mode='native', audio_denoise_strength=1.0,
-                            add_source_as_reference=False, prompt_primary_audio_ordinal=0,
-                            prompt=prompt_for_sound(prompt, native_sound))
-        w['native_audio_decode'] = node('VAEDecodeAudio', samples=['13', 0], vae=['4', 0])
-        w['15']['inputs']['audio'] = ['native_audio_decode', 0]
     for i, filename in enumerate(images[1:], 1):
         key = f'ref_{i}'
         w[key] = node('LoadImage', image=filename)
@@ -369,6 +358,23 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
             sink_conditioning='exact_kv_and_rows', verbose=True)
         model = ['sparse_attention',0]
     w['8']['inputs']['model'] = model
+    if native_sound:
+        from banana_mv.native_sound import prompt_for_sound
+
+        conditioning = w['7']['inputs']
+        legacy_cue = native_sound if isinstance(native_sound, str) else None
+        if legacy_cue:
+            del w['6']
+            conditioning.pop('drive_audio')
+            conditioning.update(audio_mode='native', add_source_as_reference=False,
+                                prompt_primary_audio_ordinal=0)
+        else:
+            # The song still conditions the picture. H3 generates a separate soundtrack.
+            conditioning['audio_mode'] = 'reference_only'
+        conditioning.update(audio_denoise_strength=1.0,
+                            prompt=prompt_for_sound(prompt, legacy_cue, authored_event=native_sound_event))
+        w['native_audio_decode'] = node('VAEDecodeAudio', samples=['13', 0], vae=['4', 0])
+        w['15']['inputs']['audio'] = ['native_audio_decode', 0]
     return w
 
 

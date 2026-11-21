@@ -166,7 +166,7 @@ def preflight(cfg, graph):
                 raise ValueError('尚未下載模型：' + n['inputs'][name] + '；請重跑 Colab ② 下載模型。')
 
 
-def graph_options(req, seconds, segment=None):
+def graph_options(req, seconds, segment=None, *, edited_prompt=False):
     if req.get("realism_lora"):
         raise ValueError("fal 真人 LoRA 已移除；此舊專案曾啟用 fal，請另建不使用 fal 的專案，避免續跑混用設定。")
     _, mode = director_prompt(req, seconds, segment)
@@ -176,13 +176,22 @@ def graph_options(req, seconds, segment=None):
     steps=req.get('sampling_steps',8)
     if isinstance(steps,bool) or steps not in (6,8):
         raise ValueError('採樣步數僅支援 6 或 8。')
+    native = {}
+    if req.get('native_sound'):
+        cues = req.get('native_sound_cues')
+        if cues:
+            if segment is not None and (cue := cues.get(str(segment['index'] + 1))):
+                native['native_sound'] = cue
+        else:
+            native['native_sound'] = True
+            if segment is not None and req.get('rewrite', True) and not edited_prompt:
+                native['native_sound_event'] = segment.get('director_plan', {}).get('event')
     return {'steps':int(steps),'acceleration': req.get('acceleration', True),
             'kitchen_attention': req.get('kitchen_attention',req.get('acceleration',True)),
             'sparse_attention': req.get('sparse_attention',req.get('acceleration',True)),
             'motion_lora': req.get('motion_lora', True),
             'director_mode': mode, 'intensity': req.get('intensity', 'high'),
-            **({'native_sound': cue} if segment is not None and req.get('native_sound_cues') and
-               (cue := req['native_sound_cues'].get(str(segment['index'] + 1))) else {})}
+            **native}
 
 
 def preflight_five_frame(cfg, req, images, size, seg, seed):
@@ -934,11 +943,13 @@ def start(req):
         authored_prompt = authored_prompt[:10000]
     if req.get('native_sound'):
         from banana_mv.native_sound import split_cues
-        authored_prompt, req['native_sound_cues'] = split_cues(authored_prompt, len(plan))
-        clip = next(seg for seg in plan if str(seg['index'] + 1) in req['native_sound_cues'])
-        preflight(cfg, build_workflow([img['comfy_name'] for img in images], 'preflight.wav',
-                                     *size, clip['model_frames'], '', seed,
-                                     **graph_options(req, clip['seconds'], clip)))
+        authored_prompt, cues = split_cues(authored_prompt, len(plan))
+        if cues:
+            req['native_sound_cues'] = cues
+            clip = next(seg for seg in plan if str(seg['index'] + 1) in cues)
+            preflight(cfg, build_workflow([img['comfy_name'] for img in images], 'preflight.wav',
+                                         *size, clip['model_frames'], '', seed,
+                                         **graph_options(req, clip['seconds'], clip)))
     req = normalize_references(dict(req, prompt=authored_prompt), seconds)
     # Fail invalid image mentions before queueing any rewrite or GPU work.
     fallback_prompt(req['prompt'], False, '', len(images))

@@ -21,25 +21,45 @@ def split_cues(script, segment_count):
         if not 1 <= number <= segment_count or str(number) in cues:
             raise ValueError(f'原生聲音第 {number} 段超出範圍或重複。')
         cues[str(number)] = match[2].strip()
-    if not cues:
-        raise ValueError('請在劇本加入「【原生聲音 第3段】」及要生成的聲音。')
     return ''.join(lines), cues
 
 
-def prompt_for_sound(prompt, cue):
-    prompt = re.sub(r'(?im)^\s*<Audio\s+1>\s*:.*$', '', prompt)
-    prompt = re.sub(r'(?is)<d>.*?</d>', '', prompt)
-    prompt = re.sub(r'<Audio\s+1>', 'the music added later', prompt, flags=re.I)
+def prompt_for_sound(prompt, cue=None, *, authored_event=None):
+    prompt = re.sub(r'(?im)^[ \t]*<Audio\s+1>\s*:.*$', '', prompt)
+    prompt = re.sub(r'(?im)^Use the original song from <Audio 1> unchanged .*?The following clip-local intervals are authoritative\. No spoken rendition, repeated line, new vocals or subtitles\.',
+                    'Follow the clip-local visual lip movements at these timestamps.', prompt)
+    prompt = re.sub(r'<\s*Audio\s+1\s*>', 'the song added in postproduction', prompt, flags=re.I)
     for section in ('overall_soundscape', 'non_diegetic_music'):
-        prompt = re.sub(rf'(?ims)^{section}:.*?(?=^\w+:|\Z)', '', prompt)
-    return (prompt.rstrip() + '\n\noverall_soundscape:\n'
-            'Generate only the following diegetic sound cue, timed to the visible action. '
-            'Spoken words are permitted only where explicitly quoted and assigned to a speaker '
-            'in this cue. Use those exact words. Treat all other text as visual direction. '
-            'Otherwise the characters remain silent. '
-            'No extra voices, babble, ad-libs, singing, or humming.\n'
-            + cue +
-            '\n\nnon_diegetic_music:\nNone. Do not generate any music or soundtrack.')
+        prompt = re.sub(rf'(?ims)^{section}:.*?(?=^\w+:|^\[BANANA_|\Z)', '', prompt)
+    if cue or authored_event:
+        # Dialogue from the original scene takes priority over rewriter dialogue.
+        prompt = re.sub(r'(?is)<d\b[^>]*>.*?</d\s*>', '', prompt)
+    if authored_event:
+        authored_event = re.sub(
+            r'(?im)^[ \t]*(?:ALREADY ESTABLISHED\b|Previously established:|Source chapter:|PYTHON-OWNED CURRENT EVENT\b).*$', '',
+            authored_event,
+        ).strip()
+        authored_event = re.sub(r'<\s*Audio\s+1\s*>', 'the song added in postproduction',
+                                authored_event, flags=re.I)
+    soundscape = (
+        'Generate the original on-screen sound of this clip. Match sound effects to their visible '
+        'actions and timing. Keep quiet moments quiet. Only speak exact words explicitly assigned '
+        'to a speaker in the current authored scene. Use the original language. '
+        'Treat lyric, SRT, vocalist and lip-sync instructions as visual timing only. '
+        'No invented speech, babble, narration, background voices, singing, humming, '
+        'background music or musical performances, even when instruments are visible. '
+        'Never repeat audio from a prior scene or read the directions aloud.'
+    )
+    if cue:
+        soundscape += '\nOnly use this sound cue:\n' + cue
+    else:
+        soundscape += ('\n<Audio 1> is a reference for the timing of visual lip movements only. '
+                       'The generated soundtrack contains only the scene sounds and scripted dialogue.')
+        if authored_event:
+            soundscape += ('\nUse this original scene for audio intent. Follow the shot directions above for timing:\n'
+                           + authored_event)
+    return (prompt.rstrip() + '\n\noverall_soundscape:\n' + soundscape
+            + '\n\nnon_diegetic_music:\nNone. Do not generate music.')
 
 
 def track_path(work, version):
@@ -50,7 +70,7 @@ def export_track(app, job, master):
     from banana_mv import takes
 
     cues = job['request'].get('native_sound_cues')
-    if not cues:
+    if not cues and not job['request'].get('native_sound'):
         return
     work = app.job_dir(job['id'])
     target = track_path(work, master['version'])
@@ -59,7 +79,8 @@ def export_track(app, job, master):
     try:
         for index, seg in enumerate(job['segments']):
             seconds = seg['frames'] / FPS
-            if str(index + 1) in cues:
+            source = 'anullsrc=r=48000:cl=stereo,'
+            if not cues or str(index + 1) in cues:
                 take_id = master['takes'][str(index)]
                 workflow = takes.existing_file(job, index, take_id, 'workflow.json')
                 graph = json.loads(workflow.read_text(encoding='utf-8'))
@@ -70,8 +91,6 @@ def export_track(app, job, master):
                 source = (f'[{len(inputs) // 2}:a:0]atrim=start={skip:.9f},'
                           'asetpts=PTS-STARTPTS,apad,')
                 inputs.extend(('-i', raw))
-            else:
-                source = 'anullsrc=r=48000:cl=stereo,'
             label = f'[clip{index}]'
             filters.append(f'{source}atrim=duration={seconds:.9f},'
                            f'aformat=sample_rates=48000:channel_layouts=stereo{label}')

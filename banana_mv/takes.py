@@ -681,6 +681,7 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                         shutil.copyfile(image_path,inp/filename)
                         guide_files.append(filename)
                 take['previous_take']=previous if previous!='current' else segment(job,i-1).get('selected_take','original')
+            edited_prompt = take.get('manual_prompt') is not None or bool(take.get('correction'))
             if take.get('manual_prompt') is not None:
                 take['base_prompt_sha256']=hashlib.sha256(prompt.encode()).hexdigest()
                 prompt=take.pop('manual_prompt')
@@ -706,7 +707,7 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             app.write_state(job)
             graph=app.build_workflow(job['images_comfy'],name,*job['size'],render_frames,prompt,take['seed'],first,
                                      guide_frames=guide_files or None,
-                                     **app.graph_options(job['request'],seg['seconds'],seg))
+                                     **app.graph_options(job['request'],seg['seconds'],seg,edited_prompt=edited_prompt))
             graph['16']['inputs']['filename_prefix']=f'BananaMV/{job["id"]}/{i:02d}_v{take["version"]}'
             app.preflight(cfg,graph);(output('workflow.json')).write_text(json.dumps(graph,ensure_ascii=False,indent=2))
             if job['id'] in app.CANCEL:raise InterruptedError('已停止本次回爐。')
