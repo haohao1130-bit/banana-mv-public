@@ -39,12 +39,31 @@ class ServicesTests(unittest.TestCase):
                 self.assertTrue(inputs['thinking'])
                 self.assertEqual(inputs['max_length'], budget)
                 self.assertTrue(inputs['prompt'].endswith('<think>\n'))
+                self.assertEqual(graph['result']['inputs']['source'], ['generate', 0])
+                self.assertEqual(graph['thinking_preview']['inputs']['source'], ['generate', 1])
             cfg = services.project_config({'rewriter_thinking': False, 'rewriter_budget': 32768})
             self.assertFalse(cfg['rewriter']['thinking'])
             self.assertEqual(cfg['rewriter']['max_length'], 8192)
             self.assertEqual(services.project_config({})['rewriter'], services.load_config()['rewriter'])
             with self.assertRaises(ValueError):
                 services.project_config({'rewriter_thinking': True, 'rewriter_budget': 99999})
+
+    def test_thinking_preview_diagnoses_empty_final_without_replacing_it(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(services, 'DATA', Path(tmp)):
+            cfg = services.project_config({'rewriter_thinking': True, 'rewriter_budget': 16384})
+            cfg.update(comfy_input_dir=tmp, free_after_rewrite=False)
+            with patch.object(services, 'queue_prompt', return_value='prompt-id'), \
+                 patch.object(services, 'wait_prompt') as wait:
+                outputs = {'result': {'text': ['final']}, 'thinking_preview': {'text': ['思考中']}}
+                wait.return_value = {'outputs': outputs}
+                self.assertEqual(services.rewrite_local(cfg, 'guide', [('text', 'shot')], 'test'), 'final')
+                outputs['result']['text'] = [' ']
+                with self.assertRaisesRegex(ValueError, '正式稿端：空白；思考端：3 字.*prompt-id'):
+                    services.rewrite_local(cfg, 'guide', [('text', 'shot')], 'test')
+                del outputs['result']
+                outputs['thinking_preview']['text'] = ['']
+                with self.assertRaisesRegex(ValueError, '正式稿端：讀不到預覽欄位；思考端：0 字'):
+                    services.rewrite_local(cfg, 'guide', [('text', 'shot')], 'test')
 
     def test_rewriter_contract_cleanup_and_unload(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,6 +78,7 @@ class ServicesTests(unittest.TestCase):
                 self.assertEqual(services.rewrite_local(cfg,'guide',parts,'test'),'hello')
                 api.assert_called_once_with(cfg,'/free',{'unload_models':True,'free_memory':True})
             graph=captured[0]
+            self.assertNotIn('thinking_preview', graph)
             self.assertEqual(graph['generate']['inputs']['image'],['batch_1',0])
             self.assertEqual(graph['batch_1']['inputs']['image1'],['picture_0',0])
             self.assertEqual(graph['generate']['inputs']['prompt'].count('<|image_pad|>'),2)
