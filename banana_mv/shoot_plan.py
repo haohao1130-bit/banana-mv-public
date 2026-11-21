@@ -42,8 +42,8 @@ readable. Develop the current beat without borrowing later milestones or replayi
 """
 
 FAITHFUL_DIRECTION = """ADAPTATION: FAITHFUL. Preserve the supplied events, action meanings, causal
-links, participants, props, order and specified camera requests. Translate them into
-concrete expressive photography and editing without adding new story events.
+links, participants, props and order. Follow camera requests where they work together,
+and use the directing policy to resolve conflicts. Keep the assigned story events.
 """
 
 
@@ -83,39 +83,20 @@ Keep lip movement compatible with the supplied audio; add no new vocal material.
 """
 
 
-AUTO_FILMING = """Direct the visual sequence first: decide what the viewer sees, how attention moves
-between performance, action details, reactions and environment, and how those images
-connect. Invent the coverage yourself from the current beat and adaptation policy;
-the user need not supply a shot list. Select coverage before framing a visible singer
-for readable lip sync. A whole event need not remain on the singer's face.
-Then complete a concrete shooting decision for EVERY Shot before writing the final
-prompt. Treat the following as required decision slots; choose their values freely
-from the assigned events, references, genre and musical context:
-1. TIME AND CONTINUITY: allocate the shot's local start and end within the clip.
-Carry the preceding action state, positions, held objects and consequences forward,
-including time off-screen. Budget readable actions and results, then ending holds.
-2. SUBJECT AND ACTION: identify the visible subject and reference identity, the
-attention or gesture target, the visible action progression and its end state.
-3. CAMERA AND PERSPECTIVE: choose the camera's location relative to the subject,
-height, viewing angle, shot size and perspective. Express lens effects concretely
-when useful, such as spatial depth or compression; numerical focal lengths are optional.
-4. COMPOSITION AND SPACE: place the subject in the frame with a clear scale; specify
-foreground and background relationships, depth, gaze or movement direction and focus.
-Describe the visible environment where an empty scene itself is the subject.
-5. CAMERA MOVEMENT: choose a static camera or a specific movement. For movement,
-state its direction, target, extent and speed; coordinate it with the visible action.
-6. LIGHTING: choose scene-consistent light direction and quality, contrast and the
-illuminated visual focus, at the selected photographic intensity.
-Resolve every slot as an executable choice. A shot description states what is visible
-and how it changes, rather than merely naming a cinematic technique.
-Write these decisions naturally inside each Shot of detailed_description, using the
-native guide's Shot labels and local cut times. The first shot begins at zero without
-a timestamp; each later shot starts at its cut time, and the last ends at clip duration.
-Keep the decision worksheet internal; deliver the existing native sections only.
-Give adjacent shots independently chosen viewpoints and compositions serving their
-attention shifts. Connect them through the same ongoing event and spatial relationships.
-Develop compatible staging and performance freely within the assigned story;
-primary_mode guides the passage without prescribing every shot's method.
+AUTO_FILMING = """Direct the visual sequence around the current action, performance and reactions.
+Treat camera cues as the intended coverage. A cut selects the next view, and a
+movement cue can describe what the camera does within that new view. An attached
+opening frame anchors continuity at the start. Cut away from it when the beat calls
+for a new view, and carry ongoing actions across the cut.
+When camera cues genuinely conflict or cannot play smoothly in the available time,
+choose the framing, cut or move that makes the action readable, visually compelling
+and fluid while giving the beat dramatic tension. Keep required events, their order
+and timing, established continuity, and expressly locked camera constraints. Settle
+on one executable approach and write it directly.
+Use only the shot details that matter to the beat. Carry established appearance,
+setting, lighting and sound forward, mentioning them again when they change or
+serve the shot. Use the native guide's Shot labels and local cut times. The first
+shot begins at zero without a timestamp. Each later shot starts at its cut time.
 """
 
 DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial coverage, not just camera
@@ -658,11 +639,11 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           "Inspect the reference images labeled <Picture N> and use them according to the user's instructions.\n"
           "Choose shots that best express the original intent. "
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
-          "Respect explicit shot requests, reference constraints and the guide's transition rules.\n"
+          "Honor locked camera constraints and reference anchors. Resolve conflicting camera cues with the directing policy below.\n"
           + continuation_note
           + "Original prompt:\nCurrent clip script:\n"+connected(event)+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
-including its per-shot composition, lighting, actions and camera movement.
+focusing each shot on the visible action and the camera choices that serve it.
 The current clip script alone assigns plot events. Fixed reference settings carry
 identity and scene duties, never permission to perform a future ending. If old
 fixed settings mention a whole-work outcome, perform it only when assigned here.

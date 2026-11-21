@@ -140,6 +140,19 @@ def build_rewrite_graph(cfg, system, parts, job_id):
         'up to 1,500 English words when the scene needs them (shorter is fine)',
         system, flags=re.IGNORECASE,
     )
+    shot_checklist = (
+        'For each shot, clearly establish the current composition, subject appearance '
+        'and position, environment and lighting, actions and state changes, camera '
+        'movement, current sound, and the points where referenced content actually '
+        'appears or takes effect.'
+    )
+    system = re.sub(
+        r'\s+'.join(map(re.escape, shot_checklist.split())),
+        'For each shot, describe the visible action and the framing, movement, or other '
+        'details that matter to the beat. Carry established appearance, setting, lighting '
+        'and sound forward, mentioning them again when they change or serve the shot.',
+        system, flags=re.IGNORECASE,
+    )
     if rw['thinking']:
         system += (
             '\n\nKeep <think> concise (aim for under 150 words). '
