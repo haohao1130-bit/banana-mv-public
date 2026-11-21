@@ -404,7 +404,7 @@ _BEAT_NOTE = re.compile(
 )
 
 
-def _timed_shoot_event(event, duration):
+def _timed_shoot_event(event, duration, *, has_anchor=False):
     """Separate authored clip-local action windows from untimed setup notes."""
     beats, notes = [], []
     current = notes
@@ -432,12 +432,20 @@ def _timed_shoot_event(event, duration):
         for start, end, lines in beats
     )
     context = '\n'.join(notes).strip()
+    opening = (
+        'H3 already receives the continuation image as its opening boundary reference. '
+        'Start Shot 1 with the first authored view and action, immediately after the supplied '
+        'boundary image if a cut is called for. The 0.000s label belongs to the first authored '
+        'beat. The boundary image gets no separate shot, hold or timestamp. '
+        'Keep all authored time labels as given.\n'
+        if has_anchor and beats[0][0] == 0 else
+        'When the first window starts at zero, begin its action at zero.\n'
+    )
     return (
         'AUTHOR-TIMED ACTION WINDOWS (clip-local):\n'
         'Keep each action and any exact cue inside its assigned window. '
         'Choose camera coverage within those windows. A window does not require a cut. '
-        'When the first window starts at zero, begin its action at zero.\n'
-        + rows + ('\n\nUNTIMED CONTEXT (applies across the clip; never add an opening beat '
+        + opening + rows + ('\n\nUNTIMED CONTEXT (applies across the clip; never add an opening beat '
                   'from these notes or replay an already established action):\n' + context
                   if context else '')
     )
@@ -641,7 +649,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     wardrobe = wardrobe_for_clip(event, segment.get('fixed_reference_settings', ''))
     if wardrobe:
         context['current_wardrobe'] = wardrobe
-    shoot_event = _timed_shoot_event(event, float(segment['seconds']))
+    shoot_event = _timed_shoot_event(event, float(segment['seconds']), has_anchor=bool(tail))
 
     # SRT-authored dual singers: Python owns singer timing, cast, wardrobe and
     # final H3 sections. 9B owns the number and timing of CAMERA cuts. Never
