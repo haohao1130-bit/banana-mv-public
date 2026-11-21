@@ -409,27 +409,6 @@ def worker(job, cfg, original, song, drive):
                 job['status']='cancelled';write_state(job);return
             if not all(s.get('director_plan') for s in job['segments']):
                 raise ValueError('丹方尚未完整，不能進入審閱或開爐。')
-            if job['request'].get('preview_zh',False) and not (single_pass or direct_script):
-                from banana_mv.plan_translation import translate_plan
-                revision=plan_revision(job)
-                job['status']='translating_review';write_state(job)
-                def translation_progress(done,total):
-                    job['translation_progress']={'done':done,'total':total};write_state(job)
-                translation_cfg=copy.deepcopy(cfg)
-                translation_cfg['free_after_rewrite']=False
-                try:
-                    job['plan_translation']=translate_plan(job,work,translation_cfg,backend.rewrite_local,
-                        revision,translation_progress,lambda:job['id'] in CANCEL)
-                except InterruptedError:
-                    job['status']='cancelled';write_state(job);return
-                except Exception as error:
-                    # Review translation must never replace or invalidate the English plan.
-                    job['plan_translation']={'status':'error','source_plan_revision':revision,'error':str(error)}
-                finally:
-                    try:backend.comfy(cfg,'/free',{'unload_models':True,'free_memory':True})
-                    except Exception:pass
-                if job['id'] in CANCEL:
-                    job['status']='cancelled';write_state(job);return
             job.update(status='plan_ready',plan_revision=plan_revision(job))
             write_state(job);return
         ledger=None
@@ -578,7 +557,9 @@ def worker(job, cfg, original, song, drive):
 
 
 def start(req):
-    cfg = copy.deepcopy(backend.load_config())
+    req = dict(req)
+    req.pop('preview_zh', None)
+    cfg = backend.project_config(req)
     if req.get('direct_script') is True:
         req = dict(req, rewrite=False, story_plan=False)
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
@@ -594,11 +575,6 @@ def start(req):
     req.setdefault('plan_review',False)
     if not isinstance(req['plan_review'],bool):
         raise ValueError('先搓丹方必須為布林值。')
-    req.setdefault('preview_zh',False)
-    if not isinstance(req['preview_zh'],bool):
-        raise ValueError('preview_zh 必須為布林值。')
-    if req['preview_zh'] and not req['plan_review']:
-        raise ValueError('繁中審閱翻譯僅供先搓丹方使用。')
     if req['plan_review'] and not req.get('rewrite',True) and req['director_schema'] != whole_song.DIRECT_SCRIPT:
         raise ValueError('先搓丹方需要開啟本地提示詞改寫。')
     if not isinstance(req.get('persistent_scene_state',True),bool):
@@ -735,7 +711,7 @@ def open_furnace(job_id,revision):
             raise ValueError('丹方已有更新或內容不符，請重新開啟專案檢查。')
         if any(s.get('prompt_id') or s.get('prompt') or s.get('status')=='done' for s in job['segments']):
             raise ValueError('此專案已有開拍內容，不能重複確認丹方。')
-        cfg=copy.deepcopy(backend.load_config())
+        cfg=backend.project_config(job['request'])
         q=backend.comfy(cfg,'/queue')
         if q.get('queue_running') or q.get('queue_pending'):
             raise ValueError('ComfyUI 還有工作，請稍後開爐。')
@@ -899,7 +875,7 @@ def resume(job_id,rewrite_retries=None):
         if retries is not None:job['request']['rewrite_retries']=retries
         if job['status'] not in ('error','cancelled','interrupted'):
             raise ValueError('這個專案沒有待續跑的失敗或中斷工作。')
-        cfg=copy.deepcopy(backend.load_config())
+        cfg=backend.project_config(job['request'])
         queue=backend.comfy(cfg,'/queue')
         if queue.get('queue_running') or queue.get('queue_pending'):
             raise ValueError('ComfyUI 仍在執行工作，請等佇列清空再續跑。')

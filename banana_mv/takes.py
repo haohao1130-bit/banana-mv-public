@@ -197,7 +197,7 @@ def retake(job_id,indices,instructions=None):
     if not isinstance(indices,list) or not indices:raise ValueError('請勾選至少一顆需要回爐的丹藥。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
-        job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg)
+        job=app.read_state(job_id);cfg=app.backend.project_config(job['request']);require_idle(job,cfg)
         for i in indices:segment(job,i)
         indices=sorted(set(indices))
         notes=corrections(indices,instructions)

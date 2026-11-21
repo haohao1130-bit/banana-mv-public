@@ -43,6 +43,17 @@ def load_config():
     return cfg
 
 
+def project_config(request):
+    cfg = load_config()
+    thinking = request.get('rewriter_thinking', cfg['rewriter']['thinking'])
+    if not isinstance(thinking, bool):
+        raise ValueError('9B 思考模式必須為布林值。')
+    cfg['rewriter']['thinking'] = thinking
+    if thinking:
+        cfg['rewriter']['max_length'] = 16384
+    return cfg
+
+
 def safe_child(root, relative):
     root = Path(root).resolve()
     child = (root/relative).resolve()
@@ -147,6 +158,9 @@ def build_rewrite_graph(cfg, system, parts, job_id):
             inputs['image'] = batch
         graph['generate'] = {'class_type': 'TextGenerate', 'inputs': inputs}
         graph['result'] = {'class_type': 'PreviewAny', 'inputs': {'source': ['generate', 0]}}
+        if rw['thinking']:
+            graph['thinking_preview'] = {'class_type': 'PreviewAny',
+                                         'inputs': {'source': ['generate', 1]}}
         return graph, names
     except Exception:
         for name in names:
@@ -154,16 +168,32 @@ def build_rewrite_graph(cfg, system, parts, job_id):
         raise
 
 
+def _preview_text(outputs, node):
+    preview = outputs.get(node)
+    values = preview.get('text') if isinstance(preview, dict) else None
+    if isinstance(values, str):
+        return values.strip()
+    if isinstance(values, (list, tuple)) and all(isinstance(value, str) for value in values):
+        return ''.join(values).strip()
+    return None
+
+
 def rewrite_local(cfg, system, parts, job_id):
     graph, names = build_rewrite_graph(cfg, system, parts, job_id)
     entry = None
     try:
         entry = wait_prompt(cfg, queue_prompt(cfg, graph))
-        values = entry.get('outputs', {}).get('result', {}).get('text', [])
-        text = values if isinstance(values, str) else ''.join(values)
-        if not text.strip():
-            raise ValueError('本地 9B 改寫回傳空白。')
-        return text.strip()
+        outputs = entry.get('outputs', {})
+        text = _preview_text(outputs, 'result')
+        if text:
+            return text
+        if 'thinking_preview' in graph:
+            thinking = _preview_text(outputs, 'thinking_preview')
+            final_status = '空白' if text is not None else '讀不到預覽欄位'
+            thinking_status = f'{len(thinking)} 字' if thinking is not None else '讀不到預覽欄位'
+            raise ValueError(f'本地 9B 改寫回傳空白。正式稿端：{final_status}；'
+                             f'思考端：{thinking_status}。ComfyUI 任務 ID：{prompt_id}')
+        raise ValueError('本地 9B 改寫回傳空白。')
     finally:
         for name in names:
             (Path(cfg['comfy_input_dir'])/name).unlink(missing_ok=True)
