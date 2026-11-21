@@ -142,7 +142,8 @@ def _overlap(start, end, role, cues):
 
 
 def vocal_errors(prompt, cues, pictures, seconds, has_srt=True):
-    if not has_srt:
+    # An SRT can provide lyrics without assigning a singer for this clip.
+    if not has_srt or not any(cue.get('subjects') for cue in cues):
         return []
     mapped, genders = _subject_roles(prompt, pictures)
     problems = []

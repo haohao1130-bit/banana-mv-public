@@ -586,7 +586,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     source_singers=role_pictures(fixed_setup)
     event = _local_event(row['event'])
     vocals = vocal_timeline(excerpt(req, segment))
-    context = {'authored_vocal_timeline': vocals, 'ending': clip_ending(req, segment)}
+    context = {'ending': clip_ending(req, segment)}
+    if vocals:
+        context['authored_vocal_timeline'] = vocals
     fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
     fixed_setup = _filming_reference_settings(fixed_setup)
@@ -716,6 +718,9 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                  'Duet means both assigned voices. Harmony identifies backing vocals and '
                  'does not assign a lead singer or imply both leads sing. Untagged time '
                  'has no explicit voice assignment. Keep the original soundtrack.')
+    else:
+        text += ('\nFollow the current clip script for visible singing and lip-sync. '
+                 'There is no explicit SRT singer assignment for this clip. Keep the original soundtrack.')
 
     if vocals and pictures:
         rows = []

@@ -135,3 +135,20 @@ class CommissionGuardTests(unittest.TestCase):
     def test_unspecified_srt_does_not_forbid_performance(self):
         prompt = self.DEFS + '[Shot 1] <Subject 1> (S1) sings.\n'
         self.assertEqual(check_commission(prompt,[],role_pictures(self.SETUP),10.0,{},False),[])
+
+    def test_srt_without_a_clip_local_subject_allows_authored_singing(self):
+        from banana_mv.lyrics_reference import excerpt, vocal_timeline
+
+        prompt = self.DEFS + '[Shot 1] <Subject 1> (S1) sings.\n'
+        clip = {'start': 0, 'seconds': 10}
+        cases = [
+            {'start': 0, 'end': 8, 'text': '有時間碼的歌詞'},
+            {'start': 0, 'end': 8, 'text': '[女聲] 有聲部的歌詞'},
+            {'start': 10, 'end': 15, 'text': '[S2] 下一段才標歌手'},
+            {'start': 0, 'end': 8, 'text': '[S2] 本段明確標了另一位歌手'},
+        ]
+        for cue, expected_error in zip(cases, (False, False, False, True)):
+            with self.subTest(cue=cue):
+                timeline = vocal_timeline(excerpt({'srt_cues': [cue]}, clip))
+                errors = check_commission(prompt, timeline, role_pictures(self.SETUP), 10.0, {}, True)
+                self.assertEqual(bool(errors), expected_error, errors)
