@@ -404,7 +404,7 @@ _BEAT_NOTE = re.compile(
 )
 
 
-def _timed_shoot_event(event, duration, *, has_anchor=False):
+def _timed_shoot_event(event, duration):
     """Separate authored clip-local action windows from untimed setup notes."""
     beats, notes = [], []
     current = notes
@@ -432,33 +432,15 @@ def _timed_shoot_event(event, duration, *, has_anchor=False):
         for start, end, lines in beats
     )
     context = '\n'.join(notes).strip()
-    opening = (
-        'H3 already receives the continuation image as its opening boundary reference. '
-        'Start Shot 1 with the first authored view and action, immediately after the supplied '
-        'boundary image if a cut is called for. The 0.000s label belongs to the first authored '
-        'beat. The boundary image gets no separate shot, hold or timestamp. '
-        'Keep all authored time labels as given.\n'
-        if has_anchor and beats[0][0] == 0 else
-        'When the first window starts at zero, begin its action at zero.\n'
-    )
     return (
         'AUTHOR-TIMED ACTION WINDOWS (clip-local):\n'
         'Keep each action and any exact cue inside its assigned window. '
         'Choose camera coverage within those windows. A window does not require a cut. '
-        + opening + rows + ('\n\nUNTIMED CONTEXT (applies across the clip; never add an opening beat '
+        'When the first window starts at zero, begin its action at zero.\n'
+        + rows + ('\n\nUNTIMED CONTEXT (applies across the clip; never add an opening beat '
                   'from these notes or replay an already established action):\n' + context
                   if context else '')
     )
-
-
-def _opens_with_timed_cut(event):
-    for line in event.splitlines():
-        beat = _LOCAL_BEAT.match(line)
-        if beat:
-            return float(beat[1]) == 0 and bool(re.match(
-                r'(?:立即\s*)?切(?:回|到|至|入|換至)|cut\s+(?:(?:back|straight)\s+)?to\b',
-                beat[3] or '', re.I))
-    return False
 
 
 def _apply_source_performance(prompt, timeline, fixed_setup):
@@ -627,10 +609,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     row=segment['director_plan'];offset=int(bool(tail))
     if row.get('handoff_version')!=1:
         raise SceneStateError('舊大綱缺少獨立的當段拍攝委託；已保存影片與提示詞可沿用，但新寫稿需建立新任務重新分配。不能傳回完整設定補足。')
-    def connected(text, shift=None):
+    def connected(text):
         # Only numbering changes for an actual keyframe. Never compact actor slots.
-        shift = offset if shift is None else shift
-        return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+shift}>',text)
+        return re.sub(r'<Picture (\d+)>',lambda m:f'<Picture {int(m[1])+offset}>',text)
     fixed_setup=segment.get('fixed_reference_settings','')
     # Read explicit singer mappings BEFORE stripping global SRT and future-story
     # sections; then forward only canonical, static role/image identities.
@@ -660,7 +641,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     wardrobe = wardrobe_for_clip(event, segment.get('fixed_reference_settings', ''))
     if wardrobe:
         context['current_wardrobe'] = wardrobe
-    shoot_event = _timed_shoot_event(event, float(segment['seconds']), has_anchor=bool(tail))
+    shoot_event = _timed_shoot_event(event, float(segment['seconds']))
 
     # SRT-authored dual singers: Python owns singer timing, cast, wardrobe and
     # final H3 sections. 9B owns the number and timing of CAMERA cuts. Never
@@ -692,17 +673,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         segment['lyric_reference_cleanup'] = {'removed_spans': removed}
         return native
 
-    # An authored cut at zero gets its own fresh view. The renderer still
-    # receives the continuation image from the caller through first_frame.
-    omit_writer_tail = bool(tail) and _opens_with_timed_cut(event) and shoot_event != event
-    writer_tail = None if omit_writer_tail else tail
-    if omit_writer_tail:
-        offset = 0
-        shoot_event = _timed_shoot_event(event, float(segment['seconds']))
-        if fixed_setup:
-            context['fixed_reference_settings'] = fixed_setup
-        pictures = role_pictures(fixed_setup)
-    if writer_tail:
+    if tail:
         if req.get('mode') == 'chain5':
             context['first_frame'] = (
                 '<Picture 1> is the earliest of the five overlapping tail frames (F-4) '
@@ -716,7 +687,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         'CHAIN5 CONTINUATION: H3 receives a five-frame overlap preceding this clip. '
         'Continue its established action and physical consequences; advance the current '
         'event without replaying completed actions. Keep later cinematography flexible.\n'
-        if writer_tail and req.get('mode') == 'chain5' else ''
+        if tail and req.get('mode') == 'chain5' else ''
     )
     text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
           f"Primary filming mode: {row['mode']}.\n"
@@ -807,7 +778,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
-    refs=([writer_tail] if writer_tail else [])+list(originals)
+    refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
     repair_count = 0
@@ -861,7 +832,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                     '\nPREVIOUS DRAFT:\n' + prompt)]
                 continue
             segment.pop('commission_guard_errors', None)
-            return connected(prompt, shift=1) if omit_writer_tail else prompt
+            return prompt
         except ValueError as error:
             if isinstance(error, SceneStateError) and str(error).startswith('9B 拍攝稿與當段通告衝突'):
                 raise
