@@ -15,19 +15,22 @@ def references(request, count):
     return selected
 
 
-def template(app, cfg, *, dual=False):
+def template(app, cfg, *, dual=False, distant_only=False):
     if app.backend.PORT != 8193:
         raise ValueError('遠景救臉僅限本機 5070。')
     path = app.backend.DATA / 'face_refine_api.json'
     if dual or not path.is_file():
-        return default_template(app, cfg)
-    source = path.read_text(encoding='utf-8-sig')
-    for marker in ('__BANANA_VIDEO__', '__BANANA_FACE__', '__BANANA_OUTPUT__'):
-        if json.dumps(marker) not in source:
-            raise ValueError('修臉工作流缺少欄位 ' + marker)
+        source = default_template(app, cfg)
+    else:
+        source = path.read_text(encoding='utf-8-sig')
+        for marker in ('__BANANA_VIDEO__', '__BANANA_FACE__', '__BANANA_OUTPUT__'):
+            if json.dumps(marker) not in source:
+                raise ValueError('修臉工作流缺少欄位 ' + marker)
     graph = json.loads(source)
+    if distant_only:
+        graph = distant_face_graph(graph)
     app.preflight(cfg, graph)
-    return source
+    return json.dumps(graph, ensure_ascii=False)
 
 
 def default_template(app, cfg):
@@ -88,11 +91,10 @@ def default_template(app, cfg):
     video = add('video','CreateVideo',images=stitched,fps=float(FPS))
     add('save','SaveVideo',video=video,filename_prefix='__BANANA_OUTPUT__',
         format='mp4',**{'format.codec':'h264'})
-    app.preflight(cfg,graph)
     return json.dumps(graph)
 
 
-def refine_clip(app, cfg, job, seg, source, part, face, prefix, target):
+def refine_clip(app, cfg, job, seg, source, part, face, prefix, target, *, size=None):
     import shutil
 
     from banana_mv.core import trim_video
@@ -110,9 +112,14 @@ def refine_clip(app, cfg, job, seg, source, part, face, prefix, target):
             '"__BANANA_VIDEO__"', json.dumps(str(clip_file.resolve()))).replace(
             '"__BANANA_FACE__"', json.dumps(uploaded)).replace(
             '"__BANANA_OUTPUT__"', json.dumps(prefix)))
-        entry = app.wait_generation(cfg, app.backend.queue_prompt(cfg, graph), job)
+        try:
+            entry = app.wait_generation(cfg, app.backend.queue_prompt(cfg, graph), job)
+        except RuntimeError as error:
+            if 'BANANA_NO_DISTANT_FACE' in str(error):
+                return False
+            raise
         app.backend.comfy_download(cfg, app.video_info(entry), raw)
-        if not app.valid_part(raw, seg, job['size']):
+        if not app.valid_part(raw, seg, size or job['size']):
             raise ValueError('修臉輸出尺寸或影格數與原毛片不同。')
         trim_video(raw, target, seg['frames'])
     finally:
@@ -150,8 +157,9 @@ def candidates(app, cfg, job, indexed_parts, originals, source):
                     app.write_state(job)
                     target = folder / f'face_{number}.mp4'
                     try:
-                        refine_clip(app, cfg, job, seg, source, candidate,
-                                    originals[number - 1], f'{prefix}_{number}', target)
+                        if refine_clip(app, cfg, job, seg, source, candidate,
+                                       originals[number - 1], f'{prefix}_{number}', target) is False:
+                            continue
                     except Exception as error:
                         errors.append(f'@圖片{number}：{error}')
                     else:
@@ -160,7 +168,12 @@ def candidates(app, cfg, job, indexed_parts, originals, source):
                     if job['id'] in app.CANCEL:
                         return refined
                 if not completed:
-                    raise ValueError('；'.join(errors))
+                    if errors:
+                        raise ValueError('；'.join(errors))
+                    seg['face_refine_status'] = 'skipped'
+                    seg.pop('face_refine_error', None)
+                    app.write_state(job)
+                    continue
                 if job['request'].get('production') == 'film':
                     muxed = folder / 'with_audio.mp4'
                     command(['ffmpeg', '-v', 'error', '-i', candidate, '-i', part,
@@ -193,7 +206,8 @@ def chained_part(app, cfg, job, seg, part, originals, *, reuse=False):
     """Persist the refined take before using any of its frames as a guide."""
     from banana_mv import takes
 
-    if not job.get('face_refine_chain'):
+    if (not job.get('face_refine_chain') or
+            (far_only(job['request']) and job['request'].get('upscale_1080p'))):
         return part
     index = seg['index']
     base = seg.get('selected_take', 'original')
@@ -215,7 +229,7 @@ def chained_part(app, cfg, job, seg, part, originals, *, reuse=False):
         job['face_refine_progress'] = {'stage': 'clip', 'index': index, 'total': len(job['segments'])}
         app.write_state(job)
         selected = references(job['request'], len(originals))
-        source = template(app, cfg, dual=len(selected) == 2)
+        source = template(app, cfg, dual=len(selected) == 2, distant_only=far_only(job['request']))
         refined = candidates(app, cfg, job, [(index, part)], originals, source)
         take = refined.get(index)
         if job['id'] not in app.CANCEL:
@@ -249,13 +263,14 @@ def render_version(app, cfg, job, parts, originals, song=None, **assembly_option
             segment.pop('face_refine_references', None)
         app.write_state(job)
         selected = references(job['request'], len(originals))
-        source = template(app, cfg, dual=len(selected) == 2)
+        source = template(app, cfg, dual=len(selected) == 2, distant_only=far_only(job['request']))
         refined = candidates(app, cfg, job, enumerate(parts), originals, source)
     if job['id'] in app.CANCEL:
         job['face_refine_error'] = '已停止修臉。'
         return
     if not refined:
-        job['face_refine_error'] = '沒有成功修臉的片段。'
+        if not all(segment.get('face_refine_status') == 'skipped' for segment in job['segments']):
+            job['face_refine_error'] = '沒有成功修臉的片段。'
         return
 
     work = app.job_dir(job['id'])
@@ -283,3 +298,114 @@ def render_version(app, cfg, job, parts, originals, song=None, **assembly_option
     finally:
         pending.unlink(missing_ok=True)
         pending.with_suffix('.ffconcat').unlink(missing_ok=True)
+
+def distant_face_graph(graph):
+    for key, stitch in list(graph.items()):
+        if stitch.get('class_type') != 'H3FaceStitch':
+            continue
+        inputs = stitch['inputs']
+        transform = inputs.get('transform')
+        if not isinstance(transform, list) or len(transform) != 2:
+            raise ValueError('遠景修臉工作流需要 H3FaceTrackCrop 的 transform。')
+        crops = [transform[0], 0]
+        injections = [node['inputs'] for node in graph.values()
+                      if node.get('class_type') == 'H3InjectVideoLatent'
+                      and node['inputs'].get('images') == crops]
+        if not injections:
+            raise ValueError('遠景修臉工作流需要將裁切影像接到 H3InjectVideoLatent。')
+        gate = f'banana_far_face_{key}'
+        graph[gate] = {'class_type': 'BananaFarFaceGate',
+                       'inputs': {'crops': crops, 'transform': transform}}
+        for injection in injections:
+            injection['images'] = [gate, 0]
+        inputs.update(transform=[gate, 1], undetected_frames='fade_out')
+    if not any(node.get('class_type') == 'BananaFarFaceGate' for node in graph.values()):
+        raise ValueError('遠景修臉工作流缺少 H3FaceStitch。')
+    return graph
+
+
+def far_only(request):
+    return request.get('upscale_resolution') == 1440
+
+
+def render_upscaled_version(app, cfg, job, upscaled):
+    """Refine the archived upscale as a separate master, keeping its original audio."""
+    from tempfile import TemporaryDirectory
+    from banana_mv import masters
+    from banana_mv.core import FPS, command
+
+    work = app.job_dir(job['id'])
+    originals = [app.backend.safe_child(work, path) for path in job['sources']['images']]
+    selected = references(job['request'], len(originals))
+    workflow = template(app, cfg, dual=len(selected) == 2, distant_only=True)
+    full_video = masters.source(job, work, upscaled['version'])
+    size = upscaled['output_size']
+    job.pop('face_refine_error', None)
+    job['status'] = 'refining_faces'
+    corrected = 0
+    with TemporaryDirectory(prefix='face_after_vsr_', dir=work) as scratch:
+        folder = Path(scratch)
+        clips, start_frame = [], 0
+        for index, segment in enumerate(job['segments']):
+            if job['id'] in app.CANCEL:
+                return
+            base = folder / f'{index:02d}_base.mp4'
+            command(['ffmpeg', '-v', 'error', '-ss', f'{start_frame / FPS:.9f}',
+                     '-i', full_video, '-map', '0:v:0', '-frames:v', str(segment['frames']),
+                     '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '0', base])
+            if not app.valid_part(base, segment, size):
+                raise ValueError(f'升頻成品第 {index+1} 段切片尺寸或影格數不符。')
+            start_frame += segment['frames']
+            candidate = base
+            errors = []
+            for number in selected:
+                if job['id'] in app.CANCEL:
+                    return
+                job['face_refine_progress'] = {'stage': 'clip', 'index': index,
+                                                'total': len(job['segments']), 'reference': number}
+                app.write_state(job)
+                prefix = f'banana_face_vsr_{job["id"]}_{index:02d}_{number}_{uuid.uuid4().hex[:8]}'
+                target = folder / f'{index:02d}_refined_{number}.mp4'
+                try:
+                    if refine_clip(app, cfg, job, segment, workflow, candidate,
+                                   originals[number - 1], prefix, target, size=size) is not False:
+                        candidate = target
+                except Exception as error:
+                    errors.append(f'@圖片{number}：{error}')
+            segment.pop('face_refine_error', None)
+            if errors:
+                segment['face_refine_error'] = '；'.join(errors)
+            changed = candidate != base
+            corrected += int(changed)
+            segment['face_refine_status'] = ('partial' if changed else 'error') if errors else (
+                'ready' if changed else 'skipped')
+            clips.append(candidate.name)
+        if job['id'] in app.CANCEL:
+            return
+        if not corrected:
+            if any(segment.get('face_refine_error') for segment in job['segments']):
+                job['face_refine_error'] = '沒有成功修臉的片段。'
+            return
+
+        job['face_refine_progress'] = {'stage': 'assembling'}
+        app.write_state(job)
+        listing = folder / 'frames.ffconcat'
+        listing.write_text(''.join(f"file '{name}'\n" for name in clips), encoding='utf-8')
+        pending = folder / 'refined.mp4'
+        command(['ffmpeg', '-v', 'error', '-f', 'concat', '-i', listing, '-i', full_video,
+                 '-map', '0:v:0', '-map', '1:a?', '-c:v', 'libx264', '-preset', 'fast',
+                 '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', pending])
+        if not app.valid_part(pending, {'frames': start_frame}, size):
+            raise ValueError('升頻修臉版合成尺寸或影格數不符。')
+        if job['id'] in app.CANCEL:
+            return
+        master = masters.archive(job, work, pending, 'face_refine',
+                                 {int(index): take for index, take in upscaled['takes'].items()})
+        master.update(source_master=upscaled['source_master'], source_version=upscaled['version'],
+                      output_size=size, upscale_resolution=upscaled['upscale_resolution'], refined_clips=corrected)
+    try:
+        master['output_video'] = str(app.export_finished_video(
+            job, work / master['file'], refined_version=master['version'],
+            refined_resolution=upscaled['upscale_resolution']))
+    except OSError as error:
+        master['export_error'] = f'修臉版另存失敗：{error}'

@@ -3,6 +3,7 @@ import argparse
 import importlib.util
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 import urllib.request
@@ -19,6 +20,7 @@ if not base.is_dir():
     parser.error(f'ComfyUI base directory missing: {base}')
 nodes = base / 'custom_nodes'
 nodes.mkdir(exist_ok=True)
+shutil.copyfile(Path(__file__).with_name('banana_far_face_gate.py'), nodes / 'banana_far_face_gate.py')
 plugin = nodes / 'ComfyUI-H3-FaceRefine'
 if not plugin.exists():
     revision = 'd8521d14fe0d721d80cd9417fff5a559cbc21aba'

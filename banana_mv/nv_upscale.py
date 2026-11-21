@@ -9,6 +9,14 @@ from threading import Thread
 from banana_mv import core, masters
 
 
+UPGRADE_RESOLUTION = 1440
+
+
+def face_after_upscale(request):
+    return bool(request.get('face_refine') and request.get('upscale_1080p')
+                and request.get('upscale_resolution') == UPGRADE_RESOLUTION)
+
+
 def executable():
     configured = os.environ.get('BANANA_NVENC')
     path = configured or shutil.which('NVEncC64.exe') or r'F:\AI\NVEncC\NVEncC64.exe'
@@ -22,8 +30,9 @@ def video_size(path):
     return video['width'], video['height']
 
 
-def output_size(width, height):
-    box = (1920, 1080) if width >= height else (1080, 1920)
+def output_size(width, height, resolution=UPGRADE_RESOLUTION):
+    long_side = resolution * 16 // 9
+    box = (long_side, resolution) if width >= height else (resolution, long_side)
     scale = min(box[0] / width, box[1] / height)
     if scale <= 1:
         return None
@@ -80,13 +89,13 @@ def start_finished(app, job_id, version=None):
             raise ValueError('請重新開啟成片，再選擇目前母片或修臉版。')
         source = masters.source(job, work, version)
         if output_size(*video_size(source)) is None:
-            raise ValueError('來源已達 1080P。')
+            raise ValueError('來源已達 2K（1440P）。')
         executable()
         cfg = app.backend.load_config()
         app.CANCEL.discard(job_id)
         job.pop('upscale_error', None)
         job.pop('error', None)
-        job.update(status='upscaling_1080p', upscale_manual=True)
+        job.update(status='upscaling_1080p', upscale_manual=True, upscale_resolution=UPGRADE_RESOLUTION)
         app.write_state(job)
         try:
             Thread(target=finished_worker, args=(app, cfg, job, row), daemon=True).start()
@@ -104,7 +113,8 @@ def start_finished(app, job_id, version=None):
 
 def finished_worker(app, cfg, job, source_row):
     try:
-        render(app, cfg, job, source_row=source_row)
+        master = render(app, cfg, job, source_row=source_row, resolution=UPGRADE_RESOLUTION)
+        refine_upscaled(app, cfg, job, master)
     except Exception as error:
         job['upscale_error'] = str(error)
     finally:
@@ -122,29 +132,41 @@ def render_version(app, cfg, job):
         return
     job.pop('upscale_error', None)
     try:
-        render(app, cfg, job)
+        master = render(app, cfg, job, resolution=job['request'].get('upscale_resolution', 1080))
+        refine_upscaled(app, cfg, job, master)
     except Exception as error:
         job['upscale_error'] = str(error)
 
 
-def render(app, cfg, job, *, source_row=None):
+def refine_upscaled(app, cfg, job, master):
+    if (not master or master['upscale_resolution'] != UPGRADE_RESOLUTION
+            or not job['request'].get('face_refine') or job['id'] in app.CANCEL):
+        return
+    from banana_mv import face_refine
+    try:
+        face_refine.render_upscaled_version(app, cfg, job, master)
+    except Exception as error:
+        job['face_refine_error'] = str(error)
+
+
+def render(app, cfg, job, *, source_row=None, resolution=UPGRADE_RESOLUTION):
     work = app.job_dir(job['id'])
     current = job['current_master']
     versions = job['final_versions']
     if source_row is None:
         source_row = next(row for row in versions if row['version'] == current)
-        if job['request'].get('face_refine'):
+        if resolution == 1080 and job['request'].get('face_refine'):
             source_row = next((row for row in reversed(versions)
                                if row['reason'] == 'face_refine' and row.get('source_master') == current), None)
             if source_row is None:
-                raise ValueError('本次未產生修臉版，已略過 1080P 放大。')
+                raise ValueError(f'本次未產生修臉版，已略過 {resolution}P 放大。')
 
     source = masters.source(job, work, source_row['version'])
-    size = output_size(*video_size(source))
+    size = output_size(*video_size(source), resolution)
     if size is None:
-        raise ValueError('來源尺寸已達 1080P 輸出範圍，已略過放大。')
+        raise ValueError(f'來源尺寸已達 {resolution}P 輸出範圍，已略過放大。')
     tool = executable()
-    job['status'] = 'upscaling_1080p'
+    job.update(status='upscaling_1080p', upscale_resolution=resolution)
     app.write_state(job)
     try:
         app.backend.comfy(cfg, '/free', {'unload_models': True, 'free_memory': True})
@@ -159,22 +181,24 @@ def render(app, cfg, job, *, source_row=None):
         encoded = Path(temp) / 'video.mp4'
         pending = Path(temp) / 'final.mp4'
         if not encode(tool, source, encoded, size, cancelled) or cancelled():
-            job['upscale_error'] = '已停止 1080P 放大。'
+            job['upscale_error'] = f'已停止 {resolution}P 放大。'
             return
         core.command(['ffmpeg', '-v', 'error', '-i', encoded, '-i', source,
                       '-map', '0:v:0', '-map', '1:a?', '-c', 'copy',
                       '-movflags', '+faststart', pending])
         if video_size(pending) != size:
-            raise ValueError('1080P 影片輸出尺寸驗證失敗。')
+            raise ValueError(f'{resolution}P 影片輸出尺寸驗證失敗。')
         if cancelled():
-            job['upscale_error'] = '已停止 1080P 放大。'
+            job['upscale_error'] = f'已停止 {resolution}P 放大。'
             return
         choices = {int(index): take for index, take in source_row['takes'].items()}
-        master = masters.archive(job, work, pending, 'upscale_1080p', choices)
-        master.update(source_master=current, source_version=source_row['version'], output_size=list(size))
+        master = masters.archive(job, work, pending, f'upscale_{resolution}p', choices)
+        master.update(source_master=current, source_version=source_row['version'], output_size=list(size),
+                      upscale_resolution=resolution)
 
     try:
         master['output_video'] = str(app.export_finished_video(
-            job, work / master['file'], upscaled_version=master['version']))
+            job, work / master['file'], upscaled_version=master['version'], upscaled_resolution=resolution))
     except OSError as error:
-        master['export_error'] = f'1080P 另存失敗：{error}'
+        master['export_error'] = f'{resolution}P 另存失敗：{error}'
+    return master

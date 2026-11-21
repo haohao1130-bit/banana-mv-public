@@ -491,7 +491,7 @@ def video_info(entry):
     raise RuntimeError('生成已完成，但沒有找到影片輸出。')
 
 
-def finished_video_target(job,*,refined_version=None,upscaled_version=None):
+def finished_video_target(job,*,refined_version=None,upscaled_version=None,upscaled_resolution=1080,refined_resolution=None):
     configured = os.environ.get('BANANA_FINISHED_VIDEOS')
     if configured:
         folder = Path(configured)
@@ -502,15 +502,18 @@ def finished_video_target(job,*,refined_version=None,upscaled_version=None):
     title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
     suffix=f'_v{job["current_master"]:03d}' if job.get('current_master') else ''
     if refined_version is not None:
+        if refined_resolution is not None:
+            suffix += f'_{refined_resolution}p'
         suffix += f'_face_refine_v{refined_version:03d}'
     if upscaled_version is not None:
-        suffix += f'_1080p_v{upscaled_version:03d}'
+        suffix += f'_{upscaled_resolution}p_v{upscaled_version:03d}'
     return folder/f'{title}_{job["id"]}{suffix}.mp4'
 
 
-def export_finished_video(job,source,*,refined_version=None,upscaled_version=None):
+def export_finished_video(job,source,*,refined_version=None,upscaled_version=None,upscaled_resolution=1080,refined_resolution=None):
     """Keep the resumable project master and publish an atomic copy to the finished-video folder."""
-    target=finished_video_target(job,refined_version=refined_version,upscaled_version=upscaled_version)
+    target=finished_video_target(job,refined_version=refined_version,upscaled_version=upscaled_version,
+                                 upscaled_resolution=upscaled_resolution,refined_resolution=refined_resolution)
     target.parent.mkdir(parents=True,exist_ok=True)
     temp=target.with_name('.'+target.name+'.tmp')
     try:
@@ -787,7 +790,9 @@ def worker(job, cfg, original, song, drive):
             job['export_error']=f'成品已合成，但另存 videos 資料夾失敗：{error}；仍可由前端下載。'
         from banana_mv.native_sound import export_track
         export_track(sys.modules[__name__], job, master)
-        if job['request'].get('face_refine') and job['id'] not in CANCEL:
+        from banana_mv import nv_upscale
+        if (job['request'].get('face_refine') and job['id'] not in CANCEL
+                and not nv_upscale.face_after_upscale(job['request'])):
             try:
                 face_refine.render_version(
                     sys.modules[__name__], cfg, job, parts, original, song,
@@ -795,7 +800,6 @@ def worker(job, cfg, original, song, drive):
             except Exception as error:
                 job['face_refine_error'] = str(error)
         if job['request'].get('upscale_1080p'):
-            from banana_mv import nv_upscale
             nv_upscale.render_version(sys.modules[__name__], cfg, job)
         job.pop('resuming',None)
         job['status']='done'; job['video']=f'/api/mv/file?id={job["id"]}'; write_state(job)
@@ -836,14 +840,17 @@ def start(req):
     req.pop('native_sound', None)
     req.pop('native_sound_cues', None)
     if not isinstance(req.get('upscale_1080p', False), bool):
-        raise ValueError('1080P 放大設定必須是布林值。')
+        raise ValueError('升頻設定必須是布林值。')
+    if type(req.get('upscale_resolution', 1080)) is not int or req.get('upscale_resolution', 1080) not in (1080, 1440):
+        raise ValueError('升頻解析度必須為 1080P 或 1440P。')
     if not isinstance(req.get('face_refine', False), bool):
         raise ValueError('遠景救臉設定必須為布林值。')
     if req.get('face_refine'):
         from banana_mv.face_refine import references, template
         images = req.get('image_ids')
         selected = references(req, len(images) if isinstance(images, list) else 0)
-        template(sys.modules[__name__], cfg, dual=len(selected) == 2)
+        template(sys.modules[__name__], cfg, dual=len(selected) == 2,
+                 distant_only=req.get('upscale_resolution') == 1440)
     if req.get('direct_script') is True:
         req = dict(req, rewrite=False, story_plan=False)
     req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
@@ -938,7 +945,8 @@ def start(req):
         job_id=uuid.uuid4().hex[:12]
         (RUNS/job_id).mkdir()
         job={'id':job_id,'status':'running','created':time.time(),'request':req,
-             'face_refine_chain': bool(req.get('face_refine') and req['mode'] in ('chain', 'chain5')),
+             'face_refine_chain': bool(req.get('face_refine') and req['mode'] in ('chain', 'chain5')
+                                       and not (req.get('upscale_1080p') and req.get('upscale_resolution') == 1440)),
              'duration':seconds,'segments':plan,'size':size,'seed':seed,'timeline_source':'decoded_audio',
              'output_size':output_size, 'title':str(req.get('project_name') or music['name'])[:120],
              'settings_version':2,

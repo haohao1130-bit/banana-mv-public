@@ -397,13 +397,14 @@ def _adopt_branch_clips(job, choices):
 def postprocess_reassembled_master(job, cfg, originals, song):
     """The retake/condense assembler must finish like the normal MV worker.
 
-    Only the NEW current master is used for optional face refinement and 1080P.
+    Only the new current master enters optional upscale and face refinement.
     A post-processing failure preserves the finished mother video and is
     recorded, just as in server.worker.
     """
     if job['id'] in app.CANCEL:
         return
-    if job['request'].get('face_refine'):
+    from banana_mv import nv_upscale
+    if job['request'].get('face_refine') and not nv_upscale.face_after_upscale(job['request']):
         from banana_mv import face_refine
         try:
             parts=[take_source(job,i) for i in range(len(job['segments']))]
@@ -413,7 +414,6 @@ def postprocess_reassembled_master(job, cfg, originals, song):
         except Exception as error:
             job['face_refine_error']=str(error)
     if job['request'].get('upscale_1080p') and job['id'] not in app.CANCEL:
-        from banana_mv import nv_upscale
         nv_upscale.render_version(app,cfg,job)
 
 
