@@ -250,7 +250,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['srt-file'].files=[{name:'song.srt',size:100,text:async()=>srt}];await els['srt-file'].onchange();assert.equal(els['srt-reference'].value,srt);
   els.lyrics.value='全曲歌詞';
   els.image.files=[file('main.png')];els.image.onchange();els.song.files=[file('song.wav')];
-  let req=await submit();assert.equal(req.preview_zh,false);assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,5);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.direct_script,false);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.music_structure,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.deepEqual(req.image_ids,['main.png']);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
+  let req=await submit();assert.equal(req.preview_zh,undefined);assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,5);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.direct_script,false);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.music_structure,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.deepEqual(req.image_ids,['main.png']);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
   assert.deepEqual(uploads,['main.png','song.wav']);
   assert.equal(req.rewriter_thinking,false);
   assert.equal(els['rewriter-budget-row'].hidden,true);
@@ -520,7 +520,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
 
   // The same form submits either direct rendering or upstream-only planning.
   vm.runInContext('selectedImages.fill(null)',context);els.image.files=[file('review.png')];els.image.onchange();els.song.files=[file('review.wav')];els.rewrite.checked=true;
-  await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);assert.equal(posts.at(-1).preview_zh,true);
+  await els.form.onsubmit({preventDefault(){},submitter:{id:'plan-first'}});await vm.runInContext('poll()',context);assert.equal(posts.at(-1).preview_zh,undefined);
   assert.equal(posts.at(-1).plan_review,true);assert.equal(approvals.length,0);
   assert.equal(Object.hasOwn(posts.at(-1), 'native_sound'), false);
   assert.equal(els['recipe-review'].hidden,false);assert(els['recipe-text'].textContent.includes('15.00–30.00'));
@@ -534,9 +534,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext("renderEventPlan({id:'mobile-new-plan',segments:[{index:0,director_plan:{mode:'story',event:'A'}}]})",context);
   assert.equal(els['event-plan-details'].open,false,'event details should default closed on phone');
   const translatedRecipe={id:'recipe123',status:'plan_ready',plan_revision:'r1',plan_preview_setup:'English source setup',segments:[{index:0,start:0,seconds:10,director_plan:{event:'English source event'}}],plan_translation:{status:'ready',source_plan_revision:'r1',blocks:{setup:'中文共通設定','0':'中文事件 <Picture 2>'}}};
-  els['recipe-language'].value='zh';context.translatedRecipe=translatedRecipe;vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('中文事件 @圖片2'));assert(els['recipe-language-status'].textContent.includes('僅供審閱'));
-  els['recipe-language'].value='en';els['recipe-language'].onchange();assert(els['recipe-text'].textContent.includes('English source event'));assert(!els['recipe-text'].textContent.includes('中文事件'));
-  els['recipe-language'].value='zh';translatedRecipe.plan_translation.source_plan_revision='stale';vm.runInContext('renderRecipe(translatedRecipe)',context);assert(els['recipe-text'].textContent.includes('English source event'));
+  context.translatedRecipe=translatedRecipe;
+  vm.runInContext('renderRecipe(translatedRecipe)',context);
+  assert(els['recipe-text'].textContent.includes('English source event'));
+  assert(!els['recipe-text'].textContent.includes('中文事件'));
 
   assert.equal(els.stop.hidden,true);assert.equal(els['resume-project'].hidden,true);assert.equal(els['current-activity'].hidden,true);
   await vm.runInContext("openProject('recipe123')",context);assert.equal(els['recipe-review'].hidden,false);assert.equal(approvals.length,0);
