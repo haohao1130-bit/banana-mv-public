@@ -84,10 +84,15 @@ Keep lip movement compatible with the supplied audio; add no new vocal material.
 
 
 AUTO_FILMING = """Direct the visual sequence around the current action, performance and reactions.
-Treat camera cues as the intended coverage. A cut selects the next view, and a
-movement cue can describe what the camera does within that new view. An attached
-opening frame anchors continuity at the start. Cut away from it when the beat calls
-for a new view, and carry ongoing actions across the cut.
+Start with the first timed beat. Treat untimed cast, setting, carryover and
+expression notes (入鏡, 場景, 承接, 表情) as context for the timed shots. Place cast
+and visual details where they serve those beats. Give a timed opening priority
+over any inferred establishing view. An attached opening frame anchors continuity
+at the boundary. If the first beat calls for a cut, cut immediately after that
+frame and carry the ongoing action across.
+Choose coverage that makes this beat visually compelling and fluid, including
+framing, cut timing and camera movement wherever the brief leaves them open.
+A cut selects the next view. A movement cue applies within that new view.
 When camera cues genuinely conflict or cannot play smoothly in the available time,
 choose the framing, cut or move that makes the action readable, visually compelling
 and fluid while giving the beat dramatic tension. Keep required events, their order
