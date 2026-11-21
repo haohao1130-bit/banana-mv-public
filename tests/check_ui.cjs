@@ -252,6 +252,14 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els.image.files=[file('main.png')];els.image.onchange();els.song.files=[file('song.wav')];
   let req=await submit();assert.equal(req.preview_zh,false);assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,5);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.direct_script,false);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.music_structure,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,true);assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.deepEqual(req.image_ids,['main.png']);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
   assert.deepEqual(uploads,['main.png','song.wav']);
+  assert.equal(req.rewriter_thinking,false);
+  assert.equal(els['rewriter-budget-row'].hidden,true);
+  els.rewriter_thinking.checked=true;els.rewriter_thinking.events.change();
+  assert.equal(els.rewriter_budget.disabled,false);
+  assert.equal((await submit()).rewriter_budget,16384);
+  els.rewriter_budget.value='32768';els.rewriter_budget.events.change();
+  req=await submit();assert.equal(req.rewriter_thinking,true);assert.equal(req.rewriter_budget,32768);
+  els.rewriter_thinking.checked=false;els.rewriter_thinking.events.change();
   els.effects.files=[file('effects.wav')];req=await submit();assert.equal(req.effects_id,'effects.wav');assert(uploads.includes('effects.wav'));els.effects.files=[];
   els.project_scope.value='excerpt';els.rewrite.checked=false;els.audio_analysis.checked=false;els.music_structure.checked=false;els.face_identity.checked=false;els.kitchen_attention.checked=false;els.sparse_attention.checked=true;els.motion_lora.checked=false;req=await submit();assert.equal(req.project_scope,'excerpt');assert.equal(req.story_plan,false);assert.equal(req.direct_script,true);assert.equal(req.audio_analysis,false);assert.equal(req.face_identity,false);assert.equal(req.kitchen_attention,false);assert.equal(req.sparse_attention,true);assert.equal(req.motion_lora,false);
   els['image-2'].files=[file('side.png')];els['image-2'].onchange();
@@ -371,8 +379,12 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   });
   // A new previous Take is an explicit source for both 9B and H3.
   rows[0].select.value='abcdef123456';rows[0].select.onchange();
+  els.rewrite.checked=true;els.rewriter_thinking.checked=true;els.rewriter_thinking.events.change();
+  els.rewriter_budget.value='32768';els.rewriter_budget.events.change();
   await rows[1].rewriteButton.onclick();
-  assert.deepEqual(rewrites.at(-1),{id:'review123',index:1,previous_take:'abcdef123456'});
+  assert.deepEqual(rewrites.at(-1),{id:'review123',index:1,previous_take:'abcdef123456',
+    rewriter_thinking:true,rewriter_budget:32768});
+  vm.runInContext('restoreRewriterOptions({})',context);
   reviewJob.segments[1].prompt_rewrite={status:'ready',version:2,previous_take:'abcdef123456',
     text:'subject_definitions:\\nDraft based on newly rendered previous Take'};
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);

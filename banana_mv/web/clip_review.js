@@ -139,7 +139,8 @@ function renderClipPreviews(job){
       promptEditor.oninput=updateClipActions;
       rewriteButton.onclick=()=>{
         const previous=previousTakeForClip(i);
-        return runClipAction('api/mv/rewrite-clip',{index:i,...(previous?{previous_take:previous}:{})});
+        return runClipAction('api/mv/rewrite-clip',{index:i,...(previous?{previous_take:previous}:{}),
+          ...(rewriterOptionsChanged&&$('rewrite').checked?rewriterOptions():{})});
       };
       renderButton.onclick=()=>{
         const text=promptEditor.value.trim();

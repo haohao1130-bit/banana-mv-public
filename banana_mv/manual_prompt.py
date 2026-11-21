@@ -18,7 +18,7 @@ def _segment(job,index):
     return job['segments'][index]
 
 
-def rewrite_clip(job_id,index,previous_take=None):
+def rewrite_clip(job_id,index,previous_take=None,*,rewriter_options=None):
     from banana_mv import takes
     if not app.GPU_LOCK.acquire(blocking=False):
         raise ValueError('已有 MV 或 9B 工作進行中，請稍後再重配丹方。')
@@ -34,7 +34,7 @@ def rewrite_clip(job_id,index,previous_take=None):
             raise ValueError('本功能適用於使用本地 9B 當段導演的作品。')
         if not isinstance(seg.get('director_plan'),dict) or seg['director_plan'].get('handoff_version')!=1:
             raise ValueError('這段缺少原始拍攝工單，無法安全重配；原提示詞不受影響。')
-        cfg=copy.deepcopy(app.backend.load_config())
+        cfg=app.backend.project_config({**job['request'], **(rewriter_options or {})})
         takes.require_idle(job,cfg)
         originals,_,_=app.project_inputs(job,cfg)
         from banana_mv.python_slots import refresh_stale_timed_plan

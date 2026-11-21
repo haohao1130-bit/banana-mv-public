@@ -226,7 +226,7 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
     if not isinstance(rebuild_prompt,bool):raise ValueError('重配提示詞參數必須為布林值。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
-        job=app.read_state(job_id);cfg=copy.deepcopy(app.backend.load_config());require_idle(job,cfg)
+        job=app.read_state(job_id);cfg=app.backend.project_config(job['request']);require_idle(job,cfg)
         for i in indices:segment(job,i)
         indices=sorted(set(indices))
         if continuous_5070(job):
@@ -473,7 +473,7 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
     handed_off=False
     try:
         job=app.read_state(job_id)
-        cfg=copy.deepcopy(app.backend.load_config())
+        cfg=app.backend.project_config(job['request'])
         require_idle(job,cfg)
         if rewrite_retries is not None:
             job['request']['rewrite_retries']=rewrite_retries

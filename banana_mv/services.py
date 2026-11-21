@@ -44,6 +44,21 @@ def load_config():
     return cfg
 
 
+def project_config(request):
+    """Apply a project's 9B options to this invocation's local config."""
+    cfg = load_config()
+    if 'rewriter_thinking' not in request and 'rewriter_budget' not in request:
+        return cfg
+    thinking = request.get('rewriter_thinking', False)
+    budget = request.get('rewriter_budget', 16384)
+    if not isinstance(thinking, bool) or type(budget) is not int or budget not in (16384, 32768):
+        raise ValueError('9B 思考模式的生成上限請選 16K 或 32K。')
+    cfg['rewriter'] = dict(cfg['rewriter'], thinking=thinking)
+    if thinking:
+        cfg['rewriter']['max_length'] = budget
+    return cfg
+
+
 def safe_child(root, relative):
     root = Path(root).resolve()
     child = (root/relative).resolve()

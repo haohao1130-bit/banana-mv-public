@@ -842,7 +842,7 @@ def worker(job, cfg, original, song, drive):
 
 
 def start(req):
-    cfg = copy.deepcopy(backend.load_config())
+    cfg = backend.project_config(req)
     req = dict(req)
     req.pop('native_sound_cues', None)
     if not isinstance(req.get('native_sound', False), bool) or (req.get('native_sound') and backend.PORT != 8193):
@@ -1012,7 +1012,7 @@ def open_furnace(job_id,revision):
             raise ValueError('丹方已有更新或內容不符，請重新開啟專案檢查。')
         if any(s.get('prompt_id') or s.get('prompt') or s.get('status')=='done' for s in job['segments']):
             raise ValueError('此專案已有開拍內容，不能重複確認丹方。')
-        cfg=copy.deepcopy(backend.load_config())
+        cfg=backend.project_config(job['request'])
         q=backend.comfy(cfg,'/queue')
         if q.get('queue_running') or q.get('queue_pending'):
             raise ValueError('ComfyUI 還有工作，請稍後開爐。')
@@ -1218,7 +1218,7 @@ def resume(job_id,rewrite_retries=None):
         if retries is not None:job['request']['rewrite_retries']=retries
         if job['status'] not in ('error','cancelled','interrupted'):
             raise ValueError('這個專案沒有待續跑的失敗或中斷工作。')
-        cfg=copy.deepcopy(backend.load_config())
+        cfg=backend.project_config(job['request'])
         queue=backend.comfy(cfg,'/queue')
         if queue.get('queue_running') or queue.get('queue_pending'):
             raise ValueError('ComfyUI 仍在執行工作，請等佇列清空再續跑。')
@@ -1376,7 +1376,9 @@ class Handler(WebHandler):
             if path=='/api/mv/rewrite-clip':
                 from banana_mv.manual_prompt import rewrite_clip
                 body=self.body_json()
-                return self.send_json(rewrite_clip(body['id'],body.get('index'),body.get('previous_take')),202)
+                overrides={key:body[key] for key in ('rewriter_thinking','rewriter_budget') if key in body}
+                return self.send_json(rewrite_clip(body['id'],body.get('index'),body.get('previous_take'),
+                                                   rewriter_options=overrides),202)
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()

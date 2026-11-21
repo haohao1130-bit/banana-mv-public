@@ -71,7 +71,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 <section class="generation-settings" aria-labelledby="generation-settings-title"><h3 id="generation-settings-title">畫幅與生成設定</h3><div class="generation-size"><div><label for="aspect">畫面比例</label><select id="aspect"><option>16:9</option><option>9:16</option><option>4:5</option><option>1:1</option></select></div><div><label for="resolution">生成解析度</label><select id="resolution"><option value="480p">480P｜低顯存備用</option><option value="720p" selected>720P｜5070 預設（注意顯存）</option></select></div></div><div><label for="width">橫向寬度（依比例自動設定）</label><input id="width" type="number" value="1280" readonly aria-describedby="size-help"></div>
 <p id="size-help" class="muted" aria-live="polite"></p>
 <div class="row"><div><label>影片風格</label><select id="director"><option value="auto">自動導演</option><option value="performance">演唱</option><option value="dance">舞蹈</option><option value="action">武打</option><option value="band">樂團</option><option value="chase">追逐</option><option value="fantasy">奇幻</option><option value="story">劇情</option><option value="horror">懸疑</option><option value="comedy">搞笑</option></select></div><div><label>動作強度</label><select id="intensity"><option value="normal">自然</option><option value="high" selected>高動態</option><option value="extreme">電影級爆發</option></select></div></div><label><input id="dynamic_cuts" type="checkbox" checked> 音樂導向動態切鏡</label><p class="muted">自動模式依故事與排除條件選擇適合的模式；音樂分析提供強弱與時機。各模式有具體動作、反應及鏡頭規則，切鏡與效果仍需看片確認。</p>
-<label><input id="rewrite" type="checkbox" checked> 使用本地 9B 自動導演</label><p class="muted">勾選時，Python 先分配事件與接續狀態，9B 逐段安排表演和運鏡。取消勾選時，Python 依你貼的劇本切段，直接交給 H3。</p><label><input id="motion_lora" type="checkbox" aria-describedby="motion-help"> 動作 LoRA</label><p id="motion-help" class="muted">可能讓動作看起來更快、更有力。Motion Repair 權重依自然／高動態／電影級爆發為 0.21／0.35／0.455。武打段另加 Combat，權重依序為 0.39／0.65／0.845。</p>
+<label><input id="rewrite" type="checkbox" checked> 使用本地 9B 自動導演</label><p class="muted">勾選時，Python 先分配事件與接續狀態，9B 逐段安排表演和運鏡。取消勾選時，Python 依你貼的劇本切段，直接交給 H3。</p><div id="rewriter-options">
+<label><input id="rewriter_thinking" type="checkbox"> 9B 思考模式</label>
+<div id="rewriter-budget-row" hidden><label for="rewriter_budget">9B 生成上限（思考＋正式稿）</label><select id="rewriter_budget" disabled><option value="16384" selected>16K</option><option value="32768">32K</option></select></div>
+</div>
+<label><input id="motion_lora" type="checkbox" aria-describedby="motion-help"> 動作 LoRA</label><p id="motion-help" class="muted">可能讓動作看起來更快、更有力。Motion Repair 權重依自然／高動態／電影級爆發為 0.21／0.35／0.455。武打段另加 Combat，權重依序為 0.39／0.65／0.845。</p>
 <input id="rewrite_retries" type="hidden" value="5">
 <label for="project_scope">這次製作範圍</label><select id="project_scope"><option value="full" selected>本次音檔演完完整故事</option><option value="excerpt">只拍故事片段，保留後續</option></select><p class="muted">完整故事：即使音樂剪過，也要在本次音檔內演完起中尾與指定結局；故事片段：只推進當段事件，保留後續。音樂段落預測只輔助節奏，不決定故事是否收尾。</p>
 
@@ -577,10 +581,30 @@ function validateImages(){if(!selectedImages[0])throw Error('請在圖片1欄位
 function renderImages(){closeImageMentions();selectedImages.forEach((item,i)=>{const n=i+1,preview=$('image-preview-'+n);preview.replaceChildren();if(item){const img=document.createElement('img');img.src=item.url;img.alt=`圖片${n}：${item.file.name}`;preview.append(img);}$('image-name-'+n).textContent=item?item.file.name:(n>imageLimit()?'接續版預留給前段畫面':'尚未選圖');$('remove-image-'+n).hidden=!item;$(i===0?'image':'image-'+n).disabled=n>imageLimit();});$('reference-help').textContent=`已選 ${activeImages().length} / ${imageLimit()} 張。獨立版最多9張；接續版最多8張。請從圖片1起依序填入，末尾不用的欄位可留空。`;}
 for(let i=0;i<9;i++){const n=i+1,input=$(i===0?'image':'image-'+n);input.onchange=()=>{const file=input.files[0];if(!file)return;if(selectedImages[i])URL.revokeObjectURL(selectedImages[i].url);selectedImages[i]={file,url:URL.createObjectURL(file)};renderImages();};$('remove-image-'+n).onclick=()=>{if(selectedImages[i])URL.revokeObjectURL(selectedImages[i].url);selectedImages[i]=null;input.value='';renderImages();};}
 $('mode').addEventListener('change',renderImages);renderImages();
+let rewriterOptionsChanged=false;
+function rewriterOptions(){
+ return {rewriter_thinking:$('rewrite').checked&&$('rewriter_thinking').checked,
+         rewriter_budget:Number($('rewriter_budget').value)||16384};
+}
+function restoreRewriterOptions(request){
+ $('rewriter_thinking').checked=request.rewriter_thinking===true;
+ $('rewriter_budget').value=request.rewriter_budget===32768?'32768':'16384';
+ rewriterOptionsChanged=false;syncRewriterOptions();
+}
+function syncRewriterOptions(){
+ $('rewriter-options').hidden=!$('rewrite').checked;
+ $('rewriter_thinking').disabled=!$('rewrite').checked;
+ $('rewriter-budget-row').hidden=!rewriterOptions().rewriter_thinking;
+ $('rewriter_budget').disabled=$('rewriter-budget-row').hidden;
+}
+$('rewrite').addEventListener('change',syncRewriterOptions);
+$('rewriter_thinking').addEventListener('change',()=>{rewriterOptionsChanged=true;syncRewriterOptions();});
+$('rewriter_budget').addEventListener('change',()=>{rewriterOptionsChanged=true;});
+syncRewriterOptions();
 const sizePresets={'720p':{'16:9':[1280,720],'9:16':[720,1280],'4:5':[720,900],'1:1':[720,720]},'480p':{'16:9':[854,480],'9:16':[480,854],'4:5':[480,600],'1:1':[480,480]}};
 function renderSize(){const preset=$('resolution').value||'720p';const [w,h]=sizePresets[preset][$('aspect').value];$('width').value=String(w);$('size-help').textContent=`實際輸出：${w} × ${h} px。${preset==='480p'?'480P 低解析度生成，適合 L4 快速測試；人物細節較少。':'720P 正式製作。'}`;}
 $('aspect').addEventListener('change',renderSize);$('resolution').addEventListener('change',renderSize);renderSize();
-$('form').onsubmit=async e=>{e.preventDefault();const review=e.submitter?.id==='plan-first';mobileJobStatus='preparing';renderRecipe({status:'running'});$('output-location').hidden=true;setFurnace('planning','正在把圖片與歌曲藥材投入爐中。');busy(true);$('progress').max=1;$('progress').value=0;$('progress-label').textContent='整體進度：正在建立任務';$('current-activity').hidden=false;$('activity-text').textContent='正在上傳素材…';promptView.job=null;renderPrompts({id:'pending-upload',segments:[]});renderClipPreviews({id:'pending-upload',segments:[],status:'running'});renderFinalPreviews({});clearTimeout(timer);try{if($('music_structure').checked&&!$('audio_analysis').checked)throw Error('音樂結構分析需要開啟音樂分析引導。');await srtRead;validateImages();$('resume-project').hidden=true;$('project-summary').textContent='';$('job-seed').textContent='本次 Seed：建立任務後顯示';$('audio-summary').textContent='';$('director-summary').textContent='';$('event-plan-details').hidden=true;$('event-plan-text').textContent='';message('正在上傳圖片與歌曲…');const images=[];for(const item of activeImages())images.push(await upload(item.file));const song=await upload($('song').files[0]);const vocal=$('vocal').files[0]?await upload($('vocal').files[0]):null;const effects=$('effects').files[0]?await upload($('effects').files[0]):null;const j=await api('api/mv/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_review:review,preview_zh:review,project_name:$('project-name').value,image_id:images[0].id,image_ids:images.map(image=>image.id),song_id:song.id,vocal_id:vocal?.id,effects_id:effects?.id,mode:$('mode').value,aspect:$('aspect').value,width:Number($('width').value),segment_seconds:Number($('segment').value),prompt:$('prompt').value,lyrics:$('lyrics').value,srt_reference:$('srt-reference').value,persistent_scene_state:false,rewrite_retries:Number($('rewrite_retries').value),rewrite:$('rewrite').checked,story_plan:$('rewrite').checked,direct_script:!$('rewrite').checked,project_scope:$('project_scope').value,audio_analysis:$('audio_analysis').checked,music_structure:$('music_structure').checked,face_identity:$('face_identity').checked,kitchen_attention:$('kitchen_attention').checked,sparse_attention:$('sparse_attention').checked,face_refine:$('face_refine').checked,upscale_1080p:$('upscale_1080p').checked,native_sound:$('native_sound').checked,face_refine_reference:Number($('face_refine_reference').value),face_refine_reference_2:$('face_refine_reference_2').value ? Number($('face_refine_reference_2').value) : null,motion_lora:$('motion_lora').checked,director:$('director').value,intensity:$('intensity').value,dynamic_cuts:$('dynamic_cuts').checked,seed:$('seed').value})});renderJobSeed(j);active=j.id;localStorage.setItem('banana_mv_job',active);poll();}catch(e){setFurnace('error','任務未能開始，請查看下方錯誤。');message(e.message);busy(false);}};
+$('form').onsubmit=async e=>{e.preventDefault();const review=e.submitter?.id==='plan-first';mobileJobStatus='preparing';renderRecipe({status:'running'});$('output-location').hidden=true;setFurnace('planning','正在把圖片與歌曲藥材投入爐中。');busy(true);$('progress').max=1;$('progress').value=0;$('progress-label').textContent='整體進度：正在建立任務';$('current-activity').hidden=false;$('activity-text').textContent='正在上傳素材…';promptView.job=null;renderPrompts({id:'pending-upload',segments:[]});renderClipPreviews({id:'pending-upload',segments:[],status:'running'});renderFinalPreviews({});clearTimeout(timer);try{if($('music_structure').checked&&!$('audio_analysis').checked)throw Error('音樂結構分析需要開啟音樂分析引導。');await srtRead;validateImages();$('resume-project').hidden=true;$('project-summary').textContent='';$('job-seed').textContent='本次 Seed：建立任務後顯示';$('audio-summary').textContent='';$('director-summary').textContent='';$('event-plan-details').hidden=true;$('event-plan-text').textContent='';message('正在上傳圖片與歌曲…');const images=[];for(const item of activeImages())images.push(await upload(item.file));const song=await upload($('song').files[0]);const vocal=$('vocal').files[0]?await upload($('vocal').files[0]):null;const effects=$('effects').files[0]?await upload($('effects').files[0]):null;const j=await api('api/mv/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_review:review,preview_zh:review,project_name:$('project-name').value,image_id:images[0].id,image_ids:images.map(image=>image.id),song_id:song.id,vocal_id:vocal?.id,effects_id:effects?.id,mode:$('mode').value,aspect:$('aspect').value,width:Number($('width').value),segment_seconds:Number($('segment').value),prompt:$('prompt').value,lyrics:$('lyrics').value,srt_reference:$('srt-reference').value,persistent_scene_state:false,rewrite_retries:Number($('rewrite_retries').value),rewrite:$('rewrite').checked,...rewriterOptions(),story_plan:$('rewrite').checked,direct_script:!$('rewrite').checked,project_scope:$('project_scope').value,audio_analysis:$('audio_analysis').checked,music_structure:$('music_structure').checked,face_identity:$('face_identity').checked,kitchen_attention:$('kitchen_attention').checked,sparse_attention:$('sparse_attention').checked,face_refine:$('face_refine').checked,upscale_1080p:$('upscale_1080p').checked,native_sound:$('native_sound').checked,face_refine_reference:Number($('face_refine_reference').value),face_refine_reference_2:$('face_refine_reference_2').value ? Number($('face_refine_reference_2').value) : null,motion_lora:$('motion_lora').checked,director:$('director').value,intensity:$('intensity').value,dynamic_cuts:$('dynamic_cuts').checked,seed:$('seed').value})});renderJobSeed(j);active=j.id;localStorage.setItem('banana_mv_job',active);poll();}catch(e){setFurnace('error','任務未能開始，請查看下方錯誤。');message(e.message);busy(false);}};
 $('stop').onclick=async()=>{
  if(!active||$('stop').disabled)return;
  try{
@@ -605,6 +629,7 @@ $('stop-emergency').onclick=async()=>{
 async function loadProjects(){const rows=await api('api/mv/projects');$('projects').replaceChildren();for(const row of rows){const option=document.createElement('option');option.value=row.id;option.textContent=`${row.title} · ${new Date((row.updated||row.created||0)*1000).toLocaleString()} · ${row.completed}/${row.total} 段 · ${row.status}`;$('projects').append(option);}return rows;}
 async function openProject(id){if(!id)throw Error('尚無可開啟的專案。');const j=await api('api/mv/status?id='+id);renderJobSeed(j);clearTimeout(timer);active=id;localStorage.setItem('banana_mv_job',id);renderFinalPreviews({});$('project-summary').textContent=`${j.title||j.id}｜${j.duration.toFixed(1)} 秒｜原設定與素材已保存在專案，續跑不需重新上傳；建立新作品請重新選檔。`;
 const r=j.request||{};$('native_sound').checked=r.native_sound===true;$('project_scope').value=r.project_scope||'full';$('rewrite_retries').value='5';$('persistent_scene_state').checked=r.scene_state_version===1;srtImportVersion++;srtRead=Promise.resolve();$('srt-file').value='';$('srt-reference').value=r.srt_reference||'';$('lyrics').value=r.lyrics||'';$('srt-import-status').textContent=r.srt_reference?'已載入專案保存的 SRT 參考。':'';$('audio_analysis').checked=r.audio_analysis===true;$('music_structure').checked=r.music_structure===true;$('kitchen_attention').checked=r.kitchen_attention??(r.acceleration!==false);$('sparse_attention').checked=r.sparse_attention??(r.acceleration!==false);for(const [key,value] of Object.entries({mode:r.mode,aspect:r.aspect,segment:r.segment_seconds,prompt:r.native_sound_cues?[r.prompt,...Object.entries(r.native_sound_cues).map(([index,cue])=>`【原生聲音 第${index}段】${cue}`)].join('\n'):r.prompt,lyrics:r.lyrics,director:r.director,intensity:r.intensity,seed:j.seed,'project-name':j.title||''})){if(value!==undefined)$(key).value=String(value);}for(const key of ['rewrite','face_identity','motion_lora','dynamic_cuts'])$(key).checked=r[key]!==false;
+restoreRewriterOptions(r);
 $('resolution').value=Object.entries(sizePresets).find(([,sizes])=>sizes[$('aspect').value][0]===Number(r.width??j.output_size?.[0]??j.size?.[0]))?.[0]||'720p';
 for(const item of selectedImages)if(item)URL.revokeObjectURL(item.url);selectedImages.fill(null);for(let n=1;n<=9;n++)$(n===1?'image':'image-'+n).value='';for(const key of ['song','vocal','effects'])$(key).value='';renderImages();const referenceCount=j.sources?.images?.length||j.request?.image_ids?.length||1;for(let n=1;n<=Math.min(9,referenceCount);n++){const reference=document.createElement('img');reference.src='api/mv/reference?id='+id+'&image='+(n-1);reference.alt='專案保存的圖片'+n;$('image-preview-'+n).append(reference);$('image-name-'+n).textContent='已保存的圖片'+n+'（續跑沿用；新任務請重新選圖）';}renderSize();busy(!['done','error','cancelled','interrupted','plan_ready'].includes(j.status));await poll();}
 $('refresh-projects').onclick=async()=>{try{await loadProjects();}catch(e){message(e.message);}};
@@ -629,7 +654,14 @@ async function restoreActiveProjectOnSameServer(){
   // Transient health failures must not erase a saved selection.
  }
  active=localStorage.getItem('banana_mv_job');
- if(active){busy(true);await poll();}
+ if(active){
+  busy(true);await poll();
+  if(!rewriterOptionsChanged&&clipView.jobData?.id===active){
+   const request=clipView.jobData.request||{};
+   $('rewrite').checked=request.rewrite!==false;
+   restoreRewriterOptions(request);
+  }
+ }
 }
 let mobileJobStatus=null;
 const mobileFurnaceStart=$('mobile-furnace-start');
@@ -665,7 +697,7 @@ if(typeof MutationObserver!=='undefined'){
  observer.observe($('progress-label'),{childList:true,characterData:true,subtree:true});
 }
 syncMobileFurnace();
-</script><script src="clip_review.js?v=5070-mobile-clip-review-20261120"></script><script>
+</script><script src="clip_review.js?v=5070-thinking-20261121"></script><script>
 (() => {
  const settings = document.getElementById('face-refine-settings');
  const button = document.getElementById('switch-to-film');

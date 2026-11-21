@@ -29,6 +29,23 @@ class ServicesTests(unittest.TestCase):
                 with self.assertRaises(ValueError):services.add_asset(cfg,'bad.png',b'not an image')
                 self.assertEqual(len(services.library_index()),1)
 
+    def test_project_thinking_options_reach_text_generate(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(services, 'DATA', Path(tmp)):
+            for budget in (16384, 32768):
+                cfg = services.project_config({'rewriter_thinking': True, 'rewriter_budget': budget})
+                cfg['comfy_input_dir'] = tmp
+                graph, _ = services.build_rewrite_graph(cfg, 'guide', [('text','shot')], 'test')
+                inputs = graph['generate']['inputs']
+                self.assertTrue(inputs['thinking'])
+                self.assertEqual(inputs['max_length'], budget)
+                self.assertTrue(inputs['prompt'].endswith('<think>\n'))
+            cfg = services.project_config({'rewriter_thinking': False, 'rewriter_budget': 32768})
+            self.assertFalse(cfg['rewriter']['thinking'])
+            self.assertEqual(cfg['rewriter']['max_length'], 8192)
+            self.assertEqual(services.project_config({})['rewriter'], services.load_config()['rewriter'])
+            with self.assertRaises(ValueError):
+                services.project_config({'rewriter_thinking': True, 'rewriter_budget': 99999})
+
     def test_rewriter_contract_cleanup_and_unload(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg=services.load_config();cfg['comfy_input_dir']=tmp
