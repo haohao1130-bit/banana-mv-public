@@ -34,12 +34,15 @@ class ServicesTests(unittest.TestCase):
             for budget in (16384, 32768):
                 cfg = services.project_config({'rewriter_thinking': True, 'rewriter_budget': budget})
                 cfg['comfy_input_dir'] = tmp
-                graph, _ = services.build_rewrite_graph(cfg, 'guide', [('text','shot')], 'test')
+                guide = 'Length: normally 350–500 English words for generation tasks.'
+                graph, _ = services.build_rewrite_graph(cfg, guide, [('text','shot')], 'test')
                 inputs = graph['generate']['inputs']
                 self.assertTrue(inputs['thinking'])
                 self.assertEqual(inputs['max_length'], budget)
                 self.assertTrue(inputs['prompt'].endswith('<think>\n'))
                 system = inputs['prompt'].split('<|im_end|>', 1)[0]
+                self.assertIn('up to 1,500 English words', system)
+                self.assertNotIn('350–500', system)
                 self.assertIn('aim for under 150 words', system)
                 self.assertIn('close it with </think>', system)
                 self.assertEqual(graph['result']['inputs']['source'], ['generate', 0])

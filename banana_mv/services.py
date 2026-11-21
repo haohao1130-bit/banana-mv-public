@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import random
+import re
 import shutil
 import threading
 import time
@@ -132,6 +133,12 @@ def add_asset(cfg, filename, body):
 def build_rewrite_graph(cfg, system, parts, job_id):
     """Use ComfyUI's native TextGenerate contract with the existing 9B settings."""
     rw = cfg['rewriter']
+    # The bundled Ref2VA guide is installed separately and may use a dash variant.
+    system = re.sub(
+        r'\b(?:normally\s+)?350\s*[-–—]\s*500\s+(?:English\s+)?words\b',
+        'up to 1,500 English words when the scene needs them (shorter is fine)',
+        system, flags=re.IGNORECASE,
+    )
     if rw['thinking']:
         system += (
             '\n\nKeep <think> concise (aim for under 150 words). '
