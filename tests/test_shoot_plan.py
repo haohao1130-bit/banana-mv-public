@@ -541,6 +541,28 @@ class ShootPlanTests(unittest.TestCase):
             self.assertIn('ENDING STATE:\n燈光開始暗下。', context)
             self.assertEqual(seg['director_plan']['event'], event)
 
+    def test_timed_opening_cut_keeps_tail_on_h3_side(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            images, cfg, req = self.fixture(root, 'chain')
+            tail = root / 'tail.png'
+            Image.new('RGB', (8, 8), 'red').save(tail)
+            event = '【承接】蕉彌已將推桿調高。\n0–2.28秒：切回西索正面近景。[推進]\n2.28–10秒：手舞。'
+            row = {'mode': 'performance', 'event': event, 'handoff_version': 1}
+            seg = dict(timeline()[0], seconds=10, director_plan=row)
+            writer = Mock(return_value=native_prompt(0))
+            with patch.object(server.backend, 'rewrite_local', writer):
+                prompt = server.local_prompt(cfg, req, seg, images, tail)
+            parts = writer.call_args.args[2]
+            self.assertEqual(sum(kind == 'image' for kind, _ in parts), 2)
+            self.assertIn('[0.000–2.280s] 切回西索正面近景。', parts[0][1])
+            self.assertNotIn('"first_frame"', parts[0][1])
+            self.assertEqual(prompt, native_prompt(0, offset=1))
+            graph = server.build_workflow(['ref0.png', 'ref1.png'], 'song.wav',
+                                          32, 32, 245, prompt, 42, 'tail.png')
+            self.assertEqual(graph['17']['inputs']['image'], 'tail.png')
+            self.assertEqual(graph['7']['inputs']['first_frame'], ['17', 0])
+
     def test_cross_genre_scripts_keep_scope_with_all_intensities(self):
         from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING
         cases={
