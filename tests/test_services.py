@@ -39,6 +39,9 @@ class ServicesTests(unittest.TestCase):
                 self.assertTrue(inputs['thinking'])
                 self.assertEqual(inputs['max_length'], budget)
                 self.assertTrue(inputs['prompt'].endswith('<think>\n'))
+                system = inputs['prompt'].split('<|im_end|>', 1)[0]
+                self.assertIn('aim for under 150 words', system)
+                self.assertIn('close it with </think>', system)
                 self.assertEqual(graph['result']['inputs']['source'], ['generate', 0])
                 self.assertEqual(graph['thinking_preview']['inputs']['source'], ['generate', 1])
             cfg = services.project_config({'rewriter_thinking': False, 'rewriter_budget': 32768})
@@ -79,6 +82,7 @@ class ServicesTests(unittest.TestCase):
                 api.assert_called_once_with(cfg,'/free',{'unload_models':True,'free_memory':True})
             graph=captured[0]
             self.assertNotIn('thinking_preview', graph)
+            self.assertNotIn('aim for under 150 words', graph['generate']['inputs']['prompt'])
             self.assertEqual(graph['generate']['inputs']['image'],['batch_1',0])
             self.assertEqual(graph['batch_1']['inputs']['image1'],['picture_0',0])
             self.assertEqual(graph['generate']['inputs']['prompt'].count('<|image_pad|>'),2)

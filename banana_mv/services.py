@@ -132,6 +132,13 @@ def add_asset(cfg, filename, body):
 def build_rewrite_graph(cfg, system, parts, job_id):
     """Use ComfyUI's native TextGenerate contract with the existing 9B settings."""
     rw = cfg['rewriter']
+    if rw['thinking']:
+        system += (
+            '\n\nKeep <think> concise (aim for under 150 words). '
+            'Use it only to settle the plan. Do not draft the final text, count words, '
+            'or repeatedly recheck the guide inside <think>. Once the plan is clear, '
+            'close it with </think> and immediately write the complete requested output.'
+        )
     contents = ''.join(value if kind == 'text' else '<|vision_start|><|image_pad|><|vision_end|>'
                        for kind, value in parts)
     chat = (f'<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n'
