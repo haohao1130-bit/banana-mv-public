@@ -394,6 +394,55 @@ def _local_event(event):
     ).strip()
 
 
+_LOCAL_BEAT = re.compile(
+    r'^\s*(?:[-*]\s+)?(\d+(?:\.\d+)?)\s*(?:秒|s)?\s*[-–—－~～至]\s*'
+    r'(\d+(?:\.\d+)?)\s*(?:秒|s)\s*(?:[:：]\s*(.*))?$', re.I,
+)
+_BEAT_NOTE = re.compile(
+    r'^\s*(?:【(入鏡|場景|承接|交棒|[^】]{0,12}表情|H3\s*提示詞)】'
+    r'\s*[:：]?|(入鏡|場景|承接|交棒|[^：:]{0,12}表情)\s*[:：])\s*(.*)$',
+)
+
+
+def _timed_shoot_event(event, duration):
+    """Separate authored clip-local action windows from untimed setup notes."""
+    beats, notes = [], []
+    current = notes
+    for line in event.splitlines():
+        span = _LOCAL_BEAT.match(line)
+        if span:
+            start, end = map(float, span.groups()[:2])
+            if not 0 <= start < end <= duration + 0.001 or (beats and start < beats[-1][1]):
+                return event
+            current = [span[3] or '']
+            beats.append((start, end, current))
+        elif note := _BEAT_NOTE.match(line):
+            current = notes
+            title = note[1] or note[2]
+            if not re.fullmatch(r'H3\s*提示詞', title) or note[3]:
+                label = ('OPENING STATE (already true)' if title == '承接' else
+                         'ENDING STATE' if title == '交棒' else title)
+                current.append(f'{label}: {note[3]}'.rstrip())
+        else:
+            current.append(line)
+    if not beats or any(not any(line.strip() for line in lines) for _, _, lines in beats):
+        return event
+    rows = '\n\n'.join(
+        '[{:.3f}–{:.3f}s] {}'.format(start, end, '\n'.join(lines).strip())
+        for start, end, lines in beats
+    )
+    context = '\n'.join(notes).strip()
+    return (
+        'AUTHOR-TIMED ACTION WINDOWS (clip-local):\n'
+        'Keep each action and any exact cue inside its assigned window. '
+        'Choose camera coverage within those windows. A window does not require a cut. '
+        'When the first window starts at zero, begin its action at zero.\n'
+        + rows + ('\n\nUNTIMED CONTEXT (applies across the clip; never add an opening beat '
+                  'from these notes or replay an already established action):\n' + context
+                  if context else '')
+    )
+
+
 def _apply_source_performance(prompt, timeline, fixed_setup):
     # The same user-defined SRT identities drive both filming paths.
     bindings = role_pictures(fixed_setup)
@@ -592,6 +641,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     wardrobe = wardrobe_for_clip(event, segment.get('fixed_reference_settings', ''))
     if wardrobe:
         context['current_wardrobe'] = wardrobe
+    shoot_event = _timed_shoot_event(event, float(segment['seconds']))
 
     # SRT-authored dual singers: Python owns singer timing, cast, wardrobe and
     # final H3 sections. 9B owns the number and timing of CAMERA cuts. Never
@@ -617,7 +667,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         native = write_director_shoot_prompt(
             cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
             _pictures(refs), rewrite, progress, direction_policy=direction_policy,
-            body_form=body_form)
+            body_form=body_form, shoot_event=shoot_event)
         native, removed = clean_lyric_output(
             native, dict(req, lyrics_reference_version=2))
         segment['lyric_reference_cleanup'] = {'removed_spans': removed}
@@ -646,7 +696,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
           "Allocate shot durations and cut timing within the target duration according to content and pacing. "
           "Honor locked camera constraints and reference anchors. Resolve conflicting camera cues with the directing policy below.\n"
           + continuation_note
-          + "Original prompt:\nCurrent clip script:\n"+connected(event)+"\n\n")
+          + "Original prompt:\nCurrent clip script:\n"+connected(shoot_event)+"\n\n")
     text+="""Enhance this ONE clip script into the guide's final native H3 filming prompt,
 focusing each shot on the visible action and the camera choices that serve it.
 The current clip script alone assigns plot events. Fixed reference settings carry

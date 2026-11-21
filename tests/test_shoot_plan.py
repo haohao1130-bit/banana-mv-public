@@ -518,6 +518,29 @@ class ShootPlanTests(unittest.TestCase):
                 ensure_plan(cfg,req,timeline(),images,root,model)
             self.assertEqual(model.call_count,2)
 
+    def test_authored_action_windows_reach_writer_before_untimed_context(self):
+        event = ('入鏡：西索、蕉彌、觀眾剪影\n【承接】\n蕉彌已將推桿調高。\n'
+                 '【H3 提示詞】\n0–2.28秒：切回近景，低笑至 1.356 秒。[推進]\n'
+                 '2.28–5.30秒：四拍手舞。\n5.30–7.82 秒\n扶管半轉。\n'
+                 '7.82–10秒：廣角拉遠。\n【交棒】\n燈光開始暗下。')
+        with tempfile.TemporaryDirectory() as tmp:
+            images, cfg, req = self.fixture(Path(tmp))
+            row = {'mode': 'performance', 'event': event, 'handoff_version': 1}
+            seg = dict(timeline()[0], seconds=10, director_plan=row)
+            writer = Mock(return_value=native_prompt(0))
+            with patch.object(server.backend, 'rewrite_local', writer):
+                server.local_prompt(cfg, req, seg, images, None)
+            text = writer.call_args.args[2][0][1]
+            action, context = text.split('UNTIMED CONTEXT', 1)
+            self.assertIn('[0.000–2.280s] 切回近景，低笑至 1.356 秒。[推進]', action)
+            self.assertIn('[2.280–5.300s] 四拍手舞。', action)
+            self.assertIn('[5.300–7.820s] 扶管半轉。', action)
+            self.assertIn('[7.820–10.000s] 廣角拉遠。', action)
+            self.assertNotIn('蕉彌已將推桿調高', action)
+            self.assertIn('OPENING STATE (already true):\n蕉彌已將推桿調高。', context)
+            self.assertIn('ENDING STATE:\n燈光開始暗下。', context)
+            self.assertEqual(seg['director_plan']['event'], event)
+
     def test_cross_genre_scripts_keep_scope_with_all_intensities(self):
         from banana_mv.shoot_plan import AUTO_FILMING, CLIP_INTENSITY, DYNAMIC_EDITING
         cases={

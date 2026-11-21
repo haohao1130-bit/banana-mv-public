@@ -229,7 +229,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
 
 def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                                 wardrobe, refs, images, rewrite, progress=None, direction_policy='',
-                                body_form=None):
+                                body_form=None, shoot_event=None):
     """Actual 5070 two-singer path: independent SRT windows + 9B camera."""
     body_form = body_form if body_form is not None else declared_body_forms(fixed)
     if body_form:
@@ -240,7 +240,8 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
         segment['scene_wardrobe_schedule'] = schedule
     else:
         segment.pop('scene_wardrobe_schedule', None)
-    task = _free_commission(req, segment, event, pictures, wardrobe, cues,
+    task = _free_commission(req, segment, shoot_event if shoot_event is not None else event,
+                            pictures, wardrobe, cues,
                             continuity=len(refs) > 2, scene_schedule=schedule,
                             direction_policy=direction_policy, body_form=body_form)
     calls = 0
