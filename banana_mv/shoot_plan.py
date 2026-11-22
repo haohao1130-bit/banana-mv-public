@@ -946,13 +946,23 @@ def motion_frame_parts(paths):
 
 def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                        row, shoot_event, context, vocals, pictures, connected):
-    from banana_mv.continuity import cast_errors, split_end_state
+    from banana_mv.continuity import absent_pictures, cast_errors, split_end_state
     refs = ([tail] if tail else []) + list(originals)
     text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected)
     system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     motion = motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []
     segment['motion_frames_to_9b'] = sum(1 for kind, _ in motion if kind == 'image')
-    base = [('text', text)] + _pictures(refs) + motion
+    # 沒入鏡的角色：圖片不給 9B 看，只留一行文字，其他人的 <Picture N> 編號不變。
+    hidden = absent_pictures(row.get('event', ''), context.get('fixed_reference_settings', ''))
+    pictures_parts = []
+    for number, path in enumerate(refs, 1):
+        if number in hidden:
+            pictures_parts.append(('text', f'<Picture {number}>: not in this clip (image withheld; do not use it).'))
+        else:
+            image = _pictures([path])[1]          # ('image', 縮好的圖)；標籤用正確編號
+            pictures_parts.extend([('text', f'<Picture {number}>:'), image])
+    segment['withheld_pictures'] = sorted(hidden)
+    base = [('text', text)] + pictures_parts + motion
     attempts = base
     segment['director_mode'] = row['mode']
     segment['commission_words'] = len(text.split())

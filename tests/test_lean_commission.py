@@ -183,6 +183,11 @@ class OnScreenCastTests(unittest.TestCase):
             write_shoot_prompt(cfg, req, seg, images, None, writer)
             text = writer.call_args_list[0].args[2][0][1]
             self.assertIn('NOT IN THIS CLIP: 英雄 (<Picture 2>)', text)
+            parts = writer.call_args_list[0].args[2]
+            labels = [value for kind, value in parts if kind == 'text']
+            self.assertIn('<Picture 2>: not in this clip (image withheld; do not use it).', labels)
+            self.assertEqual(sum(kind == 'image' for kind, _ in parts), 1)      # 只給歌手的圖
+            self.assertEqual(seg['withheld_pictures'], [2])
             self.assertEqual(writer.call_count, 2)
             self.assertIn('英雄 (<Picture 2>) is not on screen', writer.call_args_list[1].args[2][-1][1])
 

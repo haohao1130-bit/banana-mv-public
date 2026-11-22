@@ -150,3 +150,11 @@ def cast_errors(prompt, event, fixed, tail):
                 errors.append(f'[ERROR][Cast] {name} (<Picture {number}>) is not on screen in this clip. '
                               'Remove that subject entirely and keep it out of every shot.')
     return errors
+
+
+def absent_pictures(event, fixed):
+    """這段沒入鏡的參考圖編號（已是連接後的編號）。沒有入鏡行時不判斷，回傳空集合。"""
+    cast = onscreen_cast(event)
+    if not cast:
+        return set()
+    return {n for n, name in reference_names(fixed).items() if not _present(name, cast, event)}
