@@ -4,7 +4,7 @@ import re
 import uuid
 from pathlib import Path
 
-from banana_mv.commission_guard import check_commission, role_pictures, wardrobe_for_clip
+from banana_mv.commission_guard import role_pictures
 from banana_mv.body_form import declared_body_forms
 from banana_mv.core import map_image_mentions, normalize_mv_prompt
 from banana_mv.director import MODES
@@ -642,9 +642,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     if fixed_setup:
         context['fixed_reference_settings'] = connected(fixed_setup)
     pictures = role_pictures(context.get('fixed_reference_settings', ''))
-    wardrobe = wardrobe_for_clip(event, segment.get('fixed_reference_settings', ''))
-    if wardrobe:
-        context['current_wardrobe'] = wardrobe
+    wardrobe = {}  # 換裝改用 continuity.py 的通用換裝點；舊的海邊換裝規則已移除。
     shoot_event = _timed_shoot_event(event, float(segment['seconds']))
 
     # SRT-authored dual singers: Python owns singer timing, cast, wardrobe and
@@ -789,19 +787,18 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     refs=([tail] if tail else [])+list(originals)
     parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
-    repair_count = 0
-    fresh_retries = 0
-    retry_limit = rewrite_retry_count(req)
-    # Each fresh draft gets at most two local commission repairs. An exhausted
-    # repair chain starts a NEW draft with the original clip-only commission.
-    max_attempts = (retry_limit + 1) * 3
+    # 只有格式壞掉才重試，最多 2 次（舊的「修稿兩輪、重寫五次、最多 18 次」退稿機制已移除）。
+    retry_limit = min(rewrite_retry_count(req), 2)
+    max_attempts = retry_limit + 1
     for attempt in range(max_attempts):
         if progress:progress({'stage':'rewriting','clip_index':segment['index'],
                               'attempt':attempt+1,'max_attempts':max_attempts})
         segment['prompt_profile']={'source':'isolated_native_director','writer_calls':attempt+1,
-                                   'contract_check_calls':attempt+1,
-                                   'fresh_restarts':fresh_retries}
-        raw=rewrite(cfg,system,attempts,uuid.uuid4().hex[:8])
+                                   'contract_check_calls':0}
+        call_cfg = cfg
+        if attempt and cfg.get('rewriter', {}).get('thinking'):
+            call_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
+        raw=rewrite(call_cfg,system,attempts,uuid.uuid4().hex[:8])
         try:
             prompt=normalize_mv_prompt(_text(raw),len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
@@ -817,37 +814,11 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                 prompt, removed = clean_lyric_output(prompt, dict(req, lyrics_reference_version=2))
                 segment['lyric_reference_cleanup'] = {'removed_spans': removed}
                 prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
-            problems = check_commission(prompt, vocals, pictures, float(segment['seconds']),
-                                        wardrobe, bool(req.get('srt_reference') or req.get('srt_cues')))
-            if problems:
-                segment['commission_guard_errors'] = problems
-                if repair_count >= 2:
-                    if fresh_retries >= retry_limit:
-                        raise SceneStateError(
-                            f'9B 拍攝稿與當段通告衝突；局部修稿兩輪後重新起稿 {fresh_retries} 次仍未通過：'
-                            + ' | '.join(problems))
-                    fresh_retries += 1
-                    repair_count = 0
-                    attempts = parts  # no failed draft or unrelated story history
-                    continue
-                repair_count += 1
-                attempts = parts + [('text',
-                    'REPAIR THIS CLIP ONLY. The previous draft violates the explicit commission. '
-                    'Fix exactly the listed errors while retaining valid shots, camera choices, '
-                    'identities, action continuity and ending. No new lyrics or dialogue. '
-                    'Return all six native sections.\n'
-                    'CONFLICTS:\n' + '\n'.join(problems) +
-                    '\nPREVIOUS DRAFT:\n' + prompt)]
-                continue
             segment.pop('commission_guard_errors', None)
             return prompt
         except ValueError as error:
-            if isinstance(error, SceneStateError) and str(error).startswith('9B 拍攝稿與當段通告衝突'):
-                raise
-            if fresh_retries >= retry_limit:
+            if attempt >= retry_limit:
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
-            fresh_retries += 1
-            repair_count = 0
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 
 
@@ -901,7 +872,8 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
             rows.append(f"{cue['clip_start']:.2f}-{cue['clip_end']:.2f}s: {named or 'unassigned'}")
         parts.append('SRT SINGERS (show these performers when covering lip-sync):\n' + '\n'.join(rows))
     parts.append('<Audio 1> is the supplied song, kept unchanged (fully_copy); you have not heard it. '
-                 'Add no new speech, lyrics or replacement music.')
+                 'Add no new speech, lyrics or replacement music. Only the assigned vocalist may lip-sync; '
+                 'everyone else keeps their mouth silent.')
     ending_info = context.get('ending') or {}
     ending = ending_info.get('instruction')
     if ending:
@@ -966,7 +938,6 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
     attempts = base
     segment['director_mode'] = row['mode']
     segment['commission_words'] = len(text.split())
-    has_srt = bool(req.get('srt_reference') or req.get('srt_cues'))
     repairs = fresh = 0
     total = (LEAN_MAX_FRESH + 1) * (LEAN_MAX_REPAIRS + 1)
     last_problem = None
@@ -988,8 +959,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                 prompt, removed = clean_lyric_output(prompt, dict(req, lyrics_reference_version=2))
                 segment['lyric_reference_cleanup'] = {'removed_spans': removed}
                 prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
-            problems = check_commission(prompt, vocals, pictures, float(segment['seconds']), {}, has_srt)
-            problems += cast_errors(prompt, row.get('event', ''), context.get('fixed_reference_settings', ''), bool(tail))
+            problems = cast_errors(prompt, row.get('event', ''), context.get('fixed_reference_settings', ''), bool(tail))
             if problems and repairs < LEAN_MAX_REPAIRS:
                 repairs += 1
                 attempts = base + [('text', 'REPAIR THIS CLIP ONLY. Fix exactly these conflicts with the commission, '
