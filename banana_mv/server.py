@@ -698,6 +698,11 @@ def worker(job, cfg, original, song, drive):
             if job['request'].get('lean_commission') and i:
                 # 把上一段 9B 寫的 END_STATE（姿勢、動作方向、鏡頭運動）交給這一段。
                 seg['previous_end_state']=job['segments'][i-1].get('end_state')
+                # 末五幀：9B 也看完整的 F-4…F-0，親眼看 H3 實際拍出的動作方向。
+                if overlap and tail_frames:
+                    seg['motion_frames']=[str(path) for path in tail_frames[1:]]
+                else:
+                    seg.pop('motion_frames',None)
             if single_pass or direct_script:
                 prompt=local_prompt(cfg,job['request'],seg,original,tail)
             elif ledger is not None and record is not None and job.get('resuming'):
