@@ -578,7 +578,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     fixed_setup=_fixed_reference_with_python_priority(fixed_setup,event)
     # Only static identity, setting and style are allowed past the handoff.
     # The complete plot and future ending stay with Python's upstream planner.
-    fixed_setup=_filming_reference_settings(fixed_setup)
+    if not req.get('shared_setup'):
+        # 沒有獨立的共同設定格時，才需要從劇本前言裡過濾掉故事大綱。
+        fixed_setup=_filming_reference_settings(fixed_setup)
     context={'seconds':segment['seconds'],'primary_mode':row['mode'],
           'adaptation':'FREE' if req.get('story_plan',True) else 'FAITHFUL',
           'local_srt':excerpt(req,segment),'audio_evidence':segment.get('audio_evidence',{}),
@@ -590,6 +592,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
             fixed_setup+=('\n' if fixed_setup else '')+role+' = '+picture
     if fixed_setup:context['fixed_reference_settings']=connected(fixed_setup)
     if tail:context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
+    if req.get('lean_commission'):
+        return _write_lean_prompt(cfg,req,segment,originals,tail,rewrite,progress,row,event,context,
+                                  original_roles,connected)
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     system=NATIVE_ENHANCER_SYSTEM+guide
     text=(f"Target video duration: {segment['seconds']:.6f} seconds.\n"
@@ -681,3 +686,125 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 
 
+
+
+# ---------------------------------------------------------------------------
+# 精簡通告單（從 5070 版移植）：9B 是專門把「官方指南＋簡短描述」改寫成 H3 提示詞的模型，
+# 長篇規則只會讓它反覆檢查。這裡只給它這段需要的事實：固定設定、誰入鏡、目前服裝、
+# 上一段怎麼結束、這段事件、SRT 歌手與結尾，最後要求附 END_STATE 交給下一段。
+
+LEAN_INTENSITY = {
+    'normal': 'Natural, grounded camera and performance.',
+    'high': 'Assertive, inventive commercial-MV photography: strong angles, depth, shaped light and purposeful movement.',
+    'extreme': 'Explosive cinematic energy: bold angles, fast motivated movement and peak performance.',
+}
+LEAN_MAX_REPAIRS = 2
+LEAN_MAX_FRESH = 1
+
+
+def lean_commission(req, segment, tail, row, event, context, local_singers, connected):
+    from banana_mv.continuity import END_STATE_REQUEST, cast_note, handoff_note, wardrobe_note
+    seconds = float(segment['seconds'])
+    parts = [f"Target video duration: {seconds:.3f} seconds. Primary filming mode: {row['mode']}."]
+    fixed = context.get('fixed_reference_settings')
+    if fixed:
+        parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + fixed)
+    cast = cast_note(row.get('event', ''), fixed or '')
+    if cast:
+        parts.append(cast)
+    outfits = wardrobe_note('\n'.join(filter(None, (req.get('prompt', ''), segment.get('fixed_reference_settings', '')))),
+                            float(segment.get('start', 0.0)), seconds)
+    if outfits:
+        parts.append(outfits.rstrip())
+    if tail:
+        parts.append("<Picture 1> is the previous clip's last frame, not another actor. This clip continues from it.")
+    handoff = handoff_note(segment.get('previous_end_state'))
+    if handoff:
+        parts.append(handoff.rstrip())
+    parts.append('THIS CLIP (the only events to perform; later story is not yours):\n' + connected(event))
+    if local_singers:
+        parts.append('SRT-LOCKED LEAD VOCALS (show these performers when covering lip-sync; not camera cuts):\n'
+                     + '\n'.join(local_singers))
+    parts.append('<Audio 1> is the supplied song, kept unchanged (fully_copy); you have not heard it. '
+                 'Add no new speech, lyrics or replacement music. Only the assigned vocalist may lip-sync.')
+    ending_info = context.get('ending') or {}
+    ending = ending_info.get('instruction')
+    if ending:
+        timing = ', '.join(f'{key}={float(ending_info[key]):g}s' for key in
+                           ('resolve_start_by', 'settle_by', 'end_time', 'hold_seconds')
+                           if isinstance(ending_info.get(key), (int, float)))
+        parts.append('ENDING FOR THIS CLIP: ' + ending + (f' (clip-local times: {timing})' if timing else ''))
+    parts.append('DIRECTION: ' + ('Free MV adaptation: invent striking staging, performance and montage that serve this beat.'
+                                  if req.get('story_plan', True) else
+                                  'Faithful: stage exactly the supplied events; camera choices are yours.')
+                 + ' ' + LEAN_INTENSITY.get(req.get('intensity', 'high'), LEAN_INTENSITY['high'])
+                 + (' Use motivated short shots and intercuts where the music has accents.'
+                    if req.get('dynamic_cuts', True) else ' Prefer motivated longer takes.'))
+    parts.append("Write the guide's six native sections for this one clip.\n" + END_STATE_REQUEST)
+    return '\n\n'.join(parts)
+
+
+def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress, row, event, context,
+                       original_roles, connected):
+    from banana_mv.continuity import absent_pictures, cast_errors, split_end_state
+    refs = ([tail] if tail else []) + list(originals)
+    local_singers = _srt_singers(req, segment, original_roles)
+    text = lean_commission(req, segment, tail, row, event, context, local_singers, connected)
+    system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
+    # 沒入鏡的角色：圖片不給 9B 看，只留一行文字，其他人的 <Picture N> 編號不變。
+    hidden = absent_pictures(row.get('event', ''), context.get('fixed_reference_settings', ''))
+    picture_parts = []
+    for number, path in enumerate(refs, 1):
+        if number in hidden:
+            picture_parts.append(('text', f'<Picture {number}>: not in this clip (image withheld; do not use it).'))
+        else:
+            picture_parts.extend([('text', f'<Picture {number}>:'), _pictures([path])[1]])
+    segment['withheld_pictures'] = sorted(hidden)
+    base = [('text', text)] + picture_parts
+    attempts = base
+    segment['director_mode'] = row['mode']
+    segment['commission_words'] = len(text.split())
+    repairs = fresh = 0
+    total = (LEAN_MAX_FRESH + 1) * (LEAN_MAX_REPAIRS + 1)
+    last_problem = None
+    for attempt in range(total):
+        if progress:
+            progress({'stage': 'rewriting', 'clip_index': segment['index'], 'attempt': attempt + 1, 'max_attempts': total})
+        segment['prompt_profile'] = {'source': 'lean_commission', 'writer_calls': attempt + 1, 'fresh_restarts': fresh}
+        call_cfg = cfg
+        if attempt and cfg.get('rewriter', {}).get('thinking'):
+            # 修稿與重寫只處理格式或衝突，關掉 thinking 讓它快速交稿。
+            call_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
+        raw = rewrite(call_cfg, system, attempts, uuid.uuid4().hex[:8])
+        try:
+            body, end_state = split_end_state(_text(raw))
+            prompt = normalize_mv_prompt(body, len(refs))
+            if len(originals) > 1 and not re.search(r'<Picture \d+>', prompt):
+                raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
+            if req.get('director_schema') == 6 and local_singers:
+                prompt = _insert_srt_authority(prompt, local_singers)
+            problems = cast_errors(prompt, row.get('event', ''), context.get('fixed_reference_settings', ''), bool(tail))
+            if problems and repairs < LEAN_MAX_REPAIRS:
+                repairs += 1
+                attempts = base + [('text', 'REPAIR THIS CLIP ONLY. Fix exactly these conflicts with the commission, '
+                                    'keep everything else, and return all six sections plus END_STATE.\nCONFLICTS:\n'
+                                    + '\n'.join(problems) + '\nPREVIOUS DRAFT:\n' + prompt)]
+                continue
+            # 修稿兩輪後仍有衝突：交出這版並標示，讓使用者在毛片室決定，不再無限重寫。
+            if problems:
+                segment['commission_guard_warnings'] = problems
+            else:
+                segment.pop('commission_guard_warnings', None)
+            if end_state:
+                segment['end_state'] = end_state
+            else:
+                segment.pop('end_state', None)
+            return prompt
+        except ValueError as error:
+            last_problem = error
+            if fresh >= LEAN_MAX_FRESH:
+                break
+            fresh += 1
+            repairs = 0
+            attempts = base + [('text', 'Return only the six native H3 sections plus END_STATE. Fix: ' + str(error))]
+    raise SceneStateError(f'當段拍攝稿交稿失敗（已重寫 {fresh} 次）：{last_problem}')

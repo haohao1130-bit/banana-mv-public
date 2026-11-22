@@ -455,6 +455,9 @@ def worker(job, cfg, original, song, drive):
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
             record=cached_clip(work,ledger,seg) if ledger is not None else None
+            if job['request'].get('lean_commission') and i:
+                # 把上一段 9B 寫的 END_STATE（姿勢、動作方向、鏡頭運動）交給這一段。
+                seg['previous_end_state']=job['segments'][i-1].get('end_state')
             if single_pass or direct_script:
                 prompt=local_prompt(cfg,job['request'],seg,original,tail)
             elif ledger is not None and record is not None and job.get('resuming'):
@@ -562,7 +565,16 @@ def start(req):
     cfg = backend.project_config(req)
     if req.get('direct_script') is True:
         req = dict(req, rewrite=False, story_plan=False)
-    req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
+    shared_setup=req.get('shared_setup','')
+    if not isinstance(shared_setup,str) or len(shared_setup)>12000:
+        raise ValueError('共同設定最多 12000 字。')
+    req=dict(req)
+    if shared_setup.strip():req['shared_setup']=shared_setup.strip()
+    else:req.pop('shared_setup',None)
+    if not isinstance(req.get('lean_commission', False), bool):
+        raise ValueError('精簡通告單必須為勾選值。')
+    req=dict(req,lean_commission=req.get('lean_commission', False),
+             sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
              director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else 6,
              story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
@@ -934,6 +946,15 @@ class Handler(WebHandler):
                 return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/projects':
             return self.send_json(projects())
+        if url.path=='/api/mv/presets':
+            from banana_mv import presets
+            return self.send_json(presets.list_presets())
+        if url.path=='/api/mv/asset':
+            try:
+                from banana_mv import presets
+                return self.send_file(presets.image_asset(dict(urllib.parse.parse_qsl(url.query)).get('id',''))[1])
+            except (ValueError,OSError) as e:
+                return self.send_json({'error':str(e)},404)
         if url.path=='/api/library':
             return self.send_json(backend.library_index())
         if url.path=='/api/mv/status':
@@ -962,6 +983,10 @@ class Handler(WebHandler):
     def do_POST(self):
         path=urllib.parse.urlparse(self.path).path
         try:
+            if path in ('/api/mv/preset_save','/api/mv/preset_delete'):
+                from banana_mv import presets
+                handler=presets.save_preset if path.endswith('save') else presets.delete_preset
+                return self.send_json(handler(self.body_json()))
             if path=='/api/upload':
                 if not GPU_LOCK.acquire(blocking=False):
                     raise ValueError('MV 執行中，請完成後再上傳素材。')

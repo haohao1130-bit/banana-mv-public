@@ -43,6 +43,10 @@
       "sha256": "65a0d686051a11d8e2ed07998291f7747a19dfaae32d742cff707d9c33a13803"
     },
     {
+      "path": "banana_mv/continuity.py",
+      "sha256": "f1297216181aa46d50de0c1ec1d49d584b9f1253acd3cfc39f55e7869e109939"
+    },
+    {
       "path": "banana_mv/core.py",
       "sha256": "f98011866e186738f8ae866a7bcd7373a1b93a7d5088092bf32df03418ef86ca"
     },
@@ -87,12 +91,16 @@
       "sha256": "c9680bd41a1fcb0d3a9498656f120c689ba6c570909c561c8ccea9a4e5fb51bf"
     },
     {
+      "path": "banana_mv/presets.py",
+      "sha256": "db38a6dc352d461aedab3052f16e162ad5c85dfb12e55095f0e13192e40f0bf8"
+    },
+    {
       "path": "banana_mv/prompt_quality.py",
       "sha256": "e3b8c91531b3a6b243412973f88190b615334252c10d7ca0f7430b87e3906170"
     },
     {
       "path": "banana_mv/python_slots.py",
-      "sha256": "fa7d59e5e1aabb75fb51ddf92110262fdb84c559a2b79f4c444cc36b25385fca"
+      "sha256": "87847aac0af6f44cdb9f0554fc17beeb33a36cb66e14befb58b873fc0c203cb5"
     },
     {
       "path": "banana_mv/scene_state.py",
@@ -100,15 +108,15 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "6c940e3893692a62d4a77936ba9d892debda59e6f893b767361c1c06e04b66fa"
+      "sha256": "9406527792829bd59cefc196b9cee66b3c0fb2584785788a5248b1ebb956c7f9"
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "5655e3adb2d6fe12f383c19186b72a0e76af6025feee7d6a79a7495f27c86368"
+      "sha256": "d148ce53813be979d12a14d599cf59eaf1e31438deabed9297c7d9c957786ca1"
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "d65f667508588909c22bf6cc55d66767c0ef0ef368da44b1f5872907996fdd1d"
+      "sha256": "7eedc590bc1a008c2e1705ae1a888a2f47e08595fffb97f90b8b70020e1f9e85"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -136,7 +144,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "f3a64f87dc8b7faa62fbd5e49c0764a88f67859200029b61364432decc25d78b"
+      "sha256": "efd21c25498dce846532ca4332bfd5a8963a16e339e1ced783bbebbac50d0450"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -165,6 +173,10 @@
     {
       "path": "tests/check_ui.cjs",
       "sha256": "dcb82c10a67492121ce994cc70e2a77f42f460b96a8d18eec7e729a57f78ef84"
+    },
+    {
+      "path": "tests/fixtures/four_legs_act02_prompt.txt",
+      "sha256": "464ec4c51a747ae0df27ee1c268ea1135ca74f07ea020a866bee11b40b0b7608"
     },
     {
       "path": "tests/test_audio_analysis.py",
@@ -213,6 +225,10 @@
     {
       "path": "tests/test_json_eof.py",
       "sha256": "b457db6f2a78d6b18ce16049d178151b8d028a86f24df58020ee04b970641109"
+    },
+    {
+      "path": "tests/test_lean_commission.py",
+      "sha256": "476439c47f36c6117f7acfa762636e19c5ce8d3f70b3eb776a77e25b90dbf325"
     },
     {
       "path": "tests/test_lyrics_reference.py",
@@ -269,6 +285,10 @@
     {
       "path": "tests/test_services.py",
       "sha256": "81c34fdbc234087a02c64de5788d65c7271cf6d2eabe569488988bc58634813b"
+    },
+    {
+      "path": "tests/test_shared_setup_box.py",
+      "sha256": "8658f4b4f660c59cb1a7e16034ea27c1554df09fed29f895061a9dfbe7ab8743"
     },
     {
       "path": "tests/test_shoot_plan.py",
