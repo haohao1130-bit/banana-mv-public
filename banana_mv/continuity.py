@@ -81,3 +81,80 @@ def wardrobe_note(text, clip_start, clip_seconds):
     for at, role, outfit in during:
         lines.append(f'OUTFIT CHANGE INSIDE THIS CLIP at {at:.2f}s: {role} → {outfit}')
     return '\n'.join(lines) + ('\n' if lines else '')
+
+
+# ---------------------------------------------------------------------------
+# 當段入鏡名單：劇本每段寫「入鏡：小語、男主角」。沒入鏡的參考角色不能被 9B 定義成
+# Subject、也不能出現在鏡頭裡，否則 H3 會把牠和別的角色揉在一起（例如香蕉兔的腳
+# 長到小語身上）。上一段尾幀 <Picture 1> 也不能被綁成角色。
+
+_CAST_LINE = re.compile(r'(?:^|[｜\n])\s*(?:[-*•・]\s*)?【?入鏡】?\s*[：:]?\s*(?<=[：:】])\s*([^｜\n]+)')
+_REF_NAME = re.compile(r'<Picture (\d+)>\s*[=＝]\s*([^\s=＝，,。；;（(]+)')
+
+
+def onscreen_cast(event):
+    match = _CAST_LINE.search(event or '')
+    if not match:
+        return []
+    return [name for name in re.split(r'[、,，/／;；\s]+|和|與|及', match[1].strip()) if name]
+
+
+def reference_names(fixed):
+    """<Picture 2> = 男主角 = S1 → {2: '男主角'}（已經是連接後的編號）。"""
+    names = {}
+    for number, name in _REF_NAME.findall(fixed or ''):
+        names.setdefault(int(number), name)
+    return names
+
+
+def _listed(name, cast):
+    return any(name in actor or actor in name for actor in cast)
+
+
+def _present(name, cast, event):
+    """入鏡名單有列，或這段通告單內文有提到（例如「桌上的蕉彌公仔」）都算在場。"""
+    body = '\n'.join(line for line in _CAST_LINE.sub('', event or '').splitlines()
+                     if not re.match(r'\s*(?:ALREADY ESTABLISHED|PREVIOUS CLIP ENDED)', line))
+    return _listed(name, cast) or name in body
+
+
+def cast_note(event, fixed):
+    cast = onscreen_cast(event)
+    if not cast:
+        return ''
+    absent = [f'{name} (<Picture {n}>)' for n, name in sorted(reference_names(fixed).items())
+              if not _present(name, cast, event)]
+    note = 'ON-SCREEN IN THIS CLIP: ' + '、'.join(cast) + '.'
+    if absent:
+        note += (' NOT IN THIS CLIP: ' + '、'.join(absent) + ' — do not define them as subjects, do not mention '
+                 'them in any shot, and never merge their features into another actor or prop.')
+    return note
+
+
+def cast_errors(prompt, event, fixed, tail):
+    if 'subject_definitions:' not in prompt:
+        return []
+    definitions = prompt.split('subject_definitions:', 1)[1].split('summary:', 1)[0]
+    errors = []
+    actor_on_frame = [line for line in definitions.splitlines()
+                      if re.search(r'<Subject \d+>[^\n]*<Picture 1>(?!\d)', line)
+                      and not re.search(r'environment|room|setting|location|background|workshop|studio|park|'
+                                        r'interior|scene|場景|環境|房間', line, re.I)]
+    if tail and actor_on_frame:
+        errors.append('[ERROR][Cast] <Picture 1> is the previous clip\'s frame, not a character reference. '
+                      'Bind each actor to their own reference picture listed in the fixed settings.')
+    cast = onscreen_cast(event)
+    if cast:
+        for number, name in sorted(reference_names(fixed).items()):
+            if not _present(name, cast, event) and re.search(rf'<Picture {number}>(?!\d)', definitions):
+                errors.append(f'[ERROR][Cast] {name} (<Picture {number}>) is not on screen in this clip. '
+                              'Remove that subject entirely and keep it out of every shot.')
+    return errors
+
+
+def absent_pictures(event, fixed):
+    """這段沒入鏡的參考圖編號（已是連接後的編號）。沒有入鏡行時不判斷，回傳空集合。"""
+    cast = onscreen_cast(event)
+    if not cast:
+        return set()
+    return {n for n, name in reference_names(fixed).items() if not _present(name, cast, event)}

@@ -868,12 +868,15 @@ LEAN_MAX_FRESH = 1
 
 
 def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected):
-    from banana_mv.continuity import END_STATE_REQUEST, handoff_note, wardrobe_note
+    from banana_mv.continuity import END_STATE_REQUEST, cast_note, handoff_note, wardrobe_note
     seconds = float(segment['seconds'])
     parts = [f"Target video duration: {seconds:.3f} seconds. Primary filming mode: {row['mode']}."]
     fixed = context.get('fixed_reference_settings')
     if fixed:
         parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + fixed)
+    cast = cast_note(row.get('event', ''), fixed or '')
+    if cast:
+        parts.append(cast)
     outfits = wardrobe_note('\n'.join(filter(None, (req.get('prompt', ''), segment.get('fixed_reference_settings', '')))),
                             float(segment.get('start', 0.0)), seconds)
     if outfits:
@@ -943,13 +946,23 @@ def motion_frame_parts(paths):
 
 def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                        row, shoot_event, context, vocals, pictures, connected):
-    from banana_mv.continuity import split_end_state
+    from banana_mv.continuity import absent_pictures, cast_errors, split_end_state
     refs = ([tail] if tail else []) + list(originals)
     text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected)
     system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     motion = motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []
     segment['motion_frames_to_9b'] = sum(1 for kind, _ in motion if kind == 'image')
-    base = [('text', text)] + _pictures(refs) + motion
+    # 沒入鏡的角色：圖片不給 9B 看，只留一行文字，其他人的 <Picture N> 編號不變。
+    hidden = absent_pictures(row.get('event', ''), context.get('fixed_reference_settings', ''))
+    pictures_parts = []
+    for number, path in enumerate(refs, 1):
+        if number in hidden:
+            pictures_parts.append(('text', f'<Picture {number}>: not in this clip (image withheld; do not use it).'))
+        else:
+            image = _pictures([path])[1]          # ('image', 縮好的圖)；標籤用正確編號
+            pictures_parts.extend([('text', f'<Picture {number}>:'), image])
+    segment['withheld_pictures'] = sorted(hidden)
+    base = [('text', text)] + pictures_parts + motion
     attempts = base
     segment['director_mode'] = row['mode']
     segment['commission_words'] = len(text.split())
@@ -976,6 +989,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                 segment['lyric_reference_cleanup'] = {'removed_spans': removed}
                 prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
             problems = check_commission(prompt, vocals, pictures, float(segment['seconds']), {}, has_srt)
+            problems += cast_errors(prompt, row.get('event', ''), context.get('fixed_reference_settings', ''), bool(tail))
             if problems and repairs < LEAN_MAX_REPAIRS:
                 repairs += 1
                 attempts = base + [('text', 'REPAIR THIS CLIP ONLY. Fix exactly these conflicts with the commission, '

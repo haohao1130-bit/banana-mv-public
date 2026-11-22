@@ -1,0 +1,28 @@
+subject_definitions:
+<Subject 1> is the young man in <Picture 1>, with messy dark hair, wearing a dark olive-green jacket over a black hoodie, dark jeans, and grey sneakers; he is the sole singer (S1) of the track, seated in a gaming chair before three screens, one showing a game map with a donut-shaped hazard marker.
+<Subject 2> is the small yellow banana-eared rabbit figurine in <Picture 4>, with a closed-eye smile, brown hands clasped in prayer, pink inner ears, and a green leaf tail; it appears only as a palm-sized figurine on the desk and as the animated donut ring in the game screen, never at life size.
+<Subject 3> is the young woman in <Picture 3>, with long dark hair tied back, wearing a white string bikini; she is a water-park guest who never sings or mouths lyrics, showing only silent smiles, gasps, and expressions.
+<Subject 4> is the home-game-and-workshop environment in <Picture 1>, with an RGB PC tower, a bowl of snacks, an energy drink, a mechanical keyboard, a mouse, a copper-colored small alchemy furnace on the desk, and a window whose daylight shifts from afternoon to dusk.
+<Audio 1> is the supplied upbeat Japanese pop-punk track, kept unchanged as the target video's complete final audio track (fully_copy); only the male singer's voice is audible, with no added lyrics, speech, or replacement music.
+
+summary:
+[reference generation + audio reuse] The target video is a 10-second commercial-MV adaptation of <Audio 1>, continuing directly from <Picture 1>: <Subject 3> floats slowly on a pink donut ring down a lazy river at a real water park while <Subject 1> sings in his home workshop, the two lines hard-cut in parallel montage with matching actions, expressions, and directions, and <Subject 2> appears only as a screen game element and a palm-sized figurine.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - his dark hair, olive-green jacket, black hoodie, and seated gaming-chair position before the screens are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - it remains a palm-sized figurine on the desk and an animated donut ring on the screen, never life-sized or walking out of the screen.
+<Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - her white string bikini, long dark hair, and silent-expression-only rule are retained.
+<Subject 4> (appears in [Shot 2], [Shot 3]): fully_preserved - the RGB PC, snack bowl, energy drink, mechanical keyboard, mouse, copper alchemy furnace, and the dusk-shifting window are retained.
+<Audio 1>: fully_copy - the complete track is reused unchanged; only the male singer's voice is audible.
+
+detailed_description:
+The target video is a bright, upbeat Japanese pop-punk music video with playful comedy, shot in a cinematic commercial-MV style with strong angles, shaped sunlight, and purposeful movement; the two locations run as a parallel hard-cut montage, and only <Subject 1> sings, his voice matching <Audio 1> exactly.
+[Shot 1] The video opens on <Subject 3> at the water park: a medium shot frames her lying back on a pink donut-shaped inflatable ring, drifting slowly along the lazy river as a small waterfall curtain of water cascades beside the ring and sprays lightly over her shoulders and chest. She keeps her eyes closed, head tilted back in pure enjoyment, a smile curving at her lips; the water's gentle motion is the only movement in the shot, giving it a soft, slightly slowed rhythm. The camera [跟隨] her drift downstream, holding a steady tracking angle so the ring, the falling water, and the blurred park background stay clear and continuous.
+[Shot 2] At 00:04.500, the video hard-cuts to <Subject 4>, the home game-and-workshop: a close-up from the side-front of <Subject 1> (S1), the young man in the dark olive-green jacket over a black hoodie, half-reclined deep in the gaming chair, hands loosely holding a game controller. His eyes slowly drift toward the side screen where the game shows the donut-shaped hazard marker; one brow lifts as a playful idea sparks, then his lips move naturally in time with <Audio 1> as he sings, his expression shifting from lazy to a bright, mischievous grin. The camera [變焦推近] gently pushes in on his face, keeping the screens, the copper alchemy furnace, and the snack bowl softly blurred behind him.
+[Shot 3] At 00:07.300, the video hard-cuts back to <Subject 4> for a tighter close-up of <Subject 1> (S1). He sets the game controller down lightly on the snack bowl, pulls the mechanical keyboard toward him, and double-clicks the mouse to open the project folder; the screens' blue light washes over his face and highlights his bad, pleased grin as he begins to work. The camera [右移] slides smoothly to the right, following the controller's path across the desk and keeping his hands and the keyboard in frame. The song continues under him; <Subject 3> remains drifting on the lazy river in the other line, and the clip ends while he is still smiling at the open folder, with no finale staged.
+
+overall_soundscape:
+Bright outdoor water-park ambience with gentle river flow and light water spray in the first line, cutting to quiet indoor room tone with soft desk and keyboard clicks in the home line; no dialogue or singing outside <Subject 1>'s voice.
+
+non_diegetic_music:
+N/A
