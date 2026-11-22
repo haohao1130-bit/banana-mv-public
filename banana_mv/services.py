@@ -127,6 +127,14 @@ def add_asset(cfg, filename, body):
 def build_rewrite_graph(cfg, system, parts, job_id):
     """Use ComfyUI's native TextGenerate contract with the existing 9B settings."""
     rw = cfg['rewriter']
+    if rw['thinking']:
+        # 輕煞車：不限字數，但禁止「想好又推翻」的迴圈（實測 16K 額度被重複糾結用光、交白卷）。
+        system += (
+            '\n\nUse <think> to decide the shots, staging and continuity. Decide each question once and move on: '
+            'never reopen a settled decision, never re-check the guide, and do not deliberate about details the '
+            'request says Python fills in. As soon as the shot list is settled, close </think>. '
+            'Do not draft the final text inside <think>. After </think>, always write the complete requested output.'
+        )
     contents = ''.join(value if kind == 'text' else '<|vision_start|><|image_pad|><|vision_end|>'
                        for kind, value in parts)
     chat = (f'<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n'
@@ -149,15 +157,18 @@ def build_rewrite_graph(cfg, system, parts, job_id):
                 graph[merged] = {'class_type': 'ImageBatch', 'inputs': {'image1': batch, 'image2': [key, 0]}}
                 batch = [merged, 0]
         temperature, top_p = float(rw['temperature']), float(rw['top_p'])
+        presence = float(rw.get('presence_penalty', 0.0))
         if rw['thinking'] and (temperature, top_p) == (DEFAULTS['rewriter']['temperature'], DEFAULTS['rewriter']['top_p']):
-            # Qwen3.5 官方建議：thinking 做精確任務用 temperature 0.6、top_p 0.95
-            # （原本沿用非 thinking 的 0.7／0.8）。config.json 有自訂值時照自訂。
-            temperature, top_p = 0.6, 0.95
+            # Qwen3.5 思考模式一般任務建議值；presence 1.5 防止在 <think> 裡重複打轉到 16K 用完。
+            # config.json 有自訂值時照自訂。
+            temperature, top_p = 1.0, 0.95
+            if 'presence_penalty' not in rw:
+                presence = 1.5
         inputs = {'clip': ['encoder', 0], 'prompt': chat, 'max_length': int(rw['max_length']),
                   'sampling_mode': 'on', 'sampling_mode.temperature': temperature,
                   'sampling_mode.top_k': int(rw['top_k']), 'sampling_mode.top_p': top_p,
                   'sampling_mode.min_p': 0.0, 'sampling_mode.repetition_penalty': 1.0,
-                  'sampling_mode.seed': random.randint(0, 2**31-1), 'sampling_mode.presence_penalty': 0.0,
+                  'sampling_mode.seed': random.randint(0, 2**31-1), 'sampling_mode.presence_penalty': presence,
                   'thinking': bool(rw['thinking']), 'use_default_template': True, 'mtp': rw['mtp']}
         if batch is not None:
             inputs['image'] = batch
