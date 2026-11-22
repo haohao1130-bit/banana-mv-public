@@ -256,7 +256,7 @@
     },
     {
       "path": "tests/test_plan_translation.py",
-      "sha256": "79260d21f66389ec914357b87f19b4eabc68db86078bf845982c5a4ddfe07674"
+      "sha256": "175a6e5df3bea3bf840ce63f6619ca16d75bf1355f76f200adc4295c70f2d342"
     },
     {
       "path": "tests/test_prompt_quality.py",
@@ -272,7 +272,7 @@
     },
     {
       "path": "tests/test_runtime.py",
-      "sha256": "c871fc879d40a01aacb5d3f314425a295241e8b94f610f4ae120669f095f8a53"
+      "sha256": "3d6d1da7ab53f6169b268100532c82c08f7a872b9d0e7678c87465f06607b6a3"
     },
     {
       "path": "tests/test_scene_state.py",

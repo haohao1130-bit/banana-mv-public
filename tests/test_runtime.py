@@ -56,7 +56,10 @@ class RuntimeTests(unittest.TestCase):
         button=Mock();output=Mock()
         output.__enter__=Mock(return_value=output);output.__exit__=Mock(return_value=False)
         widgets=types.SimpleNamespace(Button=Mock(return_value=button),Output=Mock(return_value=output))
-        with patch.dict(sys.modules,{'ipywidgets':widgets}),patch('IPython.display.display') as display:
+        display=Mock()
+        ipython=types.ModuleType('IPython');ipython_display=types.ModuleType('IPython.display')
+        ipython_display.display=display;ipython.display=ipython_display
+        with patch.dict(sys.modules,{'ipywidgets':widgets,'IPython':ipython,'IPython.display':ipython_display}):
             runtime.show_shutdown_control(ns)
             process.terminate.assert_not_called();process.kill.assert_not_called()
             display.assert_called_once_with(button,output)
