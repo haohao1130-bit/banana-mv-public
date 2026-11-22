@@ -37,7 +37,7 @@ class WebHandler(BaseHTTPRequestHandler):
             raise ValueError('請求必須為 JSON 物件。')
         return value
 
-    def send_file(self, path):
+    def send_file(self, path, filename=None):
         path = Path(path)
         if not path.is_file():
             return self.send_error(404)
@@ -63,6 +63,12 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(count))
         self.send_header('Accept-Ranges', 'bytes')
         self.send_header('Cache-Control', 'no-cache')
+        if filename:
+            # 下載時用這個檔名（瀏覽器以伺服器檔名優先於網頁的 download 屬性）；播放不受影響。
+            import urllib.parse
+            fallback = ''.join(c if c.isascii() and c.isprintable() and c not in '"\\' else '_' for c in filename)
+            self.send_header('Content-Disposition',
+                             f"inline; filename=\"{fallback}\"; filename*=UTF-8''{urllib.parse.quote(filename)}")
         if code == 206:
             self.send_header('Content-Range', f'bytes {begin}-{end}/{size}')
         self.end_headers()

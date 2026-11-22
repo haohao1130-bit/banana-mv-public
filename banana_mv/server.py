@@ -326,6 +326,25 @@ def export_finished_video(job,source,*,refined_version=None):
     return target
 
 
+def finished_copy(job,version=None):
+    """成片在 videos 資料夾裡對應的那份（另存失敗或舊專案沒有時回傳 None）。"""
+    path=None
+    if version is None or str(version)==str(job.get('current_master')):
+        path=job.get('output_video')
+    if version is not None:
+        row=next((r for r in job.get('final_versions',[]) if str(r.get('version'))==str(version)),None)
+        path=(row or {}).get('output_video') or path
+    path=Path(path) if path else None
+    return path if path and path.is_file() else None
+
+
+def download_name(job,version=None):
+    title=''.join(c for c in str(job.get('title') or 'Banana_MV') if c not in '<>:"/\\|?*' and ord(c)>=32).strip(' .')[:60] or 'Banana_MV'
+    suffix=f'_v{int(version):03d}' if version is not None and str(version).isdigit() else (
+        f'_v{job["current_master"]:03d}' if job.get('current_master') else '')
+    return f'{title}_{job["id"]}{suffix}.mp4'
+
+
 def worker(job, cfg, original, song, drive):
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
@@ -974,8 +993,12 @@ class Handler(WebHandler):
             try:
                 from banana_mv import masters
                 args=dict(urllib.parse.parse_qsl(url.query))
-                path=masters.source(read_state(args['id']),job_dir(args['id']),args.get('version'))
-                return self.send_file(path)
+                job=read_state(args['id'])
+                path=masters.source(job,job_dir(args['id']),args.get('version'))
+                exported=finished_copy(job,args.get('version'))
+                if exported and exported.stat().st_size==path.stat().st_size:
+                    path=exported   # videos 資料夾裡那份：同一支影片，檔名有作品名與版本
+                return self.send_file(path,filename=exported.name if exported else download_name(job,args.get('version')))
             except Exception as e:
                 return self.send_json({'error':str(e)},400)
         return self.send_error(404)
