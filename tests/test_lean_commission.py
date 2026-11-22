@@ -68,11 +68,22 @@ class LeanWriterTests(unittest.TestCase):
         self.assertIn('CURRENT_COUNTER', text)
         self.assertIn('END_STATE:', text)
         self.assertIn('resolve_start_by=4s', text)
+        self.assertIn('PYTHON FILLS IN LATER', text)
+        self.assertIn('need no <Subject> entry', text)
+        self.assertIn('never tag a silent actor', text)
         for hidden in ('PRIVATE_FULL_STORY', 'FUTURE_STORY_MARKER', 'Never turn the singer'):
             self.assertNotIn(hidden, text)
         self.assertNotIn('END_STATE', prompt)
         self.assertIn('clockwise', self.seg['end_state'])
         self.assertEqual(writer.call_count, 1)
+
+    def test_role_codes_are_hidden_from_9b(self):
+        self.seg['fixed_reference_settings'] = '<Picture 1> = 男主角 = S1，唯一演唱者。\n<Picture 2> = 小語，不唱歌。'
+        writer = Mock(return_value=draft())
+        write_shoot_prompt(self.cfg, self.req, self.seg, self.images, None, writer)
+        text = writer.call_args.args[2][0][1]
+        self.assertIn('<Picture 1> = 男主角，唯一演唱者。', text)
+        self.assertNotIn('= S1', text)
 
     def test_previous_end_state_reaches_next_clip(self):
         self.seg['previous_end_state'] = 'motion: spinning clockwise as seen from the camera'
@@ -193,10 +204,16 @@ class ThinkingSettingsTests(unittest.TestCase):
             graph, _ = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')
             inputs = graph['generate']['inputs']
             self.assertNotIn('150 words', inputs['prompt'])
-            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p']), (0.6, 0.95))
+            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
+                              inputs['sampling_mode.presence_penalty']), (1.0, 0.95, 1.5))
+            self.assertIn('never reopen a settled decision', inputs['prompt'])
             cfg['rewriter'] = dict(cfg['rewriter'], thinking=False)
             inputs = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
-            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p']), (0.7, 0.8))
+            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
+                              inputs['sampling_mode.presence_penalty']), (0.7, 0.8, 0.0))
+            cfg['rewriter'] = dict(cfg['rewriter'], thinking=True, presence_penalty=0.5)
+            inputs = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
+            self.assertEqual(inputs['sampling_mode.presence_penalty'], 0.5)      # config.json 自訂值優先
 
 
 if __name__ == '__main__':
