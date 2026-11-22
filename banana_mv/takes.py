@@ -640,6 +640,7 @@ def apply_takes(job,choices,song):
 
 def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
     work=app.job_dir(job['id']);choices={};temporary=[];current=None
+    cfg=app.progress_config(cfg,job['id'])
     handoff=False
     try:
         for i,take in batch:
@@ -791,6 +792,7 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
         if cancelled:job['retake'].update(status='cancelled',error='使用者緊急停爐')
         else:job['retake'].update(status='error',error=str(e))
     finally:
+        app.clear_progress(job['id'])
         for _,take in batch:
             if take['status']=='waiting':take['status']='cancelled'
         for p in temporary:p.unlink(missing_ok=True)

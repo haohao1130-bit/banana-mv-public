@@ -24,6 +24,7 @@ from banana_mv.core import (FPS, align_frames, assemble, audio_window, build_wor
 
 from banana_mv import services as backend
 from banana_mv.http_server import WebHandler
+from banana_mv.live_progress import LiveProgress
 from banana_mv.lyrics_reference import (normalize_references, clip_reference, clean_lyric_output,
                                         POLICY as LYRIC_POLICY, OUTPUT_POLICY as LYRIC_OUTPUT_POLICY)
 from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_input, state_context,
@@ -48,6 +49,7 @@ CANCEL = set()
 STOP_AFTER_CURRENT = set()
 RESTART_LOCK = threading.Lock()
 SERVER_INSTANCE = uuid.uuid4().hex
+LIVE_PROGRESS = LiveProgress() if backend.PORT == 8193 else None
 RESTART_REQUEST = backend.DATA / 'restart-request.json'
 RESTART_HEARTBEAT = backend.DATA / 'restart-controller.heartbeat'
 
@@ -147,6 +149,18 @@ def job_dir(job_id):
 def read_state(job_id):
     with STATE_LOCK:
         return json.loads((job_dir(job_id)/'status.json').read_text(encoding='utf-8'))
+
+
+def progress_config(cfg, job_id):
+    if LIVE_PROGRESS is None:
+        return cfg
+    return dict(cfg, _observe_comfy_prompt=lambda prompt_id, graph:
+                LIVE_PROGRESS.queued(job_id, prompt_id, graph))
+
+
+def clear_progress(job_id):
+    if LIVE_PROGRESS is not None:
+        LIVE_PROGRESS.clear(job_id)
 
 
 def preflight(cfg, graph):
@@ -531,6 +545,7 @@ def worker(job, cfg, original, song, drive):
     from banana_mv import face_refine
 
     app = sys.modules[__name__]
+    cfg = progress_config(cfg, job['id'])
     work = job_dir(job['id'])
     inp = Path(cfg['comfy_input_dir'])
     parts, tail, tail_frames = [], None, []
@@ -829,6 +844,7 @@ def worker(job, cfg, original, song, drive):
         job['error_stage']=stage
         job['status']='error'; job['error']=f'{type(e).__name__}: {e}'; write_state(job)
     finally:
+        clear_progress(job['id'])
         CANCEL.discard(job['id'])
         STOP_AFTER_CURRENT.discard(job['id'])
         GPU_LOCK.release()
@@ -1281,7 +1297,10 @@ class Handler(WebHandler):
         if url.path=='/api/mv/status':
             try:
                 from banana_mv.takes import describe
-                return self.send_json(describe(read_state(dict(urllib.parse.parse_qsl(url.query))['id'])))
+                job = describe(read_state(dict(urllib.parse.parse_qsl(url.query))['id']))
+                if LIVE_PROGRESS is not None:
+                    job['comfy_progress'] = LIVE_PROGRESS.snapshot(job['id'])
+                return self.send_json(job)
             except Exception as e:
                 return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/clip':
@@ -1411,5 +1430,11 @@ if __name__=='__main__':
             job.update(status='interrupted',error='執行階段已重啟；已完成片段仍保存在工作資料夾。')
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
+    if LIVE_PROGRESS is not None:
+        from banana_mv.comfy import CLIENT_ID
+        try:
+            LIVE_PROGRESS.start(backend.load_config()['comfy_url'], CLIENT_ID)
+        except (OSError, ValueError, KeyError) as error:
+            print(f'ComfyUI 即時進度無法啟動：{error}', flush=True)
     ThreadingHTTPServer(('127.0.0.1',backend.PORT),Handler).serve_forever()
 

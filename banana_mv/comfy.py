@@ -60,7 +60,10 @@ def queue_prompt(cfg, graph):
     result = comfy(cfg, '/prompt', {'prompt': graph, 'client_id': CLIENT_ID})
     if result.get('error') or not result.get('prompt_id'):
         raise RuntimeError('ComfyUI 拒絕工作流：' + json.dumps(result, ensure_ascii=False)[:4000])
-    return result['prompt_id']
+    prompt_id = result['prompt_id']
+    if observer := cfg.get('_observe_comfy_prompt'):
+        observer(prompt_id, graph)
+    return prompt_id
 
 
 def history_entry(cfg, prompt_id):

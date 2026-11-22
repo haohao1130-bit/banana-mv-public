@@ -205,7 +205,15 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   vm.runInContext("renderPrompts({id:'fallback',segments:[{prompt:'manual copy'}]});navigator.clipboard=null",context);await els['copy-prompt'].onclick();assert.equal(els['rewritten-prompt'].selected,true);assert(els['copy-feedback'].textContent.includes('長按'));
 
   vm.runInContext("renderProgress({status:'running',segments:[{status:'generating'},{},{},{}]})",context);assert.equal(els.progress.value,0);assert.equal(els.progress.max,4);assert.equal(els['progress-label'].textContent,'整體完成 0／4 段（0%）');assert.equal(els['current-activity'].hidden,false);assert(els['activity-text'].textContent.includes('第 1／4 段 · 影片採樣中'));
+  vm.runInContext("renderProgress({status:'running',segments:[{status:'generating'}],comfy_progress:{node:'SamplerCustomAdvanced',value:3,max:6}})",context);
+  assert.equal(els.progress.value,0,'a sampling step does not complete the segment');
+  assert.equal(els['comfy-progress-bar'].value,3);assert.equal(els['comfy-progress-bar'].max,6);
+  assert.equal(els['comfy-progress-label'].textContent,'H3 採樣 3 / 6 步');
+  assert.equal(els['mobile-comfy-progress'].textContent,'H3 採樣 3 / 6 步');
+  vm.runInContext("renderProgress({status:'running',segments:[{status:'rewriting'}],comfy_progress:{node:'TextGenerate',value:241,max:16384}})",context);
+  assert.equal(els['mobile-comfy-progress'].textContent,'9B 寫稿 241 / 16384 tokens');
   vm.runInContext("renderProgress({status:'running',segments:[{status:'done'},{status:'rewriting'},{},{}]})",context);assert.equal(els.progress.value,1);assert(els['progress-label'].textContent.includes('25%'));assert(els['activity-text'].textContent.includes('9B 當段自動導演'));
+  assert.equal(els['comfy-progress'].hidden,true);assert.equal(els['mobile-comfy-progress'].hidden,true);
   const continuation={status:'retaking',segments:Array.from({length:17},(_,i)=>({status:i<14?'done':'waiting'})),
     continuation_generation:{anchor_index:13,anchor_take:'abcdef123456',anchor_version:2,from_index:14,total:3},
     retake:{branch:{mode:'cascade',index:13,take:'abcdef123456'},completed:0,current:14,
