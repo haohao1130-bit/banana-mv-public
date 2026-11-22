@@ -277,6 +277,8 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
           'intensity':req.get('intensity','high'),'dynamic_cuts':req.get('dynamic_cuts',True),
           'timeline':timeline,
           'ending_contract':contract}
+    if req.get('shared_setup'):
+        task['shared_setup']=map_image_mentions(req['shared_setup'],len(originals))
     complete_story=req.get('project_scope','full')=='full'
     fingerprint=digest(task)
     # Old schema-5 jobs did not fingerprint the two directing controls.
@@ -310,7 +312,7 @@ def ensure_shoot_plan(cfg,req,segments,originals,work,rewrite):
             text=_text(raw)
             setup=re.match(r'^===\s*SETUP\s*===\s*\n(.*?)(?=^===\s*(?:STORY OUTCOME\s*===|CLIP\s))',text,re.S|re.M)
             if not setup:raise SceneStateError('分段大綱缺少 SETUP 共用設定。')
-            shared=_bound(setup[1].strip(),len(originals))
+            shared=_bound(req['shared_setup'] if req.get('shared_setup') else setup[1].strip(),len(originals))
             delivery=direct_delivery(text)
             rows=delivery.get('segments')
             if not isinstance(rows,list) or len(rows)!=len(segments):
@@ -623,7 +625,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         context['authored_vocal_timeline'] = vocals
     fixed_setup = re.split(r'(?m)^===\s*STORY OUTCOME\s*===\s*$', fixed_setup, maxsplit=1)[0]
     fixed_setup = _fixed_reference_with_python_priority(fixed_setup, event)
-    fixed_setup = _filming_reference_settings(fixed_setup)
+    if not req.get('shared_setup'):
+        # 沒有獨立的共同設定格時，才需要從劇本前言裡過濾掉故事大綱。
+        fixed_setup = _filming_reference_settings(fixed_setup)
     # Stable anatomical facts are separate from clothing, camera and plot.
     # Store them on the clip for resume/debug and pass them unchanged to H3.
     body_form = declared_body_forms(fixed_setup)

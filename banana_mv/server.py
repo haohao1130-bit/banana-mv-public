@@ -877,6 +877,12 @@ def start(req):
                  distant_only=req.get('upscale_resolution') == 1440)
     if req.get('direct_script') is True:
         req = dict(req, rewrite=False, story_plan=False)
+    shared_setup=req.get('shared_setup','')
+    if not isinstance(shared_setup,str) or len(shared_setup)>12000:
+        raise ValueError('共同設定最多 12000 字。')
+    req=dict(req)
+    if shared_setup.strip():req['shared_setup']=shared_setup.strip()
+    else:req.pop('shared_setup',None)
     if not isinstance(req.get('lean_commission', True), bool):
         raise ValueError('精簡通告單必須為勾選值。')
     req=dict(req,lean_commission=req.get('lean_commission', True),
@@ -1303,6 +1309,15 @@ class Handler(WebHandler):
                 return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/projects':
             return self.send_json(projects())
+        if url.path=='/api/mv/presets':
+            from banana_mv import presets
+            return self.send_json(presets.list_presets())
+        if url.path=='/api/mv/asset':
+            try:
+                from banana_mv import presets
+                return self.send_file(presets.image_asset(dict(urllib.parse.parse_qsl(url.query)).get('id',''))[1])
+            except (ValueError,OSError) as e:
+                return self.send_json({'error':str(e)},404)
         if url.path=='/api/library':
             return self.send_json(backend.library_index())
         if url.path=='/api/mv/status':
@@ -1368,6 +1383,10 @@ class Handler(WebHandler):
             if path=='/api/mv/restart':
                 result = request_desktop_restart(self, self.body_json())
                 return self.send_json(result, 202)
+            if path in ('/api/mv/preset_save','/api/mv/preset_delete'):
+                from banana_mv import presets
+                handler=presets.save_preset if path.endswith('save') else presets.delete_preset
+                return self.send_json(handler(self.body_json()))
             if path=='/api/upload':
                 if not GPU_LOCK.acquire(blocking=False):
                     raise ValueError('MV 執行中，請完成後再上傳素材。')

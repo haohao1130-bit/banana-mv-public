@@ -433,6 +433,10 @@ def ensure_python_slot_plan(req, segments, originals, work):
         'timeline': [{k:s[k] for k in ('index', 'start', 'seconds')} for s in segments],
         'ending_contract': contract,
     }
+    explicit = (req.get('shared_setup') or '').strip()
+    if explicit:
+        # 使用者在「共同設定」格填的內容：原封不動帶給每一段，不從劇本裡猜。
+        task['shared_setup'] = explicit
     fingerprint = digest(task)
     path = Path(work)/'director_plan.json'
     if path.is_file():
@@ -450,6 +454,8 @@ def ensure_python_slot_plan(req, segments, originals, work):
     fixed, chapters = timed if timed is not None else split_source(
         brief if brief.strip() or not req.get('direct_script') else
         'The lead performer in <Picture 1> lip-syncs to <Audio 1> in the supplied setting.')
+    if explicit:
+        fixed = map_image_mentions(explicit, count)
     fixed = normalize_mv_prompt(fixed, count) if fixed else ''
     short_tail = (timed is None and bool(contract.get('short_tail_seconds', 0))
                   and len(segments)>1)
