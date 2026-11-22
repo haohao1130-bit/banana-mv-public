@@ -101,6 +101,42 @@ class LeanWriterTests(unittest.TestCase):
         self.assertFalse(writer.call_args_list[1].args[0]['rewriter']['thinking'])
 
 
+class MotionFramesTests(LeanWriterTests):
+    def frames(self):
+        from PIL import Image
+        paths = []
+        for n in range(4):
+            path = Path(self.tmp.name) / f'last5_{n + 2:02d}.png'
+            Image.new('RGB', (64, 36), (n * 60, 0, 0)).save(path)
+            paths.append(str(path))
+        return paths
+
+    def test_chain5_sends_all_five_frames_without_renumbering_references(self):
+        self.req['mode'] = 'chain5'
+        self.seg['motion_frames'] = self.frames()
+        writer = Mock(return_value=draft())
+        write_shoot_prompt(self.cfg, self.req, self.seg, self.images, Path(self.images[0]), writer)
+        parts = writer.call_args.args[2]
+        labels = [value for kind, value in parts if kind == 'text']
+        images = [value for kind, value in parts if kind == 'image']
+        self.assertEqual(len(images), 1 + len(self.images) + 4)          # F-4、參考圖、F-3…F-0
+        self.assertEqual([l for l in labels if l.startswith('<Picture')], ['<Picture 1>:', '<Picture 2>:', '<Picture 3>:'])
+        self.assertEqual([l for l in labels if l.startswith('Motion frame')],
+                         ['Motion frame F-3:', 'Motion frame F-2:', 'Motion frame F-1:', 'Motion frame F-0 (final frame):'])
+        self.assertTrue(any('MOTION FRAMES' in l for l in labels))
+        self.assertIn('frame F-4', parts[0][1])
+        self.assertEqual(self.seg['motion_frames_to_9b'], 4)
+
+    def test_single_frame_modes_send_no_motion_frames(self):
+        self.req['mode'] = 'chain'
+        self.seg['motion_frames'] = self.frames()
+        writer = Mock(return_value=draft())
+        write_shoot_prompt(self.cfg, self.req, self.seg, self.images, Path(self.images[0]), writer)
+        images = [value for kind, value in writer.call_args.args[2] if kind == 'image']
+        self.assertEqual(len(images), 1 + len(self.images))
+        self.assertEqual(self.seg['motion_frames_to_9b'], 0)
+
+
 class ThinkingSettingsTests(unittest.TestCase):
     def test_no_word_cap_and_qwen_thinking_sampling(self):
         with tempfile.TemporaryDirectory() as tmp:

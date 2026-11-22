@@ -875,9 +875,14 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
     if outfits:
         parts.append(outfits.rstrip())
     if tail:
-        parts.append('<Picture 1> is the previous clip\'s ' + (
-            'earliest overlapping tail frame (H3 also receives the following four frames)'
-            if req.get('mode') == 'chain5' else 'last frame') + ', not another actor. This clip continues from it.')
+        if req.get('mode') == 'chain5' and segment.get('motion_frames'):
+            parts.append("<Picture 1> is frame F-4 of the previous clip's last five frames, not another actor. "
+                         'The four following motion frames are attached after the references; H3 receives the same '
+                         'five frames as motion context. This clip continues that motion.')
+        else:
+            parts.append('<Picture 1> is the previous clip\'s ' + (
+                'earliest overlapping tail frame (H3 also receives the following four frames)'
+                if req.get('mode') == 'chain5' else 'last frame') + ', not another actor. This clip continues from it.')
     handoff = handoff_note(segment.get('previous_end_state'))
     if handoff:
         parts.append(handoff.rstrip())
@@ -907,13 +912,40 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
     return '\n\n'.join(parts)
 
 
+MOTION_FRAMES_NOTE = (
+    'MOTION FRAMES: the next images continue <Picture 1> frame by frame (F-3, F-2, F-1, then F-0 = the '
+    "previous clip's final frame). Compare <Picture 1> through F-0 to read what is still moving: the "
+    'direction (as seen from the camera) and speed of every body movement and of the camera. Open this '
+    'clip by continuing that real motion in the same direction. These frames are NOT <Picture N> '
+    'references: never cite them, and never describe them as extra actors.'
+)
+
+
+def motion_frame_parts(paths):
+    """末五幀模式下 F-3…F-0 四張動作格，縮小後接在參考圖之後，用獨立標籤。"""
+    from PIL import Image, ImageOps
+    frames = [Path(p) for p in paths or [] if Path(p).is_file()]
+    if not frames:
+        return []
+    parts = [('text', MOTION_FRAMES_NOTE)]
+    labels = ['F-3', 'F-2', 'F-1', 'F-0 (final frame)'][-len(frames):]
+    for label, path in zip(labels, frames):
+        with Image.open(path) as im:
+            im = ImageOps.exif_transpose(im).convert('RGB')
+            im.thumbnail((512, 512))
+            parts.extend([('text', f'Motion frame {label}:'), ('image', im.copy())])
+    return parts
+
+
 def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                        row, shoot_event, context, vocals, pictures, connected):
     from banana_mv.continuity import split_end_state
     refs = ([tail] if tail else []) + list(originals)
     text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected)
     system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
-    base = [('text', text)] + _pictures(refs)
+    motion = motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []
+    segment['motion_frames_to_9b'] = sum(1 for kind, _ in motion if kind == 'image')
+    base = [('text', text)] + _pictures(refs) + motion
     attempts = base
     segment['director_mode'] = row['mode']
     segment['commission_words'] = len(text.split())
