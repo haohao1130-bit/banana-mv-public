@@ -163,7 +163,7 @@ def build_rewrite_graph(cfg, system, parts, job_id):
             '\n\nUse your private reasoning to decide the shots, staging and continuity. Decide each question once '
             'and move on: never reopen a settled decision, never re-check the guide, and do not deliberate about '
             'details the request says Python fills in. As soon as the shot list is settled, stop reasoning. Never '
-            'draft the final text while reasoning, and never quote these instructions. Then write the complete '
+            'draft the final text while reasoning, and never quote these instructions. Then always write the complete '
             'requested output exactly once: no second or revised copy.'
         )
     contents = ''.join(value if kind == 'text' else '<|vision_start|><|image_pad|><|vision_end|>'

@@ -116,7 +116,7 @@
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "495153ea6adc5bbd528ed5a02a52ef89d912132db4f97de1930ab1465185f2c1"
+      "sha256": "f2239cf06ecf80281542def0bf3e8754305688a4d8b57682efc6e2192e0248e6"
     },
     {
       "path": "banana_mv/shoot_plan.py",
