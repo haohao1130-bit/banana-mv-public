@@ -43,8 +43,8 @@ class ServicesTests(unittest.TestCase):
                 system = inputs['prompt'].split('<|im_end|>', 1)[0]
                 self.assertIn('up to 1,500 English words', system)
                 self.assertNotIn('350–500', system)
-                self.assertIn('aim for under 150 words', system)
-                self.assertIn('close it with </think>', system)
+                self.assertNotIn('150 words', system)
+                self.assertIn('always write the complete requested output', system)
                 self.assertEqual(graph['result']['inputs']['source'], ['generate', 0])
                 self.assertEqual(graph['thinking_preview']['inputs']['source'], ['generate', 1])
             cfg = services.project_config({'rewriter_thinking': False, 'rewriter_budget': 32768})

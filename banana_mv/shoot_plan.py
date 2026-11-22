@@ -673,6 +673,10 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         segment['lyric_reference_cleanup'] = {'removed_spans': removed}
         return native
 
+    if req.get('lean_commission'):
+        return _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
+                                  row, shoot_event, context, vocals, pictures, connected)
+
     if tail:
         if req.get('mode') == 'chain5':
             context['first_frame'] = (
@@ -843,3 +847,121 @@ Return only the native filming prompt, no analysis, JSON or management instructi
             attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
 
 
+
+
+# ---------------------------------------------------------------------------
+# 精簡通告單：9B 是專門把「官方指南＋簡短描述」改寫成 H3 提示詞的模型，
+# 塞 1700 字規則只會讓它反覆檢查、越想越糾結。這裡只給它這段需要的事實：
+# 固定設定、目前服裝、上一段怎麼結束、這段的事件、聲音與結尾，其餘交給它拍。
+
+LEAN_INTENSITY = {
+    'normal': 'Natural, grounded camera and performance.',
+    'high': 'Assertive, inventive commercial-MV photography: strong angles, depth, shaped light and purposeful movement.',
+    'extreme': 'Explosive cinematic energy: bold angles, fast motivated movement and peak performance.',
+}
+LEAN_MAX_REPAIRS = 2
+LEAN_MAX_FRESH = 1
+
+
+def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected):
+    from banana_mv.continuity import END_STATE_REQUEST, handoff_note, wardrobe_note
+    seconds = float(segment['seconds'])
+    parts = [f"Target video duration: {seconds:.3f} seconds. Primary filming mode: {row['mode']}."]
+    fixed = context.get('fixed_reference_settings')
+    if fixed:
+        parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + fixed)
+    outfits = wardrobe_note('\n'.join(filter(None, (req.get('prompt', ''), segment.get('fixed_reference_settings', '')))),
+                            float(segment.get('start', 0.0)), seconds)
+    if outfits:
+        parts.append(outfits.rstrip())
+    if tail:
+        parts.append('<Picture 1> is the previous clip\'s ' + (
+            'earliest overlapping tail frame (H3 also receives the following four frames)'
+            if req.get('mode') == 'chain5' else 'last frame') + ', not another actor. This clip continues from it.')
+    handoff = handoff_note(segment.get('previous_end_state'))
+    if handoff:
+        parts.append(handoff.rstrip())
+    parts.append('THIS CLIP (the only events to perform; later story is not yours):\n' + connected(shoot_event))
+    if vocals:
+        rows = []
+        for cue in vocals:
+            named = ' + '.join(role + ' = ' + pictures.get(role, 'UNBOUND') for role in cue.get('subjects', []))
+            rows.append(f"{cue['clip_start']:.2f}-{cue['clip_end']:.2f}s: {named or 'unassigned'}")
+        parts.append('SRT SINGERS (show these performers when covering lip-sync):\n' + '\n'.join(rows))
+    parts.append('<Audio 1> is the supplied song, kept unchanged (fully_copy); you have not heard it. '
+                 'Add no new speech, lyrics or replacement music.')
+    ending_info = context.get('ending') or {}
+    ending = ending_info.get('instruction')
+    if ending:
+        timing = ', '.join(f'{key}={float(ending_info[key]):g}s' for key in
+                           ('resolve_start_by', 'settle_by', 'end_time', 'hold_seconds')
+                           if isinstance(ending_info.get(key), (int, float)))
+        parts.append('ENDING FOR THIS CLIP: ' + ending + (f' (clip-local times: {timing})' if timing else ''))
+    parts.append('DIRECTION: ' + ('Free MV adaptation: invent striking staging, performance and montage that serve this beat.'
+                                  if req.get('story_plan', True) else
+                                  'Faithful: stage exactly the supplied events; camera choices are yours.')
+                 + ' ' + LEAN_INTENSITY.get(req.get('intensity', 'high'), LEAN_INTENSITY['high'])
+                 + (' Use motivated short shots and intercuts where the music has accents.'
+                    if req.get('dynamic_cuts', True) else ' Prefer motivated longer takes.'))
+    parts.append("Write the guide's six native sections for this one clip.\n" + END_STATE_REQUEST)
+    return '\n\n'.join(parts)
+
+
+def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
+                       row, shoot_event, context, vocals, pictures, connected):
+    from banana_mv.continuity import split_end_state
+    refs = ([tail] if tail else []) + list(originals)
+    text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected)
+    system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
+    base = [('text', text)] + _pictures(refs)
+    attempts = base
+    segment['director_mode'] = row['mode']
+    segment['commission_words'] = len(text.split())
+    has_srt = bool(req.get('srt_reference') or req.get('srt_cues'))
+    repairs = fresh = 0
+    total = (LEAN_MAX_FRESH + 1) * (LEAN_MAX_REPAIRS + 1)
+    last_problem = None
+    for attempt in range(total):
+        if progress:
+            progress({'stage': 'rewriting', 'clip_index': segment['index'], 'attempt': attempt + 1, 'max_attempts': total})
+        segment['prompt_profile'] = {'source': 'lean_commission', 'writer_calls': attempt + 1, 'fresh_restarts': fresh}
+        call_cfg = cfg
+        if attempt and cfg.get('rewriter', {}).get('thinking'):
+            # 修稿與重寫只處理格式或衝突，關掉 thinking 讓它快速交稿。
+            call_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
+        raw = rewrite(call_cfg, system, attempts, uuid.uuid4().hex[:8])
+        try:
+            body, end_state = split_end_state(_text(raw))
+            prompt = normalize_mv_prompt(body, len(refs))
+            if len(originals) > 1 and not re.search(r'<Picture \d+>', prompt):
+                raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
+            if vocals:
+                prompt, removed = clean_lyric_output(prompt, dict(req, lyrics_reference_version=2))
+                segment['lyric_reference_cleanup'] = {'removed_spans': removed}
+                prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
+            problems = check_commission(prompt, vocals, pictures, float(segment['seconds']), {}, has_srt)
+            if problems and repairs < LEAN_MAX_REPAIRS:
+                repairs += 1
+                attempts = base + [('text', 'REPAIR THIS CLIP ONLY. Fix exactly these conflicts with the commission, '
+                                    'keep everything else, and return all six sections plus END_STATE.\nCONFLICTS:\n'
+                                    + '\n'.join(problems) + '\nPREVIOUS DRAFT:\n' + prompt)]
+                continue
+            # 修稿兩輪後仍有衝突：交出這版並標示，讓使用者在毛片室決定，不再無限重寫。
+            if problems:
+                segment['commission_guard_warnings'] = problems
+            else:
+                segment.pop('commission_guard_warnings', None)
+            segment.pop('commission_guard_errors', None)
+            if end_state:
+                segment['end_state'] = end_state
+            else:
+                segment.pop('end_state', None)
+            return prompt
+        except ValueError as error:
+            last_problem = error
+            if fresh >= LEAN_MAX_FRESH:
+                break
+            fresh += 1
+            repairs = 0
+            attempts = base + [('text', 'Return only the six native H3 sections plus END_STATE. Fix: ' + str(error))]
+    raise SceneStateError(f'當段拍攝稿交稿失敗（已重寫 {fresh} 次）：{last_problem}')

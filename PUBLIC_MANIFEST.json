@@ -39,6 +39,10 @@
       "sha256": "e9cd49143906897237e086a02a3c8e2373f42350c911801bff9877f8ba54e4df"
     },
     {
+      "path": "banana_mv/continuity.py",
+      "sha256": "a2746c2397a30196aa9189a1b3ab31fbc2cc28994c3c7daf5c329e79d369273a"
+    },
+    {
       "path": "banana_mv/core.py",
       "sha256": "b189773ee3a04fbba593f5c7dc5cd7d4956ebdd6ed1e36de6a8ecee06d3e5aa7"
     },
@@ -104,15 +108,15 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "8378ba809215aac16c3edb972624e429e6d088828797a4cf5cc0b6981ea8e5ac"
+      "sha256": "8d8794d59ce64a7c4a8da21833f9c6067c5ea79f25609a46725fbd48afe0d69a"
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "885e774955ceceae300ebae3c7bd26053cfb9b4b8863f6c5f40a747b3868bbd8"
+      "sha256": "b6319f8691ac82d92107aaa53a5b074283f7a8af59746746055d903021345d05"
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "6efe8929db83473f968e07c3af59e7c11d6bfda2e2c66236cfff272520e527f0"
+      "sha256": "627d30b7714a4360d31bf65760ae95906cac638c062e33e2766398bc87c67488"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -140,7 +144,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "cf593892dfaecca67b46b7bc07279a3038643cba4338aed3629b19401f7510e2"
+      "sha256": "d72794b0eed2b0af21d922fe16e96a673f6a58f0c4e1d88dd9278896b28f9c20"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -219,6 +223,10 @@
       "sha256": "b457db6f2a78d6b18ce16049d178151b8d028a86f24df58020ee04b970641109"
     },
     {
+      "path": "tests/test_lean_commission.py",
+      "sha256": "0125a3a3a90d7fbd6bbaa66a5da1e750c573803fe7c24e76576e57b00d7f392e"
+    },
+    {
       "path": "tests/test_lyrics_reference.py",
       "sha256": "8fee1d7bf181fcbff4fc4186d05db503e385dff3988d7f54c5eaf1c6803df1a3"
     },
@@ -272,7 +280,7 @@
     },
     {
       "path": "tests/test_services.py",
-      "sha256": "81c34fdbc234087a02c64de5788d65c7271cf6d2eabe569488988bc58634813b"
+      "sha256": "aa282677f29b648a93a875077d51ad85a4ae9d40d0539c7aa8a3fdadc7ffa7ae"
     },
     {
       "path": "tests/test_shoot_plan.py",
