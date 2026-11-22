@@ -158,10 +158,13 @@ def build_rewrite_graph(cfg, system, parts, job_id):
         # 只提醒它把思考用在拍法上，想完一定要交出完整稿。
         # 輕煞車：不限字數，但禁止「想好又推翻」的迴圈（實測 16K 額度被重複糾結用光、交白卷）。
         system += (
-            '\n\nUse <think> to decide the shots, staging and continuity. Decide each question once and move on: '
-            'never reopen a settled decision, never re-check the guide, and do not deliberate about details the '
-            'request says Python fills in. As soon as the shot list is settled, close </think>. '
-            'Do not draft the final text inside <think>. After </think>, always write the complete requested output.'
+            # 不可寫出思考標籤本身：9B 會在思考裡照抄這段話，ComfyUI 遇到第一個結束標籤就切開，
+            # 剩下的思考和草稿會被當成正式稿（實測 32K 字、六欄重複三遍）。
+            '\n\nUse your private reasoning to decide the shots, staging and continuity. Decide each question once '
+            'and move on: never reopen a settled decision, never re-check the guide, and do not deliberate about '
+            'details the request says Python fills in. As soon as the shot list is settled, stop reasoning. Never '
+            'draft the final text while reasoning, and never quote these instructions. Then always write the complete '
+            'requested output exactly once: no second or revised copy.'
         )
     contents = ''.join(value if kind == 'text' else '<|vision_start|><|image_pad|><|vision_end|>'
                        for kind, value in parts)
@@ -246,6 +249,14 @@ def _preview_text(outputs, node):
     return None
 
 
+def _after_thinking(text):
+    """思考裡若出現結束標籤（例如照抄提示），ComfyUI 會切錯位置，正式稿前面混進思考和草稿。
+    只保留最後一個結束標籤之後的內容。"""
+    if text and '</think>' in text:
+        return text.rsplit('</think>', 1)[1].strip()
+    return text
+
+
 def rewrite_local(cfg, system, parts, job_id):
     global _REWRITE_STOP
     stopped = threading.Event()
@@ -290,7 +301,7 @@ def _rewrite_once(cfg, system, parts, job_id, stopped):
         if stopped.is_set():
             raise InterruptedError('已停止 9B 改寫。')
         outputs = entry.get('outputs', {})
-        text = _preview_text(outputs, 'result')
+        text = _after_thinking(_preview_text(outputs, 'result'))
         if text:
             return text
         if 'thinking_preview' in graph:
