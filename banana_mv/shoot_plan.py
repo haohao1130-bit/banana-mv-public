@@ -847,6 +847,7 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
         # 使用者的「= S1」是給 Python 對 SRT 用的；官方指南的 (S1) 是「誰在說話」的標記。
         # 兩個 S1 撞名會讓 9B 把不唱歌的人標成 (S1)，所以給 9B 看的版本拿掉角色代號。
         shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
+        shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
         parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown)
     cast = cast_note(row.get('event', ''), fixed or '')
     if cast:

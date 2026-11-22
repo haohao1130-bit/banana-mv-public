@@ -78,12 +78,15 @@ class LeanWriterTests(unittest.TestCase):
         self.assertEqual(writer.call_count, 1)
 
     def test_role_codes_are_hidden_from_9b(self):
-        self.seg['fixed_reference_settings'] = '<Picture 1> = 男主角 = S1，唯一演唱者。\n<Picture 2> = 小語，不唱歌。'
+        self.seg['fixed_reference_settings'] = ('<Picture 1> = 男主角 = S1，唯一演唱者。\n<Picture 2> = 小語，不唱歌。\n'
+                                                  '只有 S1 男主角依 SRT 自然對嘴。\nS1 = <Picture 1>')
         writer = Mock(return_value=draft())
         write_shoot_prompt(self.cfg, self.req, self.seg, self.images, None, writer)
         text = writer.call_args.args[2][0][1]
         self.assertIn('<Picture 1> = 男主角，唯一演唱者。', text)
         self.assertNotIn('= S1', text)
+        self.assertIn('只有 男主角依 SRT', text)
+        self.assertIn('S1 = <Picture 1>', text)  # 純對應表給 Python 用，不動
 
     def test_previous_end_state_reaches_next_clip(self):
         self.seg['previous_end_state'] = 'motion: spinning clockwise as seen from the camera'
