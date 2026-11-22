@@ -417,6 +417,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['native-sound-download'].hidden,true);
   vm.runInContext("renderFinalPreviews({current_master:2,segments:[{},{}],final_versions:[{version:2,download:'/master'},{version:3,reason:'face_refine',source_master:2,refined_clips:1,download:'/refined'}]})",context);
   assert.equal(els.video.src,'/master');assert.equal(els['refined-video'].src,'/refined');assert.match(els['refined-status'].textContent,/1／2/);
+  assert.equal(els['refined-download'].href,'/refined?download=1');   // 修臉版下載也用 videos 裡的檔名
 
   vm.runInContext("renderFinalPreviews({video:'/master',status:'refining_faces',face_refine_progress:{stage:'clip',index:1,total:2}})",context);
   assert.match(els['refined-status'].textContent,/正在修臉第 2／2 段/);
@@ -428,7 +429,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['final-previews'].hidden,true);assert.equal(els['refined-video'].src,undefined);
   vm.runInContext("renderOutputLocation({final_video:'/job/final.mp4',current_master:2,final_versions:[{version:1,download:'/old-v1'},{version:2,download:'/new-v2'}]})",context);
   assert(els['output-location'].textContent.includes('/job/final.mp4'));
-  assert.equal(els['master-list'].children.length,2);assert.equal(els['master-list'].children[0].href,'/old-v1');
+  assert.equal(els['master-list'].children.length,2);assert.equal(els['master-list'].children[0].href,'/old-v1?download=1');
   assert(els['master-list'].children[1].textContent.includes('目前版本'));
   vm.runInContext("renderOutputLocation({final_stale:true,video:'/old-master',final_video:'/job/final.mp4',current_master:2,final_versions:[{version:2,download:'/old-master'}],segments:[]})",context);
   assert.equal(els['final-previews'].hidden,true,'obsolete full MV cannot be shown as current');
