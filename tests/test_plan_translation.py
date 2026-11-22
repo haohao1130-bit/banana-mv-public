@@ -50,33 +50,18 @@ class ReviewIntegrationTests(unittest.TestCase):
         self.fixture=reviews.PlanReviewTests();self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
 
-    def test_review_translation_does_not_change_approval_or_clip_input(self):
+    def test_review_shows_original_plan_without_automatic_translation(self):
+        # 409e4a1 起審稿直接看原稿，不再自動翻譯（舊的 preview_zh 會被忽略）。
         f=self.fixture;f.req['preview_zh']=True
-        def translator(job,work,cfg,rewrite,revision,*args):
-            before=server.plan_revision(job)
-            result={'status':'ready','source_plan_revision':revision,'blocks':{'setup':'中文共通設定','0':'錯譯的故事僅供審閱'}}
-            self.assertEqual(before,revision)
-            return result
-        with patch('banana_mv.plan_translation.translate_plan',side_effect=translator):f.plan()
+        translator=Mock(side_effect=AssertionError('review must not translate'))
+        with patch('banana_mv.plan_translation.translate_plan',translator):f.plan()
+        translator.assert_not_called()
+        self.assertNotIn('plan_translation',f.job)
+        self.assertEqual(f.job['status'],'plan_ready')
         self.assertEqual(server.plan_revision(f.job),f.job['plan_revision'])
-        self.assertEqual(f.job['plan_translation']['blocks']['0'],'錯譯的故事僅供審閱')
-        self.assertNotIn('錯譯',json.dumps(f.job['segments'],ensure_ascii=False))
-        self.assertNotIn('錯譯',(f.work/'director_plan.json').read_text())
-        changed=copy.deepcopy(f.job);changed['plan_translation']['blocks']['0']='另一份翻譯'
-        self.assertEqual(server.plan_revision(changed),server.plan_revision(f.job))
+        self.assertTrue(f.job['plan_preview_setup']);f.queue.assert_not_called()
         writer=Mock(return_value=shots.native_prompt(0))
         with patch.object(server.backend,'rewrite_local',writer):
             server.local_prompt(f.cfg,f.req,f.job['segments'][0],f.images,None)
-        parts=writer.call_args.args[2]
-        sent='\n'.join(value for kind,value in parts if kind=='text')
-        self.assertNotIn('錯譯',sent)
+        sent='\n'.join(value for kind,value in writer.call_args.args[2] if kind=='text')
         self.assertIn('HUMAN_OPENING',sent)
-        with patch.object(server.threading,'Thread'):
-            server.open_furnace(f.job['id'],f.job['plan_revision'])
-        f.lock.release()
-
-    def test_translation_failure_still_allows_english_review(self):
-        f=self.fixture;f.req['preview_zh']=True
-        with patch('banana_mv.plan_translation.translate_plan',side_effect=RuntimeError('translation unavailable')):f.plan()
-        self.assertEqual(f.job['plan_translation']['status'],'error')
-        self.assertTrue(f.job['plan_preview_setup']);f.queue.assert_not_called()

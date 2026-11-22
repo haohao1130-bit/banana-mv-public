@@ -817,11 +817,11 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertEqual(role_pictures(fixed),
                          {'S1':'<Picture 1>','S2':'<Picture 2>'})
         filtered=_filming_reference_settings(fixed)
-        self.assertIn('Environment: 大乘蕉宗神社',filtered)
+        # 98415c0 起不再把 Subject 3 硬改名成 Environment；原文與「這是場景」的說明一起保留。
+        self.assertIn('Subject 3｜大乘蕉宗神社\nThe shrine is a physical environment, not another singer.',filtered)
         self.assertNotIn('MASTER STORY CONCEPT',filtered)
         self.assertNotIn('FINAL STORY SPOILER',filtered)
         self.assertNotIn('FINAL CHECKLIST ONLY',filtered)
-        self.assertNotIn('Subject 3｜',filtered)
         self.assertIn('Visual Style:',filtered)
         req=dict(request(),prompt=text,direct_script=False,srt_cues=[
             {'start':1.205,'end':3.3,'text':'[S2] 開場'},
