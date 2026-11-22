@@ -708,7 +708,11 @@ def lean_commission(req, segment, tail, row, event, context, local_singers, conn
     parts = [f"Target video duration: {seconds:.3f} seconds. Primary filming mode: {row['mode']}."]
     fixed = context.get('fixed_reference_settings')
     if fixed:
-        parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + fixed)
+        # 使用者的「= S1」是給 Python 對 SRT 用的；官方指南的 (S1) 是「誰在說話」的標記。
+        # 兩個 S1 撞名會讓 9B 把不唱歌的人標成 (S1)，所以給 9B 看的版本拿掉角色代號。
+        shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
+        shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
+        parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown)
     cast = cast_note(row.get('event', ''), fixed or '')
     if cast:
         parts.append(cast)
@@ -723,10 +727,18 @@ def lean_commission(req, segment, tail, row, event, context, local_singers, conn
         parts.append(handoff.rstrip())
     parts.append('THIS CLIP (the only events to perform; later story is not yours):\n' + connected(event))
     if local_singers:
+        from banana_mv.continuity import reference_names
+        names = reference_names(fixed or '')
+        def named(match):
+            number = int(match[1])
+            return f'<Picture {number}>' + (f' ({names[number]})' if number in names else '')
+        singers = [re.sub(r'\bS[1-8] = <Picture (\d+)>', named, line) for line in local_singers]
         parts.append('SRT-LOCKED LEAD VOCALS (show these performers when covering lip-sync; not camera cuts):\n'
-                     + '\n'.join(local_singers))
+                     + '\n'.join(singers))
     parts.append('<Audio 1> is the supplied song, kept unchanged (fully_copy); you have not heard it. '
-                 'Add no new speech, lyrics or replacement music. Only the assigned vocalist may lip-sync.')
+                 'Add no new speech, lyrics or replacement music. Only the assigned vocalist may lip-sync; '
+                 'everyone else keeps their mouth silent. If you use the guide\'s (Sx) speaker tags, only the singing '
+                 'performer gets one; never tag a silent actor, and do not write lyrics as <d> lines.')
     ending_info = context.get('ending') or {}
     ending = ending_info.get('instruction')
     if ending:
@@ -740,6 +752,10 @@ def lean_commission(req, segment, tail, row, event, context, local_singers, conn
                  + ' ' + LEAN_INTENSITY.get(req.get('intensity', 'high'), LEAN_INTENSITY['high'])
                  + (' Use motivated short shots and intercuts where the music has accents.'
                     if req.get('dynamic_cuts', True) else ' Prefer motivated longer takes.'))
+    parts.append('SETTLED, DO NOT DELIBERATE: overall_soundscape is one short line of ambience under the unchanged '
+                 'source song; non_diegetic_music is one line saying <Audio 1> plays unchanged. Props and set '
+                 'dressing (furniture, a desk furnace, screens, drinks) are described inside the shots and need no '
+                 '<Subject> entry; give <Subject> entries only to the on-screen actors and, if useful, one environment.')
     parts.append("Write the guide's six native sections for this one clip.\n" + END_STATE_REQUEST)
     return '\n\n'.join(parts)
 

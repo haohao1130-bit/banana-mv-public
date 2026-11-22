@@ -68,6 +68,9 @@ class LeanWriterTests(unittest.TestCase):
         self.assertIn('CURRENT_COUNTER', text)
         self.assertIn('END_STATE:', text)
         self.assertIn('resolve_start_by=4s', text)
+        self.assertIn('SETTLED, DO NOT DELIBERATE', text)
+        self.assertIn('need no <Subject> entry', text)
+        self.assertIn('never tag a silent actor', text)
         for hidden in ('PRIVATE_FULL_STORY', 'FUTURE_STORY_MARKER', 'Never turn the singer'):
             self.assertNotIn(hidden, text)
         self.assertNotIn('END_STATE', prompt)
@@ -148,6 +151,20 @@ class OnScreenCastTests(unittest.TestCase):
             self.assertIn('英雄 (<Picture 2>) is not on screen', writer.call_args_list[1].args[2][-1][1])
 
 
+class RoleCodeTests(unittest.TestCase):
+    def test_role_codes_are_hidden_from_9b_and_singers_named_by_picture(self):
+        from banana_mv.shoot_plan import lean_commission
+        fixed = ('<Picture 1> = 男主角 = S1，唯一演唱者。\n<Picture 2> = 小語，不唱歌。\n'
+                 '只有 S1 男主角依 SRT 自然對嘴。\nS1 = <Picture 1>')
+        text = lean_commission({'prompt': ''}, {'seconds': 10, 'start': 0}, None, {'mode': 'story', 'event': '男主角唱歌'},
+                               '男主角唱歌', {'fixed_reference_settings': fixed},
+                               ['0.000–3.000s: S1 = <Picture 1>'], lambda value: value)
+        self.assertIn('<Picture 1> = 男主角，唯一演唱者。', text)
+        self.assertIn('只有 男主角依 SRT', text)
+        self.assertNotIn('= S1，', text)
+        self.assertIn('0.000–3.000s: <Picture 1> (男主角)', text)
+
+
 class ThinkingSettingsTests(unittest.TestCase):
     def test_no_word_cap_and_qwen_thinking_sampling(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,10 +174,25 @@ class ThinkingSettingsTests(unittest.TestCase):
             graph, _ = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')
             inputs = graph['generate']['inputs']
             self.assertNotIn('150 words', inputs['prompt'])
-            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p']), (0.6, 0.95))
+            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
+                              inputs['sampling_mode.presence_penalty']), (1.0, 0.95, 1.5))
+            self.assertIn('never reopen a settled decision', inputs['prompt'])
+            self.assertNotIn('think>', inputs['prompt'].split('<|im_end|>')[0])  # 9B 會照抄提示
+            override = dict(cfg['rewriter'], presence_penalty=0.5)
+            inputs = services.build_rewrite_graph(dict(cfg, rewriter=override), 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
+            self.assertEqual(inputs['sampling_mode.presence_penalty'], 0.5)
             cfg['rewriter'] = dict(cfg['rewriter'], thinking=False)
             inputs = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
-            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p']), (0.7, 0.8))
+            self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
+                              inputs['sampling_mode.presence_penalty']), (0.7, 0.8, 0.0))
+            self.assertNotIn('never reopen', inputs['prompt'])
+
+
+    def test_result_keeps_only_text_after_the_last_thinking_tag(self):
+        # 實測 cf58d55cc03a：思考照抄「close </think>」，正式稿前面混進思考與兩份草稿。
+        self.assertEqual(services._after_thinking('quoted close </think> draft\n</think>\n\nFINAL'), 'FINAL')
+        self.assertEqual(services._after_thinking('FINAL'), 'FINAL')
+        self.assertEqual(services._after_thinking('only thinking </think>  '), '')
 
 
 if __name__ == '__main__':

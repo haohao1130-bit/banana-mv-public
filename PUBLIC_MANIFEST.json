@@ -112,11 +112,11 @@
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "d148ce53813be979d12a14d599cf59eaf1e31438deabed9297c7d9c957786ca1"
+      "sha256": "d20b1f705ccb0caf6cf0953659d148ab8eb67b3a249c876a03fa1e6ec8475350"
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "7eedc590bc1a008c2e1705ae1a888a2f47e08595fffb97f90b8b70020e1f9e85"
+      "sha256": "916a1715c3fad597c1581d238da7085499b174b0b59c01e2b6bcee92cdfde0e6"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -228,7 +228,7 @@
     },
     {
       "path": "tests/test_lean_commission.py",
-      "sha256": "476439c47f36c6117f7acfa762636e19c5ce8d3f70b3eb776a77e25b90dbf325"
+      "sha256": "140330a6066586098181449c922ec15ed3d7f295af48854767179124f53e2554"
     },
     {
       "path": "tests/test_lyrics_reference.py",
