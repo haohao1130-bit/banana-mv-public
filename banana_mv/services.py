@@ -148,9 +148,14 @@ def build_rewrite_graph(cfg, system, parts, job_id):
                 merged = f'batch_{index}'
                 graph[merged] = {'class_type': 'ImageBatch', 'inputs': {'image1': batch, 'image2': [key, 0]}}
                 batch = [merged, 0]
+        temperature, top_p = float(rw['temperature']), float(rw['top_p'])
+        if rw['thinking'] and (temperature, top_p) == (DEFAULTS['rewriter']['temperature'], DEFAULTS['rewriter']['top_p']):
+            # Qwen3.5 官方建議：thinking 做精確任務用 temperature 0.6、top_p 0.95
+            # （原本沿用非 thinking 的 0.7／0.8）。config.json 有自訂值時照自訂。
+            temperature, top_p = 0.6, 0.95
         inputs = {'clip': ['encoder', 0], 'prompt': chat, 'max_length': int(rw['max_length']),
-                  'sampling_mode': 'on', 'sampling_mode.temperature': float(rw['temperature']),
-                  'sampling_mode.top_k': int(rw['top_k']), 'sampling_mode.top_p': float(rw['top_p']),
+                  'sampling_mode': 'on', 'sampling_mode.temperature': temperature,
+                  'sampling_mode.top_k': int(rw['top_k']), 'sampling_mode.top_p': top_p,
                   'sampling_mode.min_p': 0.0, 'sampling_mode.repetition_penalty': 1.0,
                   'sampling_mode.seed': random.randint(0, 2**31-1), 'sampling_mode.presence_penalty': 0.0,
                   'thinking': bool(rw['thinking']), 'use_default_template': True, 'mtp': rw['mtp']}
