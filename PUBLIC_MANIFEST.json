@@ -116,7 +116,7 @@
     },
     {
       "path": "banana_mv/services.py",
-      "sha256": "7ede2aab186b1017357d4fece7db9156c620bea428f78f6bfc6c973a9168e477"
+      "sha256": "495153ea6adc5bbd528ed5a02a52ef89d912132db4f97de1930ab1465185f2c1"
     },
     {
       "path": "banana_mv/shoot_plan.py",
@@ -232,7 +232,7 @@
     },
     {
       "path": "tests/test_lean_commission.py",
-      "sha256": "9bbf1e7348a768aa6dba2660c76061b8ed554d0fc0672faf8f35473b19ea1c7e"
+      "sha256": "e67d7869ba30bd2b932dd830a87cd0bb03d64ddc145eacb8019d67a8419219ff"
     },
     {
       "path": "tests/test_lyrics_reference.py",
