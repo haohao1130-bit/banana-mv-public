@@ -95,12 +95,16 @@
       "sha256": "c9680bd41a1fcb0d3a9498656f120c689ba6c570909c561c8ccea9a4e5fb51bf"
     },
     {
+      "path": "banana_mv/presets.py",
+      "sha256": "db38a6dc352d461aedab3052f16e162ad5c85dfb12e55095f0e13192e40f0bf8"
+    },
+    {
       "path": "banana_mv/prompt_quality.py",
       "sha256": "e3b8c91531b3a6b243412973f88190b615334252c10d7ca0f7430b87e3906170"
     },
     {
       "path": "banana_mv/python_slots.py",
-      "sha256": "cfb8b88538446f57bacd0c01a890820af777730eba2a3e8cab67dab07efa770f"
+      "sha256": "ceaec505093cea32532cf0e812c3239d5d3b0d97e9c6c85f8a81b849a830365d"
     },
     {
       "path": "banana_mv/scene_state.py",
@@ -108,7 +112,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "fa159b471809569e53a6cf85c86d28f4add13b633a6a5a2b07592e0cd630504e"
+      "sha256": "385d69861ccec01ed21b6fd318396ca7193868c22fa2bc41d2a2eb518df89747"
     },
     {
       "path": "banana_mv/services.py",
@@ -116,7 +120,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "00424e7d0b5d3e0a297ff116512dd96347aaa3aa0a8397dada61c67e575e87c6"
+      "sha256": "67b5005099cda5096473c07106cb813b1eee3c8d3c4172dd26dc7370bd9e1e3c"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -144,7 +148,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "d72794b0eed2b0af21d922fe16e96a673f6a58f0c4e1d88dd9278896b28f9c20"
+      "sha256": "67d19368e262b13370b43f2b7929dc5ea07302c818d18f6dac7ddc9dd4d80544"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -281,6 +285,10 @@
     {
       "path": "tests/test_services.py",
       "sha256": "aa282677f29b648a93a875077d51ad85a4ae9d40d0539c7aa8a3fdadc7ffa7ae"
+    },
+    {
+      "path": "tests/test_shared_setup_box.py",
+      "sha256": "8658f4b4f660c59cb1a7e16034ea27c1554df09fed29f895061a9dfbe7ab8743"
     },
     {
       "path": "tests/test_shoot_plan.py",
