@@ -4,7 +4,7 @@
   "files": [
     {
       "path": ".github/workflows/checks.yml",
-      "sha256": "3f7ee742c5079058c9301b9184aae956f10033d453b4b78d9194415135b06724"
+      "sha256": "a71ed201295df88cf3b0a5f81cb3dbb7f7ec0ccff0e9f5fbcf4659b45146bd57"
     },
     {
       "path": ".gitignore",
@@ -12,11 +12,11 @@
     },
     {
       "path": "BANANAMV_CLASSIC_PUBLIC.ipynb",
-      "sha256": "eb5f07d784fea381bb6c4f25f232cdf662b8483267baa937ae23445bba154ab9"
+      "sha256": "2d058930b84088a31db3b79bf88dfabfa3cb5bd82371069271e1991aa3ac8ba6"
     },
     {
       "path": "Banana_MV_Public.ipynb",
-      "sha256": "ff0f9d3cf5254207cb4354a6292ae6dbd64e949e379971cda28509f75d566213"
+      "sha256": "729eb561f90e7bd97e4151a1646752f1172ef96a3ddba23f7b2e042af5fce5ff"
     },
     {
       "path": "LICENSE",
@@ -24,7 +24,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "8206a7624b08345da24f9bf7c0c4177f23c53a11fb6e8ccd8ef6e44d28da9aca"
+      "sha256": "c0d4203f0c9910a32c7d054257b60c003de7b5e597613adb24b9d518a7be800b"
     },
     {
       "path": "THIRD_PARTY.md",
@@ -68,7 +68,7 @@
     },
     {
       "path": "banana_mv/http_server.py",
-      "sha256": "5f7bce53c4e1e450057911b324eccca9d917a7491daa465f3c2307f8bcf4cafe"
+      "sha256": "b03b76f4b0fbfdef5a2350f5f43421012dfbf43b9d32efc157d8686972b713ea"
     },
     {
       "path": "banana_mv/lyrics_reference.py",
@@ -84,7 +84,7 @@
     },
     {
       "path": "banana_mv/mv_scope.py",
-      "sha256": "4443e4870c12fc66959704af647ad221b22e1b5b3f21f3d9019f500d20eb6f27"
+      "sha256": "4f058aec660dfea0b685843c68a6f9cb5f6bf6eb5c6633a40daf2cf7df9daec9"
     },
     {
       "path": "banana_mv/plan_translation.py",
@@ -108,7 +108,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "9406527792829bd59cefc196b9cee66b3c0fb2584785788a5248b1ebb956c7f9"
+      "sha256": "7c643b389f1b2d19087589ac3e76fe385e11d2f75609d41de7642a953ba232ea"
     },
     {
       "path": "banana_mv/services.py",
@@ -132,7 +132,7 @@
     },
     {
       "path": "banana_mv/takes.py",
-      "sha256": "365c5c7671c7d4bb066ff0ac37f1998c0b17c241abeeb5bd161d08e79686be71"
+      "sha256": "8a7fd6281648cdbbe9f7cac17e4b5c5e0bec9c6b683aa8bb9ed1acae0741c8d7"
     },
     {
       "path": "banana_mv/timed_slots.py",
@@ -140,11 +140,11 @@
     },
     {
       "path": "banana_mv/web/clip_review.js",
-      "sha256": "afcf885caa7eef5b61dcbcba155e218553b93f437f33cb65827225e8632b3a3f"
+      "sha256": "a61a26190bf68821b0c5daf551944b1e4b263c4f53f913f5b6a5c7113293d218"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "efd21c25498dce846532ca4332bfd5a8963a16e339e1ced783bbebbac50d0450"
+      "sha256": "895eb4c9fff822c9b1cec53d3404dd0ebf6ac86b24d75c78c44e716fe27a460c"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -168,11 +168,11 @@
     },
     {
       "path": "docs/windows_classic_local.md",
-      "sha256": "76e17fd31c08dce2b95f0b92475da96b92c09db396846c12ff7fcada76b798ce"
+      "sha256": "229338903e0c30f1372280f22aa6a9aefdc8bfc1f9a7bc68921dfcfac9a0d27d"
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "dcb82c10a67492121ce994cc70e2a77f42f460b96a8d18eec7e729a57f78ef84"
+      "sha256": "d51fea54f13a6a1ecd2a87abfd0352965a7fca9fac7c5939d7760b3759aed9c0"
     },
     {
       "path": "tests/fixtures/four_legs_act02_prompt.txt",
@@ -200,7 +200,7 @@
     },
     {
       "path": "tests/test_core.py",
-      "sha256": "eeff82ef95852d0b9998865b3f8a1619a19cdb1d4bc196b76cf3cdf39abfb281"
+      "sha256": "7f32c9943fe58456d119e2226b7c444ea4a84f7b8148b53f14b4674709c2071a"
     },
     {
       "path": "tests/test_direct_prompts.py",
@@ -213,6 +213,10 @@
     {
       "path": "tests/test_director.py",
       "sha256": "8b26e0e7f65abe1a2d73ae05c293a3d89e201618b50fb38c8afd9a1d355aab56"
+    },
+    {
+      "path": "tests/test_download_name.py",
+      "sha256": "b2a3522991573f808466ab3c1ba6662885ce43f1ae90c5ee8374f2fc4046dfad"
     },
     {
       "path": "tests/test_h3_prompt.py",
@@ -268,7 +272,7 @@
     },
     {
       "path": "tests/test_runtime.py",
-      "sha256": "c871fc879d40a01aacb5d3f314425a295241e8b94f610f4ae120669f095f8a53"
+      "sha256": "0c6af27fef91a7717d073fcda03631d4a6c3467f45e01609eb2894b468cef087"
     },
     {
       "path": "tests/test_scene_state.py",
@@ -280,7 +284,7 @@
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "128ec7b10afe13a485ec4fae4e54a7d93221ff9e193d738517a11bef9f826cc4"
+      "sha256": "cfa286cbad52eef5f3c1deb9505d6e6c4bff69db0cdc480244231017505f8127"
     },
     {
       "path": "tests/test_services.py",
@@ -292,7 +296,7 @@
     },
     {
       "path": "tests/test_shoot_plan.py",
-      "sha256": "84051e76ce8e566e37d90506ab83010ff18edceb69ef56f5ed5348062371d896"
+      "sha256": "a549eedb8ddff21486f5700d271a9e14e473ec71d1d4829c6da888a8bcd0136b"
     },
     {
       "path": "tests/test_sound_effects.py",
@@ -304,7 +308,7 @@
     },
     {
       "path": "tests/test_takes.py",
-      "sha256": "eb325d68ff0ace4fd3a0525ccccd8e5c35f6abd3e27b72e5b64bf7cef231346e"
+      "sha256": "8c2f3dac0b2ef38f8b143b19f702ea9e710ca40177a4ae18b4428a1ee4dce99e"
     },
     {
       "path": "tests/test_unified_direction.py",
@@ -312,7 +316,7 @@
     },
     {
       "path": "tools/build_notebook.py",
-      "sha256": "f5d5bdb984e430e1665414fcf702532a627f31bb9af406892a41cd8bec9999fc"
+      "sha256": "bad1c1155a9f112b162cd9346fba47317292f47081c48b82a9f6fb337f007809"
     },
     {
       "path": "tools/colab_runtime.py",
@@ -336,7 +340,7 @@
     },
     {
       "path": "tools/start_classic_local.ps1",
-      "sha256": "10977e97f90986ef6145810faac5c781992424603dd9ba68414069122f03c0a9"
+      "sha256": "7207c5286153b1a33d5669baed8686ba65fc9becf57391be53f18c4c955a3196"
     },
     {
       "path": "workflows/chain_api.json",
