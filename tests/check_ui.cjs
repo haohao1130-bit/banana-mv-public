@@ -54,6 +54,7 @@ const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites
 let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
 let serverInstance='mv-service-a',restartRequestInstance='mv-service-a',reloadCount=0;
 const storage=new Map(),restartRequests=[];
+const clipActionOrder=[];
 const intervals=[];
 const mobileViewport={matches:false,addEventListener(){}};
 const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Missing DOM element ${id}`);return els[id];},createElement:()=>new Element()},
@@ -75,9 +76,9 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     if(url==='api/mv/projects')return [{id:'saved123',title:'雲端歌曲',completed:1,total:2,status:'interrupted'}];
     if(url==='api/mv/resume'){resumes.push(JSON.parse(options.body));return {id:'saved123'};}
     if(url==='api/mv/rewrite-clip'){rewrites.push(JSON.parse(options.body));return {...reviewJob};}
-    if(url==='api/mv/continue-branch'){branches.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
+    if(url==='api/mv/continue-branch'){clipActionOrder.push(url);branches.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
     if(url==='api/mv/retake'){retakes.push(JSON.parse(options.body));return {...reviewJob,status:'retaking'};}
-    if(url==='api/mv/select-take'){selections.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
+    if(url==='api/mv/select-take'){clipActionOrder.push(url);selections.push(JSON.parse(options.body));return {...reviewJob,status:'assembling'};}
     if(url==='api/mv/status?id=review123')return reviewJob;
     if(url==='api/mv/status?id=low480')return {id:'low480',title:'L4 test',duration:10,status:'interrupted',request:{mode:'independent',aspect:'16:9',width:854},segments:[]};
     if(url==='api/mv/status?id=saved123')return {id:'saved123',title:'雲端歌曲',duration:180,seed:0,status:'interrupted',request:{mode:'independent',aspect:'9:16',segment_seconds:15,project_scope:'excerpt',prompt:'saved story',lyrics:'已存歌詞',srt_reference:'已存SRT',face_identity:false},segments:[{start:0,seconds:15,status:'done'},{start:15,seconds:15}]};
@@ -451,6 +452,10 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(rows[1].correctionLabel.hidden,true);
   assert.equal(els['clips-condense'].disabled,true);
   assert.equal(els['clips-retake'].disabled,true);
+  assert.equal(rows[1].use.textContent,'確定使用此丹續拍');
+  await rows[1].use.onclick();
+  assert.deepEqual(clipActionOrder.slice(-2),['api/mv/select-take','api/mv/continue-branch']);
+  assert.deepEqual(branches.at(-1),{id:'review123',index:1,take:'abcdef123456',mode:'cascade'});
   delete reviewJob.pending_takes;
   delete reviewJob.segments[1].pending_take;
   // Emergency V2 adoption becomes official immediately; the SAME clip

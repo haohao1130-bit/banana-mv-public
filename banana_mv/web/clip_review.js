@@ -4,6 +4,11 @@ function clipIdle(){return !clipView.locked&&['done','error','cancelled','interr
 function continuous5070(job=clipView.jobData){
   return job?.request?.director_schema===6&&['chain','chain5'].includes(job?.request?.mode);
 }
+function adoptAndContinue(index){
+  const job=clipView.jobData;
+  return continuous5070(job)&&['error','cancelled','interrupted'].includes(job.status)
+    &&index+1<job.segments.length;
+}
 function obsoleteSuccessor(index){
   const restart=clipView.jobData?.continuation_restart;
   return continuous5070()&&!!restart&&index>restart.index;
@@ -22,7 +27,7 @@ function updateClipActions(){
   let count=0;
   $('clip-legacy-toolbar').hidden=continuous;
   $('clip-review-help').textContent=continuous
-    ?'5070 連續拍攝：緊急停爐後逐段重配 9B 丹方、回爐新版、按「選用此丹」，再從該段尾幀重拍後續。舊後段影片只能預覽備份，不可混入新時間線。'
+    ?'停爐後回爐新版，預覽確認再按「確定使用此丹續拍」。9B 會從新版尾幀寫下一段，寫完直接交給 H3 開拍。'
     :'每段可重配 9B 丹方或貼完整 H3 提示詞回爐。獨立與舊模式可批次選丹、確認凝丹。';
   $('clip-chain-note').textContent=continuous
     ?'同一條時間線：選用新版後，必須從下一段重寫 9B 並接拍；不支援只換一段保留後續。'
@@ -36,7 +41,7 @@ function updateClipActions(){
     if(row.check.checked&&!continuous)count++;
     const official=continuous?row.segment.selected_take:
       (row.segment.pending_take||row.segment.selected_take);
-    row.use.textContent=continuous?'正式採用此版本':'選用此丹';
+    row.use.textContent=adoptAndContinue(row.index)?'確定使用此丹續拍':continuous?'正式採用此版本':'選用此丹';
     row.use.disabled=!clipIdle()||obsolete||!row.segment.preview||row.select.value===official;
     const differentTake=row.select.value&&row.select.value!==row.segment.selected_take;
     const restart=clipView.jobData?.continuation_restart;
@@ -234,15 +239,28 @@ function renderClipPreviews(job){
     job.status==='assembling'?'正在重新合成所選丹藥…':clipIdle()?(continuous?'逐段重配丹方、回爐新版、正式採用，再從新版尾幀接拍。':'勾選需要重煉的丹藥，或選擇版本預覽與選用，再確認凝丹。'):'可先預覽；請待這爐完成或停止後再回爐。';
   updateClipActions();
 }
-async function runClipAction(path,body){
+async function runClipAction(path,body,continueAfterAdoption=false){
+  const id=active;
+  const post=(url,payload)=>api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,...payload})});
   clipView.locked=true;updateClipActions();busy(true);
+  let adopted=false;
   try{
-    const job=await api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:active,...body})});
-    renderClipPreviews(job);clearTimeout(timer);await poll();
-  }catch(error){$('clip-review-status').textContent=error.message;busy(false);}
+    let job=await post(path,body);
+    if(continueAfterAdoption){
+      adopted=true;
+      if(active===id)renderClipPreviews(job);
+      job=await post('api/mv/continue-branch',{...body,mode:'cascade'});
+    }
+    if(active===id){renderClipPreviews(job);clearTimeout(timer);await poll();}
+  }catch(error){
+    if(active===id){
+      $('clip-review-status').textContent=adopted?`已採用此丹，續拍未啟動：${error.message}`:error.message;
+      busy(false);
+    }
+  }
   finally{clipView.locked=false;updateClipActions();}
 }
-async function adoptClip(index,take){return runClipAction('api/mv/select-take',{index,take});}
+async function adoptClip(index,take){return runClipAction('api/mv/select-take',{index,take},adoptAndContinue(index));}
 $('clips-condense').onclick=()=>{if(clipIdle()&&!continuous5070())return runClipAction('api/mv/condense',{revision:clipView.jobData.selection_revision});};
 $('clips-all').onclick=()=>{if(clipView.locked)return;for(const row of clipView.rows.values())row.check.checked=true;updateClipActions();};
 $('clips-clear').onclick=()=>{if(clipView.locked)return;for(const row of clipView.rows.values())row.check.checked=false;updateClipActions();};

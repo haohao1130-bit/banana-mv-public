@@ -144,11 +144,11 @@
     },
     {
       "path": "banana_mv/web/clip_review.js",
-      "sha256": "941b73d451e9ad8bc5a91bd7544236b1b1a73306741fb0bcf59dd9d9adb90b9e"
+      "sha256": "b623db9a3fb077d2b96ac1dcb37d1cf719bc264c943dacf4818cd3dc16d27495"
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "67d19368e262b13370b43f2b7929dc5ea07302c818d18f6dac7ddc9dd4d80544"
+      "sha256": "6d2e9b4f7c7bf705b1ee3028b3029fe9301131393535e37cf14ebe9cdb091240"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -176,7 +176,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "29f63963efef684b4113f267496af3d58e32c314bb1d5689c49fe54085328cce"
+      "sha256": "7228201a09c55dcbc4360a11f8bde60066a6474f1db80afd2823a78e3bbc1c5c"
     },
     {
       "path": "tests/fixtures/four_legs_act02_prompt.txt",

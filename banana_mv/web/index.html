@@ -228,7 +228,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
     <details><summary>選獨立、末幀還是末五幀？</summary><p><strong>獨立分段</strong>適合每段自由換構圖；<strong>末幀接續</strong>由前段最後一幀接下一段，適合連續動作；<strong>末五幀接續</strong>屬實驗模式，需留意效能和接點。5070 12GB 先試 480P、5 秒；10／15 秒或 720P 可能有顯存風險。「使用本地 9B 自動導演」勾選時 Python 分事件、9B 寫當段運鏡；取消時依手動劇本切段交給 H3。</p></details>
     <details><summary>歌詞、SRT、音樂分析怎麼用？</summary><p>歌詞提供語意，SRT 時間碼從這次上傳的歌曲起點算起；可標 [S1]、[S2] 並在故事交代聲部對應人物。SRT 不會自動變字幕，9B 不能直接聽見歌曲辨識男女聲。音樂分析提供節奏與段落預測，不代替角色分工。隔離人聲或音效是選填，需與原曲同起點、同長度。</p></details>
     <details><summary>先搓丹方與直接煉丹差在哪？</summary><p>「先搓丹方」先讓你看各段事件分配，尚未拍影片；核對劇情後按「丹方無誤，開爐」。若要直接跑完則按「直接煉丹」。進度條代表已完成段落數，不是 GPU 每一步的採樣百分比。「查看改寫後提示詞」能檢視真正用來生成該段的文字。</p></details>
-    <details><summary>5070 連續模式：重拍 V2 後怎麼接？</summary><ol><li>中途看到問題時，按「目前這段完成後停止」。</li><li>到有問題的段落按「重配丹方（9B 重寫）」，檢查並修改文字後，再按「依此提示詞回爐這一段」。重配文字不等於已生成影片。</li><li>新版拍好先預覽，確定才按「正式採用此版本」；僅在下拉選單看 V2 不代表採用。</li><li>有後續時按「從本段尾幀續拍第 N+1 段（9B 重寫）」，後面依新版尾幀全部重新接拍；若是最後一段，按「合成正式新版全片」。</li></ol><p><strong>重要：</strong>舊後段只當歷史毛片保留。5070 連續模式不使用「僅改這段，保留後續」或「確認凝丹」混合舊時間線。</p></details>
+    <details><summary>5070 連續模式：重拍 V2 後怎麼接？</summary><ol><li>中途看到問題時，按「目前這段完成後停止」。</li><li>到有問題的段落按「重配丹方（9B 重寫）」，檢查並修改文字後，再按「依此提示詞回爐這一段」。重配文字不等於已生成影片。</li><li>新版拍好先預覽。停爐且有後續段落時，按「確定使用此丹續拍」，9B 從新版尾幀重寫，交稿後 H3 直接接拍。</li><li>若是最後一段，正式採用後按「合成正式新版全片」。</li></ol><p><strong>重要：</strong>舊後段只當歷史毛片保留。5070 連續模式不使用「僅改這段，保留後續」或「確認凝丹」混合舊時間線。</p></details>
     <details><summary>獨立分段要怎麼回爐？</summary><p>獨立分段仍可多選回爐、逐段按「選用此丹」，最後用「確認凝丹」合成。這和 5070 末幀／末五幀接續不同，不能把兩套選版流程混用。</p></details>
     <details><summary>停爐、續跑與下載</summary><p>重新開啟「已保存的專案」，可按「續跑未完成段落」。若某段已正式採用新版，應從它的尾幀接拍後續，不要回頭混選舊片。母片在「母片 · 成片操作」，歷史完成版在「完整作品版本」；修臉、2K 是選用的後製功能，以畫面有顯示可用為準。前端斷線不等於影片一定停止，先觀察專案狀態。</p></details>
     <details><summary>一鍵複製給 AI 如何使用？</summary><p>點頁面上方「🤖 一鍵複製給 AI」，到 ChatGPT 或其他 AI 對話貼上。它將獲得這個版本的玩法與按鈕名稱，協助你寫故事、選設定、修段落。<strong>AI 不會因此直接取得你的前端控制權或私人素材</strong>；不知道目前畫面時應請你提供截圖。這份指南只教玩法，不含程式修復指令。</p></details>
@@ -742,7 +742,7 @@ if(typeof MutationObserver!=='undefined'){
  observer.observe($('progress-label'),{childList:true,characterData:true,subtree:true});
 }
 syncMobileFurnace();
-</script><script src="clip_review.js?v=5070-thinking-20261121"></script><script>
+</script><script src="clip_review.js?v=5070-adopt-continue-20261122"></script><script>
 (() => {
  const settings = document.getElementById('face-refine-settings');
  const button = document.getElementById('switch-to-film');
