@@ -177,6 +177,7 @@ class ThinkingSettingsTests(unittest.TestCase):
             self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
                               inputs['sampling_mode.presence_penalty']), (1.0, 0.95, 1.5))
             self.assertIn('never reopen a settled decision', inputs['prompt'])
+            self.assertNotIn('think>', inputs['prompt'].split('<|im_end|>')[0])  # 9B 會照抄提示
             override = dict(cfg['rewriter'], presence_penalty=0.5)
             inputs = services.build_rewrite_graph(dict(cfg, rewriter=override), 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
             self.assertEqual(inputs['sampling_mode.presence_penalty'], 0.5)
@@ -185,6 +186,13 @@ class ThinkingSettingsTests(unittest.TestCase):
             self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
                               inputs['sampling_mode.presence_penalty']), (0.7, 0.8, 0.0))
             self.assertNotIn('never reopen', inputs['prompt'])
+
+
+    def test_result_keeps_only_text_after_the_last_thinking_tag(self):
+        # 實測 cf58d55cc03a：思考照抄「close </think>」，正式稿前面混進思考與兩份草稿。
+        self.assertEqual(services._after_thinking('quoted close </think> draft\n</think>\n\nFINAL'), 'FINAL')
+        self.assertEqual(services._after_thinking('FINAL'), 'FINAL')
+        self.assertEqual(services._after_thinking('only thinking </think>  '), '')
 
 
 if __name__ == '__main__':
