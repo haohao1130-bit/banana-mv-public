@@ -1367,6 +1367,11 @@ class Handler(WebHandler):
                         path=masters.source(job,work,version)
                     else:
                         path=masters.source(job,work,version)
+                        row=next((r for r in job.get('final_versions',[]) if str(r.get('version'))==version),{})
+                        exported=Path(row['output_video']) if row.get('output_video') else None
+                        if exported and exported.is_file() and exported.stat().st_size==path.stat().st_size:
+                            # 修臉版、2K 版在 videos 裡有自己的檔名（含 _1440p_v002 這類後綴）
+                            return self.send_file(exported,download_name=exported.name)
                         target=finished_video_target(dict(job,current_master=int(version)))
                     return self.send_file(path,download_name=target.name)
                 return self.send_file(masters.source(job,work,version))

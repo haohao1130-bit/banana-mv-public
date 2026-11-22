@@ -44,7 +44,7 @@
     },
     {
       "path": "banana_mv/core.py",
-      "sha256": "b189773ee3a04fbba593f5c7dc5cd7d4956ebdd6ed1e36de6a8ecee06d3e5aa7"
+      "sha256": "33d6bb418873958cce60d8ae703a1b9ea00ff1ebc37330bf4406c8d978fd7a30"
     },
     {
       "path": "banana_mv/direction_contract.py",
@@ -64,7 +64,7 @@
     },
     {
       "path": "banana_mv/http_server.py",
-      "sha256": "5f7bce53c4e1e450057911b324eccca9d917a7491daa465f3c2307f8bcf4cafe"
+      "sha256": "d6e696b3b0d3cedfe59369df3399fb3b5acbd3431ab7be6017e1c939dea03cbd"
     },
     {
       "path": "banana_mv/live_progress.py",
@@ -72,7 +72,7 @@
     },
     {
       "path": "banana_mv/lyrics_reference.py",
-      "sha256": "22209c32fa9b1f6ab3d0cea3a78bed16cc4365ee951abea57f63ccf575854a89"
+      "sha256": "8367bff70ec7447f39930383c1d4c30820b7746dd480a751bb7abf62d7729e4a"
     },
     {
       "path": "banana_mv/masters.py",
@@ -108,11 +108,11 @@
     },
     {
       "path": "banana_mv/scene_state.py",
-      "sha256": "3eb48e11bab478053404583a528cd158cff104a8fa54dbbdff102c38d3c78676"
+      "sha256": "4d322a359451d7f887d936290a4bb63eb39caa1368fda24eae80e3d691d9b9a9"
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "385d69861ccec01ed21b6fd318396ca7193868c22fa2bc41d2a2eb518df89747"
+      "sha256": "fb95984c7cdfca30fa0bfead5aff2d1ddb1f67cd48b51989b1f55ce2bfa3dbf9"
     },
     {
       "path": "banana_mv/services.py",
@@ -140,7 +140,7 @@
     },
     {
       "path": "banana_mv/timed_slots.py",
-      "sha256": "eaaae9218a123dc602c88c8860afd957b4c427eb0cdd0a8a2e4f4b8b472f099d"
+      "sha256": "e7ffa775110de2e0c27bf3af9571677f27673adf9420e9b259a0aa57120035ef"
     },
     {
       "path": "banana_mv/web/clip_review.js",
@@ -148,7 +148,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "6d2e9b4f7c7bf705b1ee3028b3029fe9301131393535e37cf14ebe9cdb091240"
+      "sha256": "d5b320f9eb4b428355165a5aa564e3eb87d0671b918f79f691fb26eec8471276"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -156,7 +156,7 @@
     },
     {
       "path": "docs/clip_review.md",
-      "sha256": "115238770dc436b78da9e878931f213923c81afe891a3752dcd2a5c4a1d03125"
+      "sha256": "ad9d087b949fa9acd563fd0e8a1b94237e9802edcbae1f7aeb5599b17f182948"
     },
     {
       "path": "docs/director_architecture.md",
@@ -168,7 +168,7 @@
     },
     {
       "path": "docs/user_manual.md",
-      "sha256": "b660a2500647befbc7b0e53096abe707a75e2111fc9a0f2b352178b7b5fb61b8"
+      "sha256": "8d407cfcc5de4b7d479397741c7b0c64e2d49d5ec7531a76155116b77decfdcf"
     },
     {
       "path": "docs/windows_classic_local.md",
@@ -176,7 +176,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "7228201a09c55dcbc4360a11f8bde60066a6474f1db80afd2823a78e3bbc1c5c"
+      "sha256": "a13d875fd40fbf745f8684ce2168a040383e58d27a2f21ef5cab2e8ec72fdae7"
     },
     {
       "path": "tests/fixtures/four_legs_act02_prompt.txt",
@@ -217,6 +217,10 @@
     {
       "path": "tests/test_director.py",
       "sha256": "8b26e0e7f65abe1a2d73ae05c293a3d89e201618b50fb38c8afd9a1d355aab56"
+    },
+    {
+      "path": "tests/test_download_name.py",
+      "sha256": "863e5979fb8290c95e80df9a8cc8a090edd8a526497d58177257954105909049"
     },
     {
       "path": "tests/test_h3_prompt.py",
@@ -280,11 +284,11 @@
     },
     {
       "path": "tests/test_scene_state_init.py",
-      "sha256": "c45abcb3e358b675b4ac4df63463ce515b2647a37d0ce9c6a56e79eba827e896"
+      "sha256": "0728895fdc7bfe6d02dce9b961c0c7f2110401956cde9c52a108b46040da79b2"
     },
     {
       "path": "tests/test_server.py",
-      "sha256": "20e978cb2e995f8e17d088ff069f1c91184ff422dbb1fc058ac1d52b217210f4"
+      "sha256": "76176300f4cfd202cda7355f70f416434d0a5c97366b95d8b6a4bac0ed487f68"
     },
     {
       "path": "tests/test_services.py",
@@ -308,7 +312,7 @@
     },
     {
       "path": "tests/test_takes.py",
-      "sha256": "eb325d68ff0ace4fd3a0525ccccd8e5c35f6abd3e27b72e5b64bf7cef231346e"
+      "sha256": "7914e1368845c767352e0154c4e2a87b3db14cfd37d2669c6ebae563fc6c27e4"
     },
     {
       "path": "tests/test_unified_direction.py",
