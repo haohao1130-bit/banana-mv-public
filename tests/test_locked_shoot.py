@@ -193,13 +193,14 @@ class LockedShootTests(unittest.TestCase):
 
     def test_wrong_vocal_and_clothes_are_separate_concerns(self):
         slots=plan_slots(10,[cue(0,10,'S1')],{},False)
-        blocks={1:'<Subject 2> sings into camera while wearing a hoodie.'}
+        blocks={1:'<Subject 2> sings into camera beside <Picture 2>.'}
         fixed,changes=_repair_vocals(blocks,slots,'')
         self.assertEqual(len(changes),1)
         self.assertNotIn('<Subject 2> sings',fixed[1])
-        errors=_errors(fixed,{'S1':'short-sleeve top and shorts'})
-        self.assertIn('[ERROR][Wardrobe]',str(errors))
+        errors=_errors(fixed,{})
+        self.assertIn('[ERROR][Cast]',str(errors))
         self.assertNotIn('[ERROR][Vocal]',str(errors))
+        self.assertNotIn('[ERROR][Wardrobe]',str(errors))   # 寫死的服裝規則已移除
         with self.assertRaises(ValueError):
             _extract('[Shot 2] Extra camera.',plan_slots(10,[],{},False))
 
@@ -209,9 +210,9 @@ class LockedShootTests(unittest.TestCase):
         req={'dynamic_cuts':False,'rewrite_retries':1,'srt_cues':[
             {'start':0,'end':5,'text':'[S1] verse'},
             {'start':5,'end':10,'text':'[S2] verse'}]}
-        bad=('[Shot 1] <Subject 1> sings wearing a hoodie while camera approaches.\n'
+        bad=('[Shot 1] <Subject 1> sings beside <Picture 2> while camera approaches.\n'
              '[Shot 2] <Subject 2> gestures as the camera tracks left.')
-        bad_fix='[Shot 1] <Subject 1> sings wearing a hoodie in a camera close-up.'
+        bad_fix='[Shot 1] <Subject 1> sings beside <Picture 2> in a camera close-up.'
         good=('[Shot 1] <Subject 1> sings in a short-sleeve top and shorts, camera approaches.\n'
               '[Shot 2] <Subject 2> gestures as the camera tracks left.')
         seg={'index':0,'start':0,'seconds':10,'audio_evidence':{}}
@@ -247,7 +248,7 @@ class LockedShootTests(unittest.TestCase):
     def test_only_bad_shot_is_rewritten_and_temperature_is_reduced(self):
         record=[]
         replies=[
-            '[Shot 1] <Subject 1> sings while sitting in a hoodie.\n[Shot 2] <Subject 2> gestures as the camera tracks left.',
+            '[Shot 1] <Subject 1> sings while sitting beside <Picture 2>.\n[Shot 2] <Subject 2> gestures as the camera tracks left.',
             '[Shot 1] <Subject 1> sings while sitting in a short-sleeve top and shorts.',
         ]
         def writer(config,system,parts,job):
@@ -330,7 +331,7 @@ class LockedShootTests(unittest.TestCase):
     def test_repair_9b_gets_own_one_shot_format_contract_not_full_writer(self):
         calls=[]
         outputs=[
-            '[Shot 1] <Subject 1> sings while sitting in a hoodie.\n'
+            '[Shot 1] <Subject 1> sings while sitting beside <Picture 2>.\n'
             '[Shot 2] <Subject 2> gestures as the camera tracks left.',
             '[Shot 1]\n<Subject 1> sings while sitting in a short-sleeve top and shorts.'
         ]
@@ -410,47 +411,6 @@ class LockedShootTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _extract('A bare unlabeled paragraph.',slots,only=1)
 
-
-    def test_clip14_beach_to_apartment_restores_dry_reference_wardrobe(self):
-        from banana_mv.commission_guard import scene_wardrobe_schedule
-        fixed=('S1 = <Picture 2>, adult male lead\n'
-               'S2 = <Picture 3>, adult female lead\n'
-               '海邊換成 S1 的輕便短袖與短褲、S2 的純白細繩綁帶比基尼。')
-        event=(
-            'USER-SPECIFIED SONG TIME — this chapter is assigned to 120.000–139.260s source time; '
-            'its active time inside THIS clip is 0.000–9.260s. Follow its action order.\n'
-            'PYTHON-OWNED CURRENT EVENT — scene 第十三段｜海邊玩水\n'
-            'Current interval actions:\n- 兩人沿浪線散步，一起自拍。\n\n'
-            'USER-SPECIFIED SONG TIME — this chapter is assigned to 139.260–140.000s source time; '
-            'its active time inside THIS clip is 9.260–10.000s. Follow its action order.\n'
-            'PYTHON-OWNED CURRENT EVENT — scene 第十四段｜夜晚回到公寓\n'
-            'Current interval actions:\n- 兩人已換好原始居家服裝，女主角收好泳圈。\n'
-        )
-        pictures={'S1':'<Picture 2>','S2':'<Picture 3>'}
-        schedule=scene_wardrobe_schedule(event,fixed,pictures,10)
-        self.assertEqual([(row['start'],row['end']) for row in schedule],
-                         [(0.0,9.26),(9.26,10.0)])
-        self.assertEqual(schedule[0]['wardrobe']['S2'],'pure-white tie-string bikini')
-        self.assertEqual(schedule[1]['wardrobe']['S1'],
-                         'the dry original outfit shown in <Picture 2>')
-        self.assertEqual(schedule[1]['wardrobe']['S2'],
-                         'the dry original outfit shown in <Picture 3>')
-        slots=plan_slots(10,[cue(0,4.1,'S1'),cue(4.1,9.26,'S1','S2'),
-                              cue(9.26,10,'S2')],{},False,scene_cuts=[9.26])
-        self.assertIn(9.26,[slot['start'] for slot in slots])
-        blocks={slot['number']:'<Subject 1> and <Subject 2> interact with their surroundings.'
-                for slot in slots}
-        final=_native(blocks,slots,pictures,{},True,event,3,fixed,schedule)
-        self.assertIn('9.260–10.000s: the dry original outfit shown in <Picture 2>',final)
-        self.assertIn('9.260–10.000s: the dry original outfit shown in <Picture 3>',final)
-        self.assertIn('Scene: nighttime apartment.',final)
-        self.assertIn('Scene: beach / shoreline.',final)
-        last=next(slot for slot in slots if slot['start']==9.26)
-        self.assertIn('already wears the dry original outfit',final.split(
-            '[Shot '+str(last['number'])+']',1)[1])
-        self.assertIn('[ERROR][Wardrobe]',str(_errors(
-            {last['number']:'<Subject 2> is wearing a white bikini in the apartment.'},
-            {},schedule,slots)))
 
     def test_reference_clothes_do_not_reset_on_ordinary_beach_or_apartment_clip(self):
         from banana_mv.commission_guard import scene_wardrobe_schedule

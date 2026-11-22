@@ -83,14 +83,6 @@ class LeanWriterTests(unittest.TestCase):
         self.assertIn('CONTINUITY LOCK', text)
         self.assertIn("<Picture 1> is the previous clip's last frame", text)
 
-    def test_guard_conflicts_stop_after_two_repairs_and_keep_draft(self):
-        writer = Mock(return_value=draft())
-        with patch.object(shoot_plan, 'check_commission', return_value=['[ERROR] stubborn']):
-            prompt = write_shoot_prompt(self.cfg, self.req, self.seg, self.images, None, writer)
-        self.assertEqual(writer.call_count, 3)
-        self.assertIn('ONLY_BEAT', prompt)
-        self.assertEqual(self.seg['commission_guard_warnings'], ['[ERROR] stubborn'])
-
     def test_bad_drafts_are_capped_and_retries_skip_thinking(self):
         cfg = dict(self.cfg, rewriter={'thinking': True, 'max_length': 16384})
         writer = Mock(return_value='')

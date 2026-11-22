@@ -3,7 +3,7 @@ import copy
 import re
 import uuid
 
-from banana_mv.commission_guard import _BEACH, _OLD_S1, _OLD_S2, role_pictures, scene_is_beach, scene_wardrobe_schedule
+from banana_mv.commission_guard import role_pictures, scene_wardrobe_schedule
 from banana_mv.direction_contract import validate_h3_sections
 from banana_mv.lyrics_reference import excerpt, vocal_timeline
 from banana_mv.scene_state import SceneStateError, rewrite_retry_count
@@ -277,19 +277,6 @@ def _errors(blocks,wardrobe,scene_schedule=None,slots=None):
         bad=[]
         if re.search(r'<Picture\s+\d+>',body):
             bad.append('[ERROR][Cast] [Shot '+str(n)+'] use only <Subject 1>/<Subject 2> in acting prose.')
-        if wardrobe:
-            if 'S1' in wardrobe and _OLD_S1.search(body):
-                bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] S1 must wear a short-sleeve top and shorts, not earlier apartment clothing.')
-            if 'S2' in wardrobe and _OLD_S2.search(body):
-                bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] S2 must wear a white tie-string bikini, not earlier apartment clothing.')
-        # During a return-home scene, swimwear must not survive as
-        # the actor's CURRENT worn clothing. Beach props may still be carried.
-        if scene_schedule and slots:
-            shot = next((row for row in slots if row['number']==n), None)
-            scene = _active_scene(scene_schedule, shot['start']) if shot else None
-            if scene and scene['scene']=='nighttime apartment':
-                if re.search(r'\b(?:wearing|in|dressed in)\s+(?:a\s+|the\s+)?(?:white\s+|tie.string\s+|wet\s+)*(?:bikini|swimsuit|swimwear)\b',body,re.I):
-                    bad.append('[ERROR][Wardrobe] [Shot '+str(n)+'] apartment scene requires dry original reference outfits, not worn beach swimwear.')
         if bad:
             problems[n]=bad
     return problems
@@ -306,9 +293,9 @@ def _native(blocks,slots,pictures,wardrobe,tail,event,ref_count,fixed='',scene_s
     scene_schedule = scene_schedule or []
     body_form = body_form or {}
     cast_rule = clip_screen_cast_rule(event)
-    scene='beach / shoreline' if scene_is_beach(event) else ('current apartment' if re.search(r'公寓|客廳|玄關|工作區|電腦桌|沙發',event) else 'the current assigned setting')
+    scene='the current assigned setting'
     if scene_schedule:
-        scene='beach / shoreline, followed by a cut to the nighttime apartment'
+        scene='the scheduled scenes in order'
     definitions=[];retention=[]
     for role,n in (('S1',1),('S2',2)):
         ref=pictures[role]
