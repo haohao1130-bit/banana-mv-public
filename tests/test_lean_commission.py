@@ -137,6 +137,56 @@ class MotionFramesTests(LeanWriterTests):
         self.assertEqual(self.seg['motion_frames_to_9b'], 0)
 
 
+class OnScreenCastTests(unittest.TestCase):
+    FIXED = '<Picture 2> = 男主角 = S1。\n<Picture 3> = 小語。\n<Picture 4> = 蕉彌，外型依參考圖。'
+
+    def test_absent_reference_is_named_and_mentions_count_as_present(self):
+        from banana_mv.continuity import cast_note
+        note = cast_note('入鏡：小語、男主角\n小語漂流。', self.FIXED)
+        self.assertIn('ON-SCREEN IN THIS CLIP: 小語、男主角', note)
+        self.assertIn('NOT IN THIS CLIP: 蕉彌 (<Picture 4>)', note)
+        self.assertNotIn('NOT IN THIS CLIP', cast_note('入鏡：男主角、小語\n桌上的蕉彌公仔在前景。', self.FIXED))
+        self.assertEqual(cast_note('沒有入鏡行', self.FIXED), '')
+
+    def test_python_sliced_format_and_previous_handoff(self):
+        from banana_mv.continuity import cast_note, onscreen_cast
+        event = ('ALREADY ESTABLISHED; do not restage or repeat: 【交棒】蕉彌公仔還在桌上。\n'
+                 'Current interval actions in original order:\n- 入鏡：小語、男主角\n- 小語漂流。')
+        self.assertEqual(onscreen_cast(event), ['小語', '男主角'])
+        self.assertIn('NOT IN THIS CLIP: 蕉彌 (<Picture 4>)', cast_note(event, self.FIXED))
+        self.assertEqual(onscreen_cast('【入鏡】小語'), ['小語'])
+
+    def test_real_four_legs_prompt_is_caught(self):
+        from banana_mv.continuity import cast_errors
+        bad = (Path(__file__).parent / 'fixtures' / 'four_legs_act02_prompt.txt').read_text(encoding='utf-8')
+        errors = cast_errors(bad, '入鏡：小語、男主角', self.FIXED, tail=True)
+        self.assertEqual(len(errors), 2)
+        self.assertIn('<Picture 1> is the previous clip', errors[0])
+        self.assertIn('蕉彌 (<Picture 4>) is not on screen', errors[1])
+        good = bad.replace('<Subject 1> is the young man in <Picture 1>', '<Subject 1> is the young man in <Picture 2>')
+        good = good.split('<Subject 2> is the small', 1)[0] + good.split('never at life size.\n', 1)[1]
+        self.assertEqual(cast_errors(good, '入鏡：小語、男主角', self.FIXED, tail=True), [])
+
+    def test_lean_writer_repairs_cast_errors(self):
+        import test_shoot_plan as fixtures
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            images, cfg, req = fixtures.ShootPlanTests().fixture(root)
+            req['lean_commission'] = True
+            plan = ensure_shoot_plan(cfg, req, timeline(), images, root, Mock(return_value=fixtures.allocation()))
+            row = dict(plan['segments'][1], event='入鏡：歌手\n' + plan['segments'][1]['event'])
+            seg = dict(timeline()[1], director_plan=row, direction_ending_contract=plan['ending_contract'],
+                       fixed_reference_settings='<Picture 1> = 歌手。\n<Picture 2> = 英雄。')
+            bad = ('subject_definitions:\n<Subject 1> is the hero in <Picture 2>.\nsummary:\nx\n'
+                   + fixtures.native_prompt(1))
+            writer = Mock(side_effect=[bad, fixtures.native_prompt(1)])
+            write_shoot_prompt(cfg, req, seg, images, None, writer)
+            text = writer.call_args_list[0].args[2][0][1]
+            self.assertIn('NOT IN THIS CLIP: 英雄 (<Picture 2>)', text)
+            self.assertEqual(writer.call_count, 2)
+            self.assertIn('英雄 (<Picture 2>) is not on screen', writer.call_args_list[1].args[2][-1][1])
+
+
 class ThinkingSettingsTests(unittest.TestCase):
     def test_no_word_cap_and_qwen_thinking_sampling(self):
         with tempfile.TemporaryDirectory() as tmp:

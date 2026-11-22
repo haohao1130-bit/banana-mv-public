@@ -40,7 +40,7 @@
     },
     {
       "path": "banana_mv/continuity.py",
-      "sha256": "a2746c2397a30196aa9189a1b3ab31fbc2cc28994c3c7daf5c329e79d369273a"
+      "sha256": "567b8787c486612a52edb528800bc32904dc826969c59b7902fc04c2bd067929"
     },
     {
       "path": "banana_mv/core.py",
@@ -120,7 +120,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "67b5005099cda5096473c07106cb813b1eee3c8d3c4172dd26dc7370bd9e1e3c"
+      "sha256": "a655651e050252c7b14e02ca68c1cc58e1451dc09c20919756af94ea21e9b8fc"
     },
     {
       "path": "banana_mv/song_context.py",
@@ -179,6 +179,10 @@
       "sha256": "29f63963efef684b4113f267496af3d58e32c314bb1d5689c49fe54085328cce"
     },
     {
+      "path": "tests/fixtures/four_legs_act02_prompt.txt",
+      "sha256": "464ec4c51a747ae0df27ee1c268ea1135ca74f07ea020a866bee11b40b0b7608"
+    },
+    {
       "path": "tests/test_audio_analysis.py",
       "sha256": "f46310d9fcd6cad49f1a434e58cfe0181a3237a6aa92082c433d328fa7b4f900"
     },
@@ -228,7 +232,7 @@
     },
     {
       "path": "tests/test_lean_commission.py",
-      "sha256": "11f1fb2601342cbec7bdc5a485353bc8dcf69be3953c4bfe6333c932068c8177"
+      "sha256": "65a63f97b16b8af9f053baa0557c802211f56a95243d7fb945105dc1eea3ff03"
     },
     {
       "path": "tests/test_lyrics_reference.py",
