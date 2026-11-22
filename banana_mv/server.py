@@ -695,6 +695,9 @@ def worker(job, cfg, original, song, drive):
             state_replanned=False
             state_in=clip_input(ledger,seg) if ledger is not None else None
             record=cached_clip(work,ledger,seg) if ledger is not None else None
+            if job['request'].get('lean_commission') and i:
+                # 把上一段 9B 寫的 END_STATE（姿勢、動作方向、鏡頭運動）交給這一段。
+                seg['previous_end_state']=job['segments'][i-1].get('end_state')
             if single_pass or direct_script:
                 prompt=local_prompt(cfg,job['request'],seg,original,tail)
             elif ledger is not None and record is not None and job.get('resuming'):
@@ -869,7 +872,10 @@ def start(req):
                  distant_only=req.get('upscale_resolution') == 1440)
     if req.get('direct_script') is True:
         req = dict(req, rewrite=False, story_plan=False)
-    req=dict(req,sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
+    if not isinstance(req.get('lean_commission', True), bool):
+        raise ValueError('精簡通告單必須為勾選值。')
+    req=dict(req,lean_commission=req.get('lean_commission', True),
+             sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
              director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else 6,
              story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
