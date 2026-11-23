@@ -18,7 +18,7 @@ from banana_mv.timed_slots import parse_timed_source, allocate_timed_chapters
 
 CHAPTER = re.compile(
     r'^\s*(?:第[一二三四五六七八九十百零〇\d]+[幕段]|終幕|尾聲|'
-    r'ACT\s+\d+|FINALE)\s*[|｜:：\-—]\s*(.+)$', re.I)
+    r'ACT\s*\d+|FINALE)\s*[|｜:：\-—]\s*(.+)$', re.I)
 GLOBAL_RULES = re.compile(r'^\s*(?:全曲執行原則|GLOBAL\s+RULES|全曲固定原則)\s*$', re.I)
 SENTENCES = re.compile(r'(?<=[。！？!?；;])\s*')
 
