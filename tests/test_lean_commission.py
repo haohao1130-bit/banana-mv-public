@@ -147,6 +147,15 @@ class MotionFramesTests(LeanWriterTests):
 class OnScreenCastTests(unittest.TestCase):
     FIXED = '<Picture 2> = 男主角 = S1。\n<Picture 3> = 小語。\n<Picture 4> = 蕉彌，外型依參考圖。'
 
+    def test_scene_pictures_are_never_withheld_as_absent_cast(self):
+        from banana_mv.continuity import absent_pictures, cast_note
+        fixed = ('■ 角色綁定\n<Picture 1> = 蕉彌，拳擊手。\n<Picture 2> = 猴哥，裁判。\n'
+                 '■ 場景\n<Picture 3> = 演唱會舞台。\n<Picture 4> = 拳擊擂台。\n<Picture 5> = 頂樓，夜景。')
+        event = '入鏡：蕉彌；猴哥不入鏡\n<Picture 4> 擂台側面中景，蕉彌舉拳。'
+        self.assertEqual(absent_pictures(event, fixed), {2})
+        self.assertNotIn('舞台', cast_note(event, fixed))
+        self.assertNotIn('頂樓', cast_note(event, fixed))
+
     def test_absent_reference_is_named_and_mentions_count_as_present(self):
         from banana_mv.continuity import cast_note
         note = cast_note('入鏡：小語、男主角\n小語漂流。', self.FIXED)
