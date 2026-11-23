@@ -71,6 +71,7 @@ class LeanWriterTests(unittest.TestCase):
         self.assertIn('SETTLED, DO NOT DELIBERATE', text)
         self.assertIn('need no <Subject> entry', text)
         self.assertIn('never tag a silent actor', text)
+        self.assertIn('never guess a species', text)
         for hidden in ('PRIVATE_FULL_STORY', 'FUTURE_STORY_MARKER', 'Never turn the singer'):
             self.assertNotIn(hidden, text)
         self.assertNotIn('END_STATE', prompt)
