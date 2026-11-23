@@ -20,6 +20,19 @@ def launcher(target, port):
     return next((path for path in candidates if path.is_file()), None)
 
 
+# 另一套服務有自己的 Python、torch 與 CUDA。沿用這邊的 PATH 和虛擬環境變數，
+# Windows 會先載到這邊的 DLL（實測：切換後音樂分析載入 torch_python.dll 被擋，WinError 4551）。
+_INHERITED = ('BANANA_', 'PYTHON', 'VIRTUAL_ENV', 'CONDA', 'PIP_', 'CUDA_VISIBLE_DEVICES')
+SYSTEM_PATH = ("$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + "
+               "[Environment]::GetEnvironmentVariable('Path','User'); ")
+
+
+def clean_environment(environ=None):
+    """給另一套服務的環境：拿掉這邊的虛擬環境與 Banana 設定；PATH 由 PowerShell 重設成系統原本的。"""
+    environ = os.environ if environ is None else environ
+    return {name: value for name, value in environ.items() if not name.upper().startswith(_INHERITED)}
+
+
 def switch(handler, target, backend, gpu_lock):
     path = launcher(target, backend.PORT)
     if not path:
@@ -40,10 +53,11 @@ def switch(handler, target, backend, gpu_lock):
             return handler.send_json({'ok': False, 'error': 'ComfyUI 還有任務。'}, 409)
         script = str(path).replace("'", "''")
         args = ' -Port 8193 -NoBrowser' if target == 'film' else ''
-        command = (f'Wait-Process -Id {os.getpid()} -Timeout 30 -ErrorAction Stop; '
+        command = (SYSTEM_PATH + f'Wait-Process -Id {os.getpid()} -Timeout 30 -ErrorAction Stop; '
                    f"& '{script}'{args}")
         subprocess.Popen(
             ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+            cwd=str(path.parent), env=clean_environment(),
             creationflags=subprocess.CREATE_NEW_CONSOLE,
         )
     except Exception:
