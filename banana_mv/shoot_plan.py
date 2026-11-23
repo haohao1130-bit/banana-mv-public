@@ -838,7 +838,8 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress, ro
             else:
                 segment.pop('commission_guard_warnings', None)
             if end_state:
-                segment['end_state'] = end_state
+                from banana_mv.continuity import name_subjects
+                segment['end_state'] = name_subjects(end_state, prompt, context.get('fixed_reference_settings', ''))
             else:
                 segment.pop('end_state', None)
             return prompt

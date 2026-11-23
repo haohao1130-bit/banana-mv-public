@@ -33,6 +33,25 @@ def split_end_state(raw):
     return raw[:match.start()].rstrip(), (state[:1500] or None)
 
 
+def name_subjects(state, prompt, fixed):
+    """END_STATE 裡的 <Subject N> 換成角色名字。
+
+    <Subject N> 編號每段都不一樣：上一段的 Subject 3 是蕉彌，下一段 9B 會對到自己的 Subject 3 或猜錯
+    （實測 f77099894c60：蕉大師被寫進擂台）。用這段 subject_definitions 的 <Picture N> 綁定換回名字。"""
+    if not state or not prompt or '<Subject' not in state:
+        return state
+    names = reference_names(fixed)
+    definitions = prompt.split('subject_definitions:', 1)[-1].split('summary:', 1)[0]
+    mapping = {}
+    for line in definitions.splitlines():
+        label = re.match(r'\s*<Subject (\d+)>', line)
+        picture = re.search(r'<Picture (\d+)>', line)
+        if label and picture and int(picture[1]) in names:
+            mapping[label[1]] = names[int(picture[1])]
+    return re.sub(r'<Subject (\d+)>(?:\s*[（(][^)）]*[)）])?',
+                  lambda m: mapping.get(m[1], m[0]), state)
+
+
 def handoff_note(previous_state, cut=False):
     """下一段通告單裡的「上一段怎麼結束」與方向鎖定。"""
     if not previous_state:
