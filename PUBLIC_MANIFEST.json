@@ -44,7 +44,7 @@
     },
     {
       "path": "banana_mv/continuity.py",
-      "sha256": "f1297216181aa46d50de0c1ec1d49d584b9f1253acd3cfc39f55e7869e109939"
+      "sha256": "d41e18ba39cc022efe250f3c27b5daaa8f9873b661b44e815ec7694eeab93841"
     },
     {
       "path": "banana_mv/core.py",
@@ -232,7 +232,7 @@
     },
     {
       "path": "tests/test_lean_commission.py",
-      "sha256": "685e599f19568224bbd4538bc6f1ece9aae962cb3fee60d8a4a6a8f51bcd6be5"
+      "sha256": "c290a1086f2d6bffc67946add7a640cbdc287f41b4f8c14f75b1e019c92732f3"
     },
     {
       "path": "tests/test_lyrics_reference.py",
