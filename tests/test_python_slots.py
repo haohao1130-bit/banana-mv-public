@@ -57,6 +57,13 @@ def request():
 
 
 class PythonSlotsTests(unittest.TestCase):
+    def test_act_heading_without_space_is_a_chapter(self):
+        # GPT 常寫成 ACT01｜…（沒空格），以前整份被當成一個 User story 平均切段，段落錯位。
+        text = ('ACT01｜00:00.000–00:10.000｜開場\n入鏡：蕉彌。\n0–5 秒｜蕉彌走上擂台。\n'
+                'ACT02｜00:10.000–00:20.000｜開賽\n入鏡：蕉彌、拳王。\n0–5 秒｜兩人碰拳。')
+        _, chapters = split_source(text)
+        self.assertEqual([c['title'][:5] for c in chapters], ['ACT01', 'ACT02'])
+
     def test_long_song_28_clip_plan_is_deterministic_and_has_no_planning_llm(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
