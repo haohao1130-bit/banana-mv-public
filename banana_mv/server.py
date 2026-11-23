@@ -42,6 +42,7 @@ from banana_mv.prompt_quality import (reference_policy, enforce_reference_policy
 WEB = Path(__file__).parent / 'web'
 RUNS = backend.DATA/'banana_mv'
 RUNS.mkdir(parents=True, exist_ok=True)
+ANALYSIS_CACHE = backend.DATA/'analysis_cache'
 GPU_LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 CANCEL = set()
@@ -567,12 +568,13 @@ def worker(job, cfg, original, song, drive):
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
         if needs_analysis:
             job['status'] = 'analyzing_audio'; write_state(job)
-            music_analysis = load_analysis(song, work/'audio_analysis.json')
+            shared = ANALYSIS_CACHE   # 同一首歌（SHA-256 相同）跨專案共用分析結果
+            music_analysis = load_analysis(song, work/'audio_analysis.json', shared)
             structure = None
             if job['request'].get('music_structure',False):
                 job['audio_analysis']={'status':'analyzing_structure'}; write_state(job)
-                structure = load_structure(song, work/'music_structure.json', music_analysis['seconds'])
-            vocal_analysis = load_analysis(drive, work/'vocal_analysis.json') if drive != song else None
+                structure = load_structure(song, work/'music_structure.json', music_analysis['seconds'], shared)
+            vocal_analysis = load_analysis(drive, work/'vocal_analysis.json', shared) if drive != song else None
             for seg in job['segments']:
                 seg['audio_evidence'] = segment_evidence(music_analysis, seg, vocal_analysis)
                 if structure:

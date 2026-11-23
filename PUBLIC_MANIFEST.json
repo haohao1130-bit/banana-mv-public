@@ -32,7 +32,7 @@
     },
     {
       "path": "banana_mv/audio_analysis.py",
-      "sha256": "094013c9dfbc5f8c0b5e86710f77753d4c3ee591ee48d722e0ac9076beecccc1"
+      "sha256": "2a1db4b5cef7d5edf1eb9a4d2747cf256929a2cabac9dd8619fc09d9b7ed8c38"
     },
     {
       "path": "banana_mv/comfy.py",
@@ -80,7 +80,7 @@
     },
     {
       "path": "banana_mv/music_structure.py",
-      "sha256": "99ffeab99f5d15429655319ddafacde189261f34a10482a5f941f8b27e38af47"
+      "sha256": "8c5739cebfd3b6b8a53f7470e1e5433c812e47aa83616c0184c2c0090ab08a7c"
     },
     {
       "path": "banana_mv/mv_scope.py",
@@ -112,7 +112,7 @@
     },
     {
       "path": "banana_mv/server.py",
-      "sha256": "fb95984c7cdfca30fa0bfead5aff2d1ddb1f67cd48b51989b1f55ce2bfa3dbf9"
+      "sha256": "240ab5518c282cac247f7190ed4fe491e5af39d73b4f0cdbaf93c8155d2a091f"
     },
     {
       "path": "banana_mv/services.py",
@@ -184,7 +184,7 @@
     },
     {
       "path": "tests/test_audio_analysis.py",
-      "sha256": "f46310d9fcd6cad49f1a434e58cfe0181a3237a6aa92082c433d328fa7b4f900"
+      "sha256": "1f8829899dc9862d0cbca49fed2fbd84dd5dc14489ecb0431edd46cce4fd7541"
     },
     {
       "path": "tests/test_audio_timing.py",
@@ -244,7 +244,7 @@
     },
     {
       "path": "tests/test_music_structure.py",
-      "sha256": "2033d9000cafdfd62366a8d873b2432568dc45d06326cfd9035a678fee2a7fb7"
+      "sha256": "cff5e75fbbcbd07ce64942e20d1a1c4185afd34ffee795d1643ff119652ad91f"
     },
     {
       "path": "tests/test_mv_scope.py",

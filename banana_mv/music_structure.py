@@ -48,14 +48,22 @@ def validate_result(raw, seconds):
     return result
 
 
-def load_structure(source, cache, seconds):
+def load_structure(source, cache, seconds, shared=None):
+    """shared：跨專案共用快取（以歌曲 SHA-256 命名）；同一首歌重新煉丹不再跑幾分鐘的結構模型。"""
     source, cache = Path(source), Path(cache)
     identity = {'version':VERSION, 'source_sha256':source_hash(source), 'revision':REVISION, 'model':MODEL}
-    if cache.is_file():
+    common = Path(shared)/f'{identity["source_sha256"]}_structure_v{VERSION}_{REVISION}.json' if shared else None
+    for candidate in (cache, common):
+        if not candidate or not candidate.is_file():
+            continue
         try:
-            saved = json.loads(cache.read_text(encoding='utf-8'))
+            saved = json.loads(candidate.read_text(encoding='utf-8'))
             if all(saved.get(k)==v for k,v in identity.items()):
-                return dict(identity, **validate_result(saved, seconds))
+                result = dict(identity, **validate_result(saved, seconds))
+                if candidate != cache:
+                    cache.parent.mkdir(parents=True, exist_ok=True)
+                    cache.write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+                return result
         except (ValueError, KeyError, TypeError, OSError):
             pass
     python = Path(os.environ.get('BANANA_MUSIC_PYTHON', ROOT/'.music-venv/bin/python'))
@@ -85,6 +93,11 @@ def load_structure(source, cache, seconds):
         atomic = cache.with_suffix('.tmp')
         atomic.write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
         atomic.replace(cache)
+        if common:
+            common.parent.mkdir(parents=True, exist_ok=True)
+            shared_tmp = common.with_suffix('.tmp')
+            shared_tmp.write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+            shared_tmp.replace(common)
         return result
 
 

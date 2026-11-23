@@ -42,6 +42,22 @@ class StructureTests(unittest.TestCase):
                     load_structure(song,cache,4)
             self.assertEqual(song.read_bytes(),b'changed')
 
+    def test_shared_structure_cache_serves_a_new_project(self):
+        # 結構模型要跑幾分鐘：同一首歌的新專案直接用共用快取，不啟動分析器。
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);song=root/'song';song.write_bytes(b'original');shared=root/'analysis_cache'
+            identity={'version':VERSION,'source_sha256':source_hash(song),'revision':REVISION,'model':MODEL}
+            shared.mkdir()
+            (shared/f'{identity["source_sha256"]}_structure_v{VERSION}_{REVISION}.json').write_text(
+                json.dumps(dict(prediction(),**identity)))
+            cache=root/'new_project'/'music_structure.json'
+            with patch.dict('os.environ',{'BANANA_MUSIC_PYTHON':str(root/'missing')}):
+                self.assertEqual(load_structure(song,cache,4,shared)['bpm'],120)
+                self.assertTrue(cache.is_file())
+                song.write_bytes(b'changed')
+                with self.assertRaisesRegex(RuntimeError,'尚未安裝'):
+                    load_structure(song,root/'other'/'music_structure.json',4,shared)
+
     def test_final_prompt_retains_music_cues(self):
         cue=local_structure(validate_result(prediction(),4),{'start':0,'seconds':4})
         text=audio_guidance({'relative_energy':'high','energy_change_db':0,'transient_candidates_s':[],
