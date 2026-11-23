@@ -92,6 +92,22 @@ class AudioAnalysisTests(unittest.TestCase):
             cache.write_text('{broken')
             self.assertEqual(load_analysis(source, cache)['source_sha256'], quiet['source_sha256'])
 
+    def test_shared_cache_skips_reanalysis_for_a_new_project_with_the_same_song(self):
+        # 停爐改提示詞重新煉丹會開新專案：同一首歌不必再分析強弱與卡點。
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); shared = root/'analysis_cache'
+            first, second = root/'a'/'song.wav', root/'b'/'song.wav'
+            first.parent.mkdir(); second.parent.mkdir()
+            t = np.arange(RATE*3)/RATE
+            wav(first, .3*np.sin(2*np.pi*440*t)); second.write_bytes(first.read_bytes())
+            analysis = load_analysis(first, root/'a'/'audio_analysis.json', shared)
+            with patch('banana_mv.audio_analysis.analyze_audio', side_effect=AssertionError('re-analysed')):
+                self.assertEqual(load_analysis(second, root/'b'/'audio_analysis.json', shared), analysis)
+            self.assertTrue((root/'b'/'audio_analysis.json').is_file())          # 新專案也留一份
+            wav(second, .3*np.sin(2*np.pi*220*t))                                 # 換歌就重新分析
+            self.assertNotEqual(load_analysis(second, root/'b'/'audio_analysis.json', shared)['source_sha256'],
+                                analysis['source_sha256'])
+
     def test_evidence_reaches_9b_and_both_final_prompt_paths(self):
         from PIL import Image
         from banana_mv import server
