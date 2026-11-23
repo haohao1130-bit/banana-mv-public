@@ -71,6 +71,7 @@ class LeanWriterTests(unittest.TestCase):
         self.assertIn('PYTHON FILLS IN LATER', text)
         self.assertIn('need no <Subject> entry', text)
         self.assertIn('never tag a silent actor', text)
+        self.assertIn('never guess a species', text)   # 原創角色不准被 9B 改物種
         for hidden in ('PRIVATE_FULL_STORY', 'FUTURE_STORY_MARKER', 'Never turn the singer'):
             self.assertNotIn(hidden, text)
         self.assertNotIn('END_STATE', prompt)

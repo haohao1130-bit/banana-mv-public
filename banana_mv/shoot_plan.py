@@ -47,6 +47,12 @@ and use the directing policy to resolve conflicts. Keep the assigned story event
 """
 
 
+# 9B 看圖會自己猜物種：原創吉祥物蕉彌被寫成兔子、生物、貓科（實測 c15e16581a5e 變成黃貓）。
+REFERENCE_IDENTITY = (
+    'REFERENCE IDENTITY: never guess a species or category from a <Picture N>; use the settings\' name and '
+    'wording, else only the name plus clearly visible colors, shapes and costume.')
+
+
 def adaptation_direction(req):
     return CREATIVE_DIRECTION if req.get('story_plan',True) else FAITHFUL_DIRECTION
 
@@ -727,6 +733,7 @@ reference image. Use the same fixed design and instrument whenever that role ret
 Do not reject it as "no such character", replace it with referenced cast, or omit a
 requested featured solo/hero shot merely because the performer has no uploaded photo.
 Use the actual reference appearance, not a generic version of its species or object type.
+""" + REFERENCE_IDENTITY + """
 Preserve current looks and props rather than resetting to
 reference clothing.
 All shot times are LOCAL and within the target duration; alignment
@@ -849,6 +856,7 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
         shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
         shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
         parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown)
+        parts.append(REFERENCE_IDENTITY)
     cast = cast_note(row.get('event', ''), fixed or '')
     if cast:
         parts.append(cast)
