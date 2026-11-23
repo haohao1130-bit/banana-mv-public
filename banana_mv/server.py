@@ -189,8 +189,8 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
         if field in req and not isinstance(req[field], bool):
             raise ValueError(field + ' 必須為布林值。')
     steps=req.get('sampling_steps',8)
-    if isinstance(steps,bool) or steps not in (6,8):
-        raise ValueError('採樣步數僅支援 6 或 8。')
+    if isinstance(steps,bool) or steps not in (4,6,8):
+        raise ValueError('採樣步數僅支援 4（草稿）、6 或 8。')
     native = {}
     if req.get('native_sound'):
         cues = req.get('native_sound_cues')
@@ -705,7 +705,10 @@ def worker(job, cfg, original, song, drive):
                     seg['motion_frames']=[str(path) for path in tail_frames[1:]]
                 else:
                     seg.pop('motion_frames',None)
-            if single_pass or direct_script:
+            if job['request'].get('prompt_source_job'):
+                # 定稿重拍：沿用草稿那份已確認的提示詞，不再叫 9B 重寫。
+                prompt=draft_prompt(job['request']['prompt_source_job'],i,len(original)+int(bool(tail)))
+            elif single_pass or direct_script:
                 prompt=local_prompt(cfg,job['request'],seg,original,tail)
             elif ledger is not None and record is not None and job.get('resuming'):
                 prompt=record['clip_prompt'];seg['scene_state_debug']=record
@@ -860,6 +863,48 @@ def worker(job, cfg, original, song, drive):
         GPU_LOCK.release()
 
 
+def draft_prompt(source_id,index,reference_count):
+    """草稿專案第 index 段目前採用的提示詞（含手動重配後採用的版本）。"""
+    from banana_mv import takes
+    from banana_mv.core import normalize_mv_prompt
+    source=read_state(source_id)
+    if index>=len(source['segments']):
+        raise ValueError('草稿段數與正式版不同，無法沿用提示詞。')
+    seg=source['segments'][index]
+    work=job_dir(source_id)
+    for path in (takes.existing_file(source,index,seg.get('selected_take','original'),'prompt.txt'),
+                 work/f'{index:02d}_prompt_v1.txt', work/f'{index:02d}_prompt.txt'):
+        if path.is_file():
+            return normalize_mv_prompt(path.read_text(encoding='utf-8'),reference_count)
+    if seg.get('prompt'):
+        return normalize_mv_prompt(seg['prompt'],reference_count)
+    raise ValueError(f'草稿第 {index+1} 段沒有提示詞，請先讓草稿跑完這一段。')
+
+
+def promote_draft(source_id,steps=8):
+    """用草稿的提示詞開一桌 720P 正式版。草稿本身不受影響。"""
+    from banana_mv.core import OUTPUT_SIZE_PRESETS
+    source=read_state(source_id)
+    if source.get('status')=='running':
+        raise ValueError('草稿還在跑，請等它完成或停爐後再升級。')
+    missing=[s['index']+1 for s in source['segments']
+             if not ((job_dir(source_id)/f"{s['index']:02d}_prompt_v1.txt").is_file() or s.get('prompt'))]
+    if missing:
+        raise ValueError('草稿第 '+'、'.join(map(str,missing))+' 段還沒有提示詞。')
+    if steps not in (6,8):
+        raise ValueError('正式版步數請選 6 或 8。')
+    req=dict(source['request'])
+    aspect=req.get('aspect','16:9')
+    req.update(width=OUTPUT_SIZE_PRESETS['720p'][aspect][0],sampling_steps=steps,
+               plan_review=False,prompt_source_job=source_id,
+               project_name=str(source.get('title') or 'MV')[:100]+'｜正式版')
+    for key in ('director_schema','director_version','optimizer_version','story_scope_version',
+                'ending_policy_version','prompt_compiler_version','rewrite_retries','scene_state_version',
+                'persistent_scene_state','director_authority'):
+        req.pop(key,None)
+    return start(req)
+
+
 def start(req):
     cfg = backend.project_config(req)
     req = dict(req)
@@ -945,6 +990,10 @@ def start(req):
     plan = segments(seconds,float(req.get('segment_seconds',15)))
     for seg in plan:
         seg.update(song_seconds=seconds,segment_count=len(plan))
+    if req.get('prompt_source_job') is not None:
+        source=read_state(req['prompt_source_job'])
+        if len(source['segments'])!=len(plan) or source['request'].get('mode')!=req.get('mode'):
+            raise ValueError('草稿與正式版的分段或接續模式不同，無法沿用提示詞。')
     if vocal and abs(source_audio_duration(drive)-seconds)>1/FPS:
         raise ValueError('人聲與原曲長度不一致；請輸出同起點、保留前後靜音的人聲。')
     aspect = req.get('aspect','16:9')
@@ -1414,6 +1463,9 @@ class Handler(WebHandler):
                 from banana_mv import nv_upscale
                 body=self.body_json()
                 return self.send_json(nv_upscale.start_finished(sys.modules[__name__], body['id'], body.get('version')), 202)
+            if path=='/api/mv/promote-draft':
+                body=self.body_json()
+                return self.send_json(promote_draft(body['id'],body.get('steps',8)))
             if path=='/api/mv/rewrite-clip':
                 from banana_mv.manual_prompt import rewrite_clip
                 body=self.body_json()
