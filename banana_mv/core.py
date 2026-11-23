@@ -89,7 +89,10 @@ OUTPUT_SIZES = {'16:9': (1280,720), '9:16': (720,1280), '4:5': (720,900), '1:1':
 OUTPUT_SIZE_PRESETS = {
     '720p': OUTPUT_SIZES,
     '480p': {'16:9': (854,480), '9:16': (480,854), '4:5': (480,600), '1:1': (480,480)},
+    # 360P 四步草稿：只看劇本、站位、誰在唱；定稿後用同一份提示詞升 720P 八步重拍。
+    '360p': {'16:9': (640,360), '9:16': (360,640), '4:5': (360,450), '1:1': (360,360)},
 }
+DRAFT_STEPS = 4
 
 
 def output_dimensions(aspect, width=None):
@@ -100,7 +103,7 @@ def output_dimensions(aspect, width=None):
     for sizes in OUTPUT_SIZE_PRESETS.values():
         if width == sizes[aspect][0]:
             return sizes[aspect]
-    raise ValueError(f'不支援的橫向寬度；{aspect} 請選擇 720P 或 480P 預設尺寸。')
+    raise ValueError(f'不支援的橫向寬度；{aspect} 請選擇 720P、480P 或 360P 草稿預設尺寸。')
 
 
 def dimensions(aspect, width=None):
