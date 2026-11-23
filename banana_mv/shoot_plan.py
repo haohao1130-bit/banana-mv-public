@@ -26,8 +26,10 @@ NATIVE_ENHANCER_SYSTEM = (
     "open detailed_description with one or two sentences of concrete style; "
     "per shot, give composition, subject position, action and reaction, camera, and sound; "
     "write camera moves as natural English (push in, pull out, pan, truck, tilt, pedestal, arc, tracking, static, POV, roll, slight or strong shake), "
-    "adding amplitude or speed only when it matters; "
+    "adding amplitude or speed whenever the energy calls for it; "
     "cut only for new information (subject, space, state, viewpoint or time), otherwise move the camera; "
+    "when the commission gives separate time slots, give each slot its own [Shot N] at its time and never merge two slots into one shot; "
+    "a match cut on action is a real cut: end the first shot before contact or completion, and finish the same motion in the next [Shot N] from a strongly contrasting angle; "
     "prefer concrete visual and audio detail over words like cinematic or beautiful; "
     "keep shot timing inside the clip duration; "
     "quote on-screen text in its original language; "
@@ -850,7 +852,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
 LEAN_INTENSITY = {
     'normal': 'Natural, grounded camera and performance.',
     'high': 'Assertive, inventive commercial-MV photography: strong angles, depth, shaped light and purposeful movement.',
-    'extreme': 'Explosive cinematic energy: bold angles, fast motivated movement and peak performance.',
+    'extreme': ('Explosive cinematic energy: bold angles, fast motivated movement and peak performance. '
+                'The camera lives inside the action, not beside it: wide-lens extreme close-ups, POV, '
+                'very low or overhead angles, fast arcs, whip pans, strong shake and brief slow motion; '
+                'write camera moves with large amplitude at fast speed.'),
 }
 LEAN_MAX_REPAIRS = 2
 LEAN_MAX_FRESH = 1
