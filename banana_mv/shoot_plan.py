@@ -59,9 +59,11 @@ concrete expressive photography and editing without adding new story events.
 
 
 # 9B 看圖會自己猜物種：原創吉祥物蕉彌被寫成兔子、生物、貓科（實測 c15e16581a5e 變成黃貓）。
+# 9B 每段重看參考圖、重寫一次服裝，每段寫法不同，H3 跟著文字換衣服（實測 5a114b855bf1 小語四段四套）。
 REFERENCE_IDENTITY = (
-    'REFERENCE IDENTITY: never guess a species or category from a <Picture N>; use the settings\' name and '
-    'wording, else only the name plus clearly visible colors, shapes and costume.')
+    'REFERENCE IDENTITY: never guess a species from a <Picture N>. Define referenced actors as name + <Picture N> + '
+    '"costume as in <Picture N>" plus only words copied from the settings; never describe hair, clothes or '
+    'accessories yourself.')
 
 def adaptation_direction(req):
     return CREATIVE_DIRECTION if req.get('story_plan',True) else FAITHFUL_DIRECTION

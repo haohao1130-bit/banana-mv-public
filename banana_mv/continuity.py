@@ -76,7 +76,7 @@ def wardrobe_note(text, clip_start, clip_seconds):
     lines = []
     if current:
         lines.append('CURRENT OUTFITS (already changed before this clip; do not film the change, '
-                     'describe these outfits in subject_definitions and every shot):')
+                     'describe these outfits in subject_definitions):')
         lines += [f'{role}: {outfit}' for role, outfit in current.items()]
     for at, role, outfit in during:
         lines.append(f'OUTFIT CHANGE INSIDE THIS CLIP at {at:.2f}s: {role} → {outfit}')
