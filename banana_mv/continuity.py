@@ -96,7 +96,9 @@ def onscreen_cast(event):
     match = _CAST_LINE.search(event or '')
     if not match:
         return []
-    return [name for name in re.split(r'[、,，/／;；\s]+|和|與|及', match[1].strip()) if name]
+    # 「猴哥不入鏡」這種寫法是在說誰不在，不能當成入鏡名單。
+    return [name for name in re.split(r'[、,，/／;；\s]+|和|與|及', match[1].strip())
+            if name and not re.search(r'不入鏡|不出場|不在場|沒入鏡|缺席', name)]
 
 
 def reference_names(fixed):
@@ -105,6 +107,31 @@ def reference_names(fixed):
     for number, name in _REF_NAME.findall(fixed or ''):
         names.setdefault(int(number), name)
     return names
+
+
+# 場景圖不是演員：不在「入鏡」名單裡很正常，不能因此把場景圖藏起來或叫 9B 別提它
+# （實測 b43d9e4edec4：舞台、擂台圖被扣下，9B 只好自己腦補新場景）。
+_SCENE_HEADING = re.compile(r'^\s*(?:[■#【\[]|─|━)?\s*[^\n]{0,6}(?:場景|場地|背景|環境|地點)')
+_SCENE_WORDS = re.compile(r'舞台|擂台|場景|場地|背景|環境|房間|客廳|臥室|教室|廚房|食堂|餐廳|街|公寓|海邊|沙灘|'
+                          r'公園|森林|城市|室內|室外|stage|ring|room|scene|background|location|street', re.I)
+
+
+def scene_pictures(fixed):
+    """設定裡的場景參考圖編號：寫在「場景」標題底下，或名稱本身就是地點。"""
+    scenes, in_scene = set(), False
+    for line in (fixed or '').splitlines():
+        if re.match(r'\s*(?:[■#【]|─{3,}|━{3,})', line):
+            in_scene = bool(_SCENE_HEADING.match(line)) and '隔離' not in line
+        for number, name in _REF_NAME.findall(line):
+            if in_scene or _SCENE_WORDS.search(name):
+                scenes.add(int(number))
+    return scenes
+
+
+def cast_references(fixed):
+    """只留演員的參考圖（排除場景圖），用來判斷誰沒入鏡。"""
+    scenes = scene_pictures(fixed)
+    return {n: name for n, name in reference_names(fixed).items() if n not in scenes}
 
 
 def _listed(name, cast):
@@ -122,7 +149,7 @@ def cast_note(event, fixed):
     cast = onscreen_cast(event)
     if not cast:
         return ''
-    absent = [f'{name} (<Picture {n}>)' for n, name in sorted(reference_names(fixed).items())
+    absent = [f'{name} (<Picture {n}>)' for n, name in sorted(cast_references(fixed).items())
               if not _present(name, cast, event)]
     note = 'ON-SCREEN IN THIS CLIP: ' + '、'.join(cast) + '.'
     if absent:
@@ -145,7 +172,7 @@ def cast_errors(prompt, event, fixed, tail):
                       'Bind each actor to their own reference picture listed in the fixed settings.')
     cast = onscreen_cast(event)
     if cast:
-        for number, name in sorted(reference_names(fixed).items()):
+        for number, name in sorted(cast_references(fixed).items()):
             if not _present(name, cast, event) and re.search(rf'<Picture {number}>(?!\d)', definitions):
                 errors.append(f'[ERROR][Cast] {name} (<Picture {number}>) is not on screen in this clip. '
                               'Remove that subject entirely and keep it out of every shot.')
@@ -157,4 +184,4 @@ def absent_pictures(event, fixed):
     cast = onscreen_cast(event)
     if not cast:
         return set()
-    return {n for n, name in reference_names(fixed).items() if not _present(name, cast, event)}
+    return {n for n, name in cast_references(fixed).items() if not _present(name, cast, event)}
