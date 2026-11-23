@@ -144,6 +144,17 @@ class MotionFramesTests(LeanWriterTests):
         self.assertEqual(self.seg['motion_frames_to_9b'], 0)
 
 
+class EndStateNameTests(unittest.TestCase):
+    def test_subject_labels_become_names(self):
+        from banana_mv.continuity import name_subjects
+        prompt = ('subject_definitions:\n<Subject 1> is the singer from <Picture 2>.\n'
+                  '<Subject 3> is the mascot boxer from <Picture 4>.\n<Subject 6> is the ring.\nsummary: x')
+        fixed = '<Picture 2> = 蕉大師。\n<Picture 4> = 蕉彌。'
+        state = 'pose: <Subject 3> (蕉弥) stands in <Subject 6>; <Subject 1> sings on stage'
+        self.assertEqual(name_subjects(state, prompt, fixed),
+                         'pose: 蕉彌 stands in <Subject 6>; 蕉大師 sings on stage')
+
+
 class OnScreenCastTests(unittest.TestCase):
     FIXED = '<Picture 2> = 男主角 = S1。\n<Picture 3> = 小語。\n<Picture 4> = 蕉彌，外型依參考圖。'
 
