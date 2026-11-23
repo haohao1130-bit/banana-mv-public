@@ -98,22 +98,42 @@ def analyze_audio(path):
             'limitations': 'Acoustic measurements only; no lyrics, emotion, instruments or chorus recognition.'}
 
 
-def load_analysis(source, cache):
-    """Project-local cache follows the immutable source copy; never reuse stale data."""
+def _read_cache(path, digest):
+    try:
+        saved = json.loads(Path(path).read_text(encoding='utf-8'))
+        if saved.get('version') == VERSION and saved.get('source_sha256') == digest:
+            return saved
+    except (ValueError, OSError):
+        pass
+    return None
+
+
+def _write_json(path, result):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+    temp.replace(path)
+
+
+def load_analysis(source, cache, shared=None):
+    """Project-local cache follows the immutable source copy; never reuse stale data.
+
+    shared：跨專案共用的分析快取資料夾（以歌曲 SHA-256 命名）。停爐改提示詞重新煉丹會開新專案，
+    同一首歌不必重新分析強弱與卡點。"""
     cache = Path(cache)
     digest = source_hash(source)
-    if cache.is_file():
-        try:
-            saved = json.loads(cache.read_text(encoding='utf-8'))
-            if saved.get('version') == VERSION and saved.get('source_sha256') == digest:
-                return saved
-        except (ValueError, OSError):
-            pass
+    if cache.is_file() and (saved := _read_cache(cache, digest)):
+        return saved
+    common = Path(shared) / f'{digest}_audio_v{VERSION}.json' if shared else None
+    if common and common.is_file() and (saved := _read_cache(common, digest)):
+        _write_json(cache, saved)
+        return saved
     result = analyze_audio(source)
     result['source_sha256'] = digest
-    temp = cache.with_suffix('.tmp')
-    temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
-    temp.replace(cache)
+    _write_json(cache, result)
+    if common:
+        _write_json(common, result)
     return result
 
 
