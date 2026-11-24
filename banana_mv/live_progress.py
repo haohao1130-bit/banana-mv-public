@@ -2,11 +2,13 @@
 import asyncio
 import json
 import threading
+import time
 from urllib.parse import urlencode, urlsplit
 
 
 class LiveProgress:
-    def __init__(self):
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
         self._lock = threading.Lock()
         self._connection = "connecting"
         self._task = {}
@@ -28,7 +30,12 @@ class LiveProgress:
                 return None
             if self._task.get("state") != "running" or "max" not in self._task:
                 return None
-            return {key: self._task[key] for key in ("node", "value", "max")}
+            info = {key: self._task[key] for key in ("node", "value", "max")}
+            # 速度：從這個節點第一次回報進度起算，前端換算成 H3 秒/步、9B tokens/秒。
+            done = self._task["value"] - self._task.get("first_value", self._task["value"])
+            if done > 0:
+                info.update(done=done, elapsed=round(self._task["last_time"] - self._task["first_time"], 3))
+            return info
 
     def clear(self, job_id):
         with self._lock:
@@ -67,7 +74,10 @@ class LiveProgress:
                 if node_id != task.get("node_id"):
                     self._set_node(node_id)
                     task = self._task
-                task.update(value=value, max=maximum)
+                now = self._clock()
+                if "first_value" not in task:
+                    task.update(first_value=value, first_time=now)
+                task.update(value=value, max=maximum, last_time=now)
             elif event == "execution_success":
                 task["state"] = "finished"
             elif event in ("execution_error", "execution_interrupted"):
