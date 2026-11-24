@@ -219,6 +219,14 @@ class OnScreenCastTests(unittest.TestCase):
             self.assertIn('英雄 (<Picture 2>) is not on screen', writer.call_args_list[1].args[2][-1][1])
 
 
+class DegenerateDraftTests(unittest.TestCase):
+    def test_runaway_repetition_and_missing_shots_are_caught(self):
+        from banana_mv.shoot_plan import degenerate_draft
+        good = 'detailed_description:\n[Shot 1] A punch lands.\n[Shot 2] At 00:03.000, the crowd roars.'
+        self.assertIsNone(degenerate_draft(good))
+        self.assertIn('ring steps', degenerate_draft('<Subject 7> is the ring with ' + 'ring steps, ' * 40))
+
+
 class ThinkingSettingsTests(unittest.TestCase):
     def test_no_word_cap_and_qwen_thinking_sampling(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -235,7 +243,7 @@ class ThinkingSettingsTests(unittest.TestCase):
             cfg['rewriter'] = dict(cfg['rewriter'], thinking=False)
             inputs = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
             self.assertEqual((inputs['sampling_mode.temperature'], inputs['sampling_mode.top_p'],
-                              inputs['sampling_mode.presence_penalty']), (0.7, 0.8, 0.0))
+                              inputs['sampling_mode.presence_penalty']), (0.7, 0.8, 1.5))  # 非思考也防跳針
             cfg['rewriter'] = dict(cfg['rewriter'], thinking=True, presence_penalty=0.5)
             inputs = services.build_rewrite_graph(cfg, 'GUIDE', [('text', 'clip')], 'job')[0]['generate']['inputs']
             self.assertEqual(inputs['sampling_mode.presence_penalty'], 0.5)      # config.json 自訂值優先
