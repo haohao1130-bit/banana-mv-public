@@ -15,6 +15,11 @@ class DraftModeTests(unittest.TestCase):
         self.assertEqual(output_dimensions('9:16', 360), (360, 640))
         self.assertEqual(output_dimensions('16:9', 1280), (1280, 720))
 
+    def test_mid_resolutions_for_vram_testing(self):
+        self.assertEqual(dimensions('16:9', 1024), (1024, 576))
+        self.assertEqual(dimensions('16:9', 1152), (1152, 640))
+        self.assertEqual(dimensions('9:16', 576), (576, 1024))
+
     def write_draft(self, root, status='done'):
         job_id = 'abcdef123456'
         work = root / job_id
