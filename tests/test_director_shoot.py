@@ -76,6 +76,14 @@ class FreeDirectorShotsTests(unittest.TestCase):
         self.assertNotIn('LOCKED SHOT SLOTS', commission)
         self.assertIn('YOU CHOOSE SHOT COUNT', commission)
 
+    def test_missing_cut_time_is_filled_at_the_midpoint_instead_of_rewriting(self):
+        cues = [cue(0, 10, 'S1')]
+        raw = ('detailed_description:\n[Shot 1] <Subject 1> sings.\n'
+               '[Shot 2] <Subject 1> spins.\n[Shot 3] At 00:08.000, <Subject 1> bows.')
+        blocks, slots = parse_director_shots(raw, 10, cues)
+        self.assertEqual([slot['start'] for slot in slots], [0.0, 4.0, 8.0])
+        self.assertEqual(blocks[2], '<Subject 1> spins.')
+
     def test_cross_srt_handoff_keeps_authorized_rap_and_singing_in_one_shot(self):
         cues = [cue(0, 4, 'S1'), cue(4.2, 10, 'S2')]
         raw = ('detailed_description:\n[Shot 1] <Subject 1> raps with visible '

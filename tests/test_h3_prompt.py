@@ -29,8 +29,9 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(body,'[Shot 1] S2 evades.\n\n[Shot 2] At 00:02.400, S2 counters.')
         text=compile_prompt(body,4,appearance(),3)
         self.assertIn('[Shot 2] At 00:02.400, <Subject 2> counters.',text)
-        with self.assertRaises(ValueError):
-            compile_prompt(recover_shot_prefix('Shot 1: S2 evades.\nShot 2: S2 counters.'),4,appearance(),3)
+        # 漏寫切鏡時間：取中點補上，不退稿。
+        filled=compile_prompt(recover_shot_prefix('Shot 1: S2 evades.\nShot 2: S2 counters.'),4,appearance(),3)
+        self.assertIn('[Shot 2] At 00:02.000, <Subject 2> counters.',filled)
 
     def test_explicit_internal_ids_compile_without_rebinding_or_forcing_unused_cast(self):
         a=appearance();a['characters']['S5']=dict(a['characters']['S2'],connected_reference='<Picture 5>')

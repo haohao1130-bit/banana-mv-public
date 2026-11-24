@@ -5,6 +5,7 @@ camera-cut instruction. 9B chooses the shot count, positions and timing from
 the isolated current-clip event.  Python validates shot clocks and keeps the
 independently timed SRT vocal list in the final H3 prompt.
 """
+import logging
 import re
 import uuid
 
@@ -54,6 +55,32 @@ CLOCK = re.compile(
 MAX_SHOTS = 12
 
 
+def _clock(value):
+    minutes = int(value // 60)
+    return f'{minutes:02d}:{value - minutes * 60:06.3f}'
+
+
+def _fill_cut_times(bodies, seconds):
+    """回傳每一鏡補上的切鏡秒數（沒漏寫的是 None）；第一鏡不需要時間。"""
+    times = []
+    for i, body in enumerate(bodies):
+        clock = CLOCK.match(body)
+        times.append(0.0 if i == 0 else
+                     (round(int(clock['minutes']) * 60 + float(clock['seconds']), 3) if clock else None))
+    missing = [i for i, value in enumerate(times) if value is None]
+    if not missing:
+        return [None] * len(bodies)
+    filled = list(times)
+    for i in missing:
+        later = next((j for j in range(i + 1, len(times)) if times[j] is not None), None)
+        after = times[later] if later is not None else float(seconds)
+        steps = (later if later is not None else len(times)) - i + 1
+        filled[i] = round(filled[i - 1] + (after - filled[i - 1]) / steps, 3)
+    logging.getLogger(__name__).warning('9B 漏寫切鏡時間，已自動補上第 %s 鏡。',
+                                        '、'.join(str(i + 1) for i in missing))
+    return [filled[i] if i in missing else None for i in range(len(bodies))]
+
+
 def parse_director_shots(raw, seconds, cues, scene_schedule=()):
     """Parse 9B-authored CAMERA cuts; do not divide shots at SRT boundaries."""
     text = re.sub(r'<think>.*?</think>', '', raw, flags=re.I | re.S)
@@ -75,12 +102,19 @@ def parse_director_shots(raw, seconds, cues, scene_schedule=()):
         if len(labels) > MAX_SHOTS:
             raise ValueError('9B camera cuts exceed the practical per-clip limit.')
         parts = []
+        bodies = [text[mark.end():labels[i].start() if i < len(labels) else len(text)].strip()
+                  for i, mark in enumerate(labels, 1)]
+        filled = _fill_cut_times(bodies, seconds)
         for i, mark in enumerate(labels, 1):
             number = int(mark[1])
             if number != i:
                 raise ValueError('9B shots must be sequential [Shot 1], [Shot 2]...')
-            body = text[mark.end():labels[i].start() if i < len(labels) else len(text)].strip()
+            body = bodies[i - 1]
             clock = CLOCK.match(body)
+            if clock is None and filled[i - 1] is not None:
+                # 9B 漏寫這一鏡的 At 時間：取前後兩鏡的中點補上，不整份退稿重寫。
+                body = f'At {_clock(filled[i - 1])}, ' + body
+                clock = CLOCK.match(body)
             if i == 1:
                 start = 0.0
                 if clock:
