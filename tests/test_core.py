@@ -111,7 +111,7 @@ class TimelineTests(unittest.TestCase):
             self.assertEqual(output_dimensions(aspect),target)
             self.assertEqual(dimensions(aspect),native)
             self.assertEqual(output_dimensions(aspect,target[0]),target)
-        for width in (512,720,768,1024,1920,2560):
+        for width in (512,720,768,1000,1920,2560):  # 1024 is now the 576P preset
             with self.assertRaises(ValueError):dimensions('16:9',width)
         with self.assertRaises(ValueError):dimensions('9:16',1280)
         with self.assertRaises(ValueError):dimensions('20:3',1280)
