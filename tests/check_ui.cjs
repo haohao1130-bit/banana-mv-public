@@ -346,10 +346,15 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(rows.length,4);assert.equal(rows[0].video.muted,false);assert.equal(rows[0].video.preload,'none');
   reviewJob.segments[0].takes[0].preview_kind='raw';reviewJob.segments[0].takes[0].preview_filename='00_raw_v1.mp4';
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
-  assert(rows[0].note.textContent.includes('RAW 原始有聲預覽'));
+  assert(rows[0].note.title.includes('RAW 原始有聲預覽'));
   reviewJob.segments[0].takes[0].preview_kind='part';
   vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
-  assert(rows[0].note.textContent.includes('裁切版（無 RAW 音軌）'));
+  assert(rows[0].note.title.includes('裁切版（無 RAW 音軌）'));
+  reviewJob.segments[1].prompt_rewrite={status:'running',pending_version:1};
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  assert.equal(rows[1].renderButton.disabled,true,'render must wait while 9B rewrites');
+  delete reviewJob.segments[1].prompt_rewrite;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   rows[1].check.checked=true;rows[2].check.checked=true;rows[1].check.onchange();
   assert(els['clips-retake'].textContent.includes('2 顆'));assert.equal(els['clips-retake'].disabled,false);
   vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,status:'running'})})`,context);

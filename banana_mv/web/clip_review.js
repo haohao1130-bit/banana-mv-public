@@ -70,7 +70,9 @@ function updateClipActions(){
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
     const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
     row.renderButton.textContent=autoResume?'依此提示詞回爐並自動續跑':'依此提示詞回爐這一段';
+    // 9B 重配中不准回爐：避免拿舊稿誤觸生成，等新丹方寫好再按。
     row.renderButton.disabled=!clipIdle()||obsolete
+      ||row.segment.prompt_rewrite?.status==='running'
       ||(!row.segment.preview&&!firstRender)||!row.promptEditor.value.trim();
     row.correction.disabled=continuous||clipView.locked
       ||['retaking','assembling','refining_faces'].includes(clipView.jobData?.status);
@@ -89,7 +91,8 @@ function showClipVersion(row){
   const take=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
   if(take&&row.url!==take.preview){row.url=take.preview;row.video.src=take.preview;}
   const format=take?.preview_kind==='raw'?'RAW 原始有聲預覽':'裁切版（無 RAW 音軌）';
-  const note=take?`V${take.version||1} · ${format} · ${take.preview_filename||take.filename||''} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:'')+(take.preview_kind==='raw'&&clipView.jobData?.request?.mode==='chain5'?' · 接續模式 RAW 開頭含重疊影格，正式成片已裁切':''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
+  const note=take?`V${take.version||1} · Seed：${take.seed}`+(take.correction?` · 局部修改：${take.correction}`:''):(row.segment.preview?'':'這段尚無毛片，可貼完整新稿，直接初煉這一段。');
+  row.note.title=take?`${format} · ${take.preview_filename||take.filename||''}`:'';
   if(row.note.textContent!==note)row.note.textContent=note;
   updateClipActions();
 }
@@ -113,14 +116,14 @@ function renderClipPreviews(job){
       const branchOnly=document.createElement('button');branchOnly.type='button';branchOnly.className='secondary';branchOnly.textContent='僅改這段，保留後續';
       const branchCascade=document.createElement('button');branchCascade.type='button';branchCascade.textContent='從新版尾幀重拍後續（9B 重寫）';
       const note=document.createElement('p');note.className='muted';
-      const branchHint=document.createElement('p');branchHint.className='muted';branchHint.textContent='回爐本段→正式採用→從本段尾幀重寫 9B 並續拍；後續舊版不參與新成片。';
+      const branchHint=document.createElement('p');branchHint.className='muted';branchHint.hidden=true;branchHint.textContent='回爐本段→正式採用→從本段尾幀重寫 9B 並續拍；後續舊版不參與新成片。';
       branchBar.append(branchOnly,branchCascade);
       version.append(select,use);card.append(title,label,video,version,branchBar,branchHint,note);$('clip-list').append(card);
       const fixLabel=document.createElement('label');fixLabel.textContent='局部修改建議（選填）';
       const correction=document.createElement('textarea');correction.rows=3;correction.maxLength=3000;
       correction.setAttribute('aria-label',`第 ${i+1} 顆丹藥的局部修改建議`);
       correction.placeholder='例如：表情更憤怒；增加手部操作特寫；保留事件，只改這段拍法。';
-      const help=document.createElement('p');help.className='muted';help.textContent='以已選用的待採用版修改；未選則用目前成片版。留空只換 Seed。填寫後勾選此段，9B 只修這段原稿。';
+      const help=document.createElement('p');help.className='muted';help.hidden=true;help.textContent='以已選用的待採用版修改；未選則用目前成片版。留空只換 Seed。填寫後勾選此段，9B 只修這段原稿。';
       try{correction.value=JSON.parse(localStorage.getItem('banana_mv_clip_fixes:'+job.id)||'{}')[i]||'';}catch{}
       correction.oninput=()=>{try{const key='banana_mv_clip_fixes:'+job.id;const saved=JSON.parse(localStorage.getItem(key)||'{}');saved[i]=correction.value;localStorage.setItem(key,JSON.stringify(saved));}catch{}};
       fixLabel.append(correction);card.append(fixLabel,help);
@@ -134,7 +137,10 @@ function renderClipPreviews(job){
       const rewriteButton=document.createElement('button');rewriteButton.type='button';rewriteButton.className='secondary';rewriteButton.textContent='重配丹方（9B 重寫）';
       const renderButton=document.createElement('button');renderButton.type='button';renderButton.textContent='依此提示詞回爐這一段';
       buttons.append(rewriteButton,renderButton);promptLabel.append(promptEditor);
-      formula.append(promptLabel,promptInfo,buttons);card.append(formula);
+      // 提示詞預設收起，要改再點開；按鈕留在外面隨時可按。
+      const promptFold=document.createElement('details');const promptSummary=document.createElement('summary');
+      promptSummary.textContent='✏️ 查看／修改這段提示詞';promptFold.append(promptSummary,promptLabel,promptInfo);
+      formula.append(promptFold,buttons);card.append(formula);
       row={card,check,checkLabel:label,correctionLabel:fixLabel,branchHint,title,video,select,use,note,correction,segment,index:i,
         promptEditor,promptInfo,rewriteButton,renderButton,branchOnly,branchCascade,loadedVersion:null,editorLoaded:false};clipView.rows.set(i,row);
       check.onchange=updateClipActions;select.onchange=()=>showClipVersion(row);
