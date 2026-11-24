@@ -196,6 +196,10 @@ def build_rewrite_graph(cfg, system, parts, job_id):
             temperature, top_p = 1.0, 0.95
             if 'presence_penalty' not in rw:
                 presence = 1.5
+        elif 'presence_penalty' not in rw:
+            # 非思考模式也照 Qwen3.5 官方一般任務建議用 presence_penalty 1.5；設 0 時實測會跳針
+            # （cdaeba442bda 第 10 段重複 "ring steps" 到字數上限，一個鏡頭都沒寫）。
+            presence = 1.5
         inputs = {'clip': ['encoder', 0], 'prompt': chat, 'max_length': int(rw['max_length']),
                   'sampling_mode': 'on', 'sampling_mode.temperature': temperature,
                   'sampling_mode.top_k': int(rw['top_k']), 'sampling_mode.top_p': top_p,

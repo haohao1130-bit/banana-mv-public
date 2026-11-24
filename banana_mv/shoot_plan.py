@@ -860,6 +860,15 @@ LEAN_INTENSITY = {
                 'write camera moves with large amplitude at fast speed.'),
 }
 LEAN_MAX_REPAIRS = 2
+_RUNAWAY = re.compile(r'((?:\S+\s+){1,3}?)\1{19,}')
+
+
+def degenerate_draft(text):
+    """只擋明顯壞掉的稿：同一兩個詞連續跳針十幾次。不評斷內容好壞。"""
+    runaway = _RUNAWAY.search(text or '')
+    if runaway:
+        return f'Your draft got stuck repeating "{runaway[1].strip()}". Write each phrase once.'
+    return None
 LEAN_MAX_FRESH = 1
 
 
@@ -995,6 +1004,9 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
         raw = rewrite(call_cfg, system, attempts, uuid.uuid4().hex[:8])
         try:
             body, end_state = split_end_state(_text(raw))
+            broken = degenerate_draft(body)
+            if broken:
+                raise SceneStateError(broken)
             prompt = normalize_mv_prompt(body, len(refs))
             if len(originals) > 1 and not re.search(r'<Picture \d+>', prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
