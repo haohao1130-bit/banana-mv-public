@@ -535,7 +535,8 @@ function renderComfyProgress(info){
  panel.hidden=mobile.hidden=!(h3||writing);
  if(panel.hidden)return;
  const count=`${info.value} / ${info.max}`;
- const label=h3?`H3 採樣 ${count} 步`:`9B 寫稿 ${count} tokens`;
+ const speed=info.done>0&&info.elapsed>0?(h3?`｜${(info.elapsed/info.done).toFixed(1)} 秒/步`:`｜${(info.done/info.elapsed).toFixed(0)} tokens/秒`):'';
+ const label=(h3?`H3 採樣 ${count} 步`:`9B 寫稿 ${count} tokens`)+speed;
  const bar=$('comfy-progress-bar');
  bar.max=info.max;
  bar.value=info.value;
