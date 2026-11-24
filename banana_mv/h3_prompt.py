@@ -60,8 +60,25 @@ def scoped_appearance(appearance):
     return appearance
 
 
+def fill_cut_times(body, seconds):
+    """9B 偶爾漏寫某一鏡的「At MM:SS.mmm」：取前後兩鏡時間的中點補上。"""
+    marks=list(re.finditer(r'\[Shot (\d+)\](\s*At (\d{2}):(\d{2})\.(\d{3}),?)?',body))
+    times=[0.0 if i==0 else (int(m[3])*60+int(m[4])+int(m[5])/1000 if m[2] else None) for i,m in enumerate(marks)]
+    missing=[i for i,t in enumerate(times) if t is None]
+    if not missing:return body
+    for i in missing:
+        later=next((j for j in range(i+1,len(times)) if times[j] is not None),None)
+        after=times[later] if later is not None else float(seconds)
+        steps=(later if later is not None else len(times))-i+1
+        times[i]=round(times[i-1]+(after-times[i-1])/steps,3)
+    for i in reversed(missing):
+        minutes=int(times[i]//60);seconds_part=times[i]-minutes*60
+        body=body[:marks[i].end()]+f' At {minutes:02d}:{int(seconds_part):02d}.{round((seconds_part%1)*1000)%1000:03d},'+body[marks[i].end():]
+    return body
+
+
 def validate_shots(body, seconds, appearance, picture_count, allow_subset=False):
-    body=body.strip()
+    body=fill_cut_times(body.strip(),seconds)
     if not body.startswith('[Shot 1]') or re.search(
             r'```|<d>|\(S\d+\)|^\s*(?:'+'|'.join(H3_SECTIONS)+r')\s*:',body,re.M):
         raise ValueError('只回傳以 [Shot 1] 開始的鏡頭描述，不含六段標題、歌詞或說話標籤。')
