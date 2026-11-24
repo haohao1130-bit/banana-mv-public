@@ -70,7 +70,9 @@ function updateClipActions(){
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
     const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
     row.renderButton.textContent=autoResume?'依此提示詞回爐並自動續跑':'依此提示詞回爐這一段';
+    // 9B 重配中不准回爐：避免拿舊稿誤觸生成，等新丹方寫好再按。
     row.renderButton.disabled=!clipIdle()||obsolete
+      ||row.segment.prompt_rewrite?.status==='running'
       ||(!row.segment.preview&&!firstRender)||!row.promptEditor.value.trim();
     row.correction.disabled=continuous||clipView.locked
       ||['retaking','assembling','refining_faces'].includes(clipView.jobData?.status);
