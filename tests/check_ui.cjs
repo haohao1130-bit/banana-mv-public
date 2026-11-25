@@ -459,6 +459,20 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert.equal(els['clips-condense'].disabled,true);
   assert.equal(els['clips-retake'].disabled,true);
   assert.equal(rows[1].use.textContent,'確定使用此丹續拍');
+  // 停爐後改稿回爐：一顆按鈕，拍好自動採用並續拍。
+  assert.equal(rows[1].renderButton.textContent,'依此提示詞回爐，拍好自動採用並續拍');
+  const savedDraft=reviewJob.segments[1].prompt_rewrite;delete reviewJob.segments[1].prompt_rewrite;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
+  rows[1].promptEditor.value='edited stopped clip';rows[1].promptEditor.oninput();
+  await rows[1].renderButton.onclick();
+  assert.equal(retakes.at(-1).adopt_continue,true,'stopped 5070 retake asks the server to adopt and continue');
+  assert.equal(rows[1].upscale.textContent,'升級此丹 2K');
+  assert.equal(rows[1].upscaleLink.hidden,true);
+  vm.runInContext(`renderClipPreviews(${JSON.stringify({...reviewJob,clip_upscale:{index:1,take:'abcdef123456',status:'running'}})})`,context);
+  assert.equal(rows[1].upscale.textContent,'蕉大師升級中…');
+  assert.equal(rows[1].use.disabled,true,'no other furnace action while one clip upscales');
+  reviewJob.segments[1].prompt_rewrite=savedDraft;
+  vm.runInContext(`renderClipPreviews(${JSON.stringify(reviewJob)})`,context);
   await rows[1].use.onclick();
   assert.deepEqual(clipActionOrder.slice(-2),['api/mv/select-take','api/mv/continue-branch']);
   assert.deepEqual(branches.at(-1),{id:'review123',index:1,take:'abcdef123456',mode:'cascade'});

@@ -149,6 +149,9 @@ def describe(job):
                             filename=take_file(job,i,take['id'],'part.mp4').name,
                             preview=clip_url(job,i,take['id']),
                             preview_kind=kind,preview_filename=audition.name)
+            if take.get('upscaled_2k'):
+                take['download_2k']='/api/mv/clip-2k?'+urllib.parse.urlencode(
+                    {'id':job['id'],'index':i,'take':take['id']})
     return result
 
 
@@ -220,9 +223,10 @@ def repair_prompt(cfg,job,seg,prompt,note,originals,tail,dest,prefix=""):
     return normalize_mv_prompt(_text(raw),len(refs))
 
 
-def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebuild_prompt=False,previous_takes=None):
+def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebuild_prompt=False,previous_takes=None,adopt_continue=False):
     if not isinstance(indices,list) or not indices:raise ValueError('請勾選至少一顆需要回爐的丹藥。')
     if not isinstance(auto_resume,bool):raise ValueError('自動續跑參數必須為布林值。')
+    if not isinstance(adopt_continue,bool):raise ValueError('自動採用續拍參數必須為布林值。')
     if not isinstance(rebuild_prompt,bool):raise ValueError('重配提示詞參數必須為布林值。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
@@ -285,6 +289,13 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
                     job['status'] not in ('error','cancelled','interrupted') or
                     any(seg.get('status')!='done' for seg in job['segments'][:indices[0]])):
                 raise ValueError('自動續跑只適用於已停止的專案，從第一個未完成段落貼新稿回爐。')
+        # 5070 停爐後改稿回爐：拍好就直接正式採用，並從新版尾幀續拍後段，
+        # 不用再等使用者按「確定使用此丹續拍」。
+        if adopt_continue:
+            if (not continuous_5070(job) or auto_resume or len(indices)!=1
+                    or indices[0] in first_takes
+                    or job['status'] not in ('error','cancelled','interrupted')):
+                raise ValueError('回爐後自動採用續拍只適用於已停爐的連續拍攝，逐段回爐。')
         originals,song,drive=app.project_inputs(job,cfg)
         from banana_mv.python_slots import refresh_stale_timed_plan
         refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
@@ -325,7 +336,8 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
             if i in resolved:take['previous_take_override']=resolved[i]
             seg.setdefault('takes',[]).append(take);batch.append((i,take))
         job.update(status='retaking',resumed=time.time(),retake={'indices':indices,'status':'running','completed':0,
-                   'auto_resume':auto_resume,'takes':{str(i):t['id'] for i,t in batch}})
+                   'auto_resume':auto_resume,'takes':{str(i):t['id'] for i,t in batch},
+                   **({'adopt_continue':True} if adopt_continue else {})})
         app.CANCEL.discard(job_id)
         app.STOP_AFTER_CURRENT.discard(job_id)
         app.write_state(job)
@@ -641,7 +653,7 @@ def apply_takes(job,choices,song):
 def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
     work=app.job_dir(job['id']);choices={};temporary=[];current=None
     cfg=app.progress_config(cfg,job['id'])
-    handoff=False
+    handoff=False;adopt=None
     try:
         for i,take in batch:
             if job['id'] in app.CANCEL:raise RuntimeError('已停止回爐；完成的新版本已保留，尚未替換原版。')
@@ -783,6 +795,10 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             except Exception as error:
                 job['retake']['auto_resume_status']='error'
                 job['retake']['auto_resume_error']=str(error)
+        elif job['retake'].get('adopt_continue') and choices:
+            index=batch[0][0]
+            adopt=(index,choices[index])
+            job['retake']['adopt_continue_status']='running'
     except Exception as e:
         cancelled=job['id'] in app.CANCEL or isinstance(e,InterruptedError)
         if current and current['status']!='ready':
@@ -801,6 +817,8 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
         try:app.write_state(job)
         finally:
             if not handoff:app.GPU_LOCK.release()
+    if adopt:
+        _adopt_then_continue(job['id'],*adopt)
     if handoff:
         # Run in the same background worker under the existing GPU lock:
         # no new user click, no stale prompt, no queue handoff race.
@@ -816,6 +834,20 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             finally:
                 if app.GPU_LOCK.locked():app.GPU_LOCK.release()
 
+
+
+def _adopt_then_continue(job_id,index,take_id):
+    """The two clicks a stopped 5070 retake used to need, done for the user."""
+    try:
+        select_take(job_id,index,take_id)
+        continue_from_take(job_id,index,take_id,'cascade')
+    except Exception as error:
+        try:
+            job=app.read_state(job_id)
+            job.setdefault('retake',{}).update(adopt_continue_status='error',adopt_continue_error=str(error))
+            app.write_state(job)
+        except Exception:
+            pass
 
 
 def select_take(job_id,index,take_id):

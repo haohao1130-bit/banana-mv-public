@@ -1,6 +1,7 @@
 // Keep video nodes and playback intact across status polls.
 const clipView={job:null,rows:new Map(),jobData:null,locked:false,handled:null};
-function clipIdle(){return !clipView.locked&&['done','error','cancelled','interrupted'].includes(clipView.jobData?.status);}
+function clipIdle(){return !clipView.locked&&clipView.jobData?.clip_upscale?.status!=='running'
+  &&['done','error','cancelled','interrupted'].includes(clipView.jobData?.status);}
 function continuous5070(job=clipView.jobData){
   return job?.request?.director_schema===6&&['chain','chain5'].includes(job?.request?.mode);
 }
@@ -8,6 +9,13 @@ function adoptAndContinue(index){
   const job=clipView.jobData;
   return continuous5070(job)&&['error','cancelled','interrupted'].includes(job.status)
     &&index+1<job.segments.length;
+}
+// 停爐後改稿回爐：拍好直接正式採用並接拍，不再要求第二、三次確認。
+function adoptAfterRetake(index){
+  const job=clipView.jobData;
+  const segment=job?.segments?.[index];
+  return continuous5070(job)&&['error','cancelled','interrupted'].includes(job.status)
+    &&segment?.status==='done'&&!!(segment.takes||[]).length;
 }
 function obsoleteSuccessor(index){
   const restart=clipView.jobData?.continuation_restart;
@@ -27,7 +35,7 @@ function updateClipActions(){
   let count=0;
   $('clip-legacy-toolbar').hidden=continuous;
   $('clip-review-help').textContent=continuous
-    ?'停爐後回爐新版，預覽確認再按「確定使用此丹續拍」。9B 會從新版尾幀寫下一段，寫完直接交給 H3 開拍。'
+    ?'停爐後改稿回爐：拍好會自動正式採用，9B 從新版尾幀寫下一段，寫完直接交給 H3 開拍。也可從版本選單改選舊版再按「確定使用此丹續拍」。'
     :'每段可重配 9B 丹方或貼完整 H3 提示詞回爐。獨立與舊模式可批次選丹、確認凝丹。';
   $('clip-chain-note').textContent=continuous
     ?'同一條時間線：選用新版後，必須從下一段重寫 9B 並接拍；不支援只換一段保留後續。'
@@ -43,6 +51,16 @@ function updateClipActions(){
       (row.segment.pending_take||row.segment.selected_take);
     row.use.textContent=adoptAndContinue(row.index)?'確定使用此丹續拍':continuous?'正式採用此版本':'選用此丹';
     row.use.disabled=!clipIdle()||obsolete||!row.segment.preview||row.select.value===official;
+    const shown=(row.segment.takes||[]).find(t=>t.id===row.select.value&&t.status==='ready');
+    const upscaling=clipView.jobData?.clip_upscale;
+    const thisUpscale=upscaling?.index===row.index&&upscaling?.take===row.select.value;
+    row.upscale.disabled=!clipIdle()||!shown;
+    row.upscale.textContent=thisUpscale&&upscaling.status==='running'?'蕉大師升級中…'
+      :shown?.download_2k?'重新升級此丹 2K':'升級此丹 2K';
+    row.upscaleLink.hidden=!shown?.download_2k;
+    if(shown?.download_2k&&row.upscaleLink.getAttribute('href')!==shown.download_2k)row.upscaleLink.href=shown.download_2k;
+    row.upscaleNote.hidden=!(thisUpscale&&upscaling.status==='error');
+    row.upscaleNote.textContent=thisUpscale&&upscaling.status==='error'?'2K 升級失敗：'+upscaling.error:'';
     const differentTake=row.select.value&&row.select.value!==row.segment.selected_take;
     const restart=clipView.jobData?.continuation_restart;
     const adoptedRestart=restart?.index===row.index&&restart.take===row.select.value;
@@ -69,7 +87,9 @@ function updateClipActions(){
       ||row.segment.prompt_rewrite?.status==='running';
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
     const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
-    row.renderButton.textContent=autoResume?'依此提示詞回爐並自動續跑':'依此提示詞回爐這一段';
+    row.renderButton.textContent=autoResume?'依此提示詞回爐並自動續跑'
+      :adoptAfterRetake(row.index)?(hasNext?'依此提示詞回爐，拍好自動採用並續拍':'依此提示詞回爐，拍好自動合成全片')
+      :'依此提示詞回爐這一段';
     // 9B 重配中不准回爐：避免拿舊稿誤觸生成，等新丹方寫好再按。
     row.renderButton.disabled=!clipIdle()||obsolete
       ||row.segment.prompt_rewrite?.status==='running'
@@ -116,9 +136,15 @@ function renderClipPreviews(job){
       const branchOnly=document.createElement('button');branchOnly.type='button';branchOnly.className='secondary';branchOnly.textContent='僅改這段，保留後續';
       const branchCascade=document.createElement('button');branchCascade.type='button';branchCascade.textContent='從新版尾幀重拍後續（9B 重寫）';
       const note=document.createElement('p');note.className='muted';
+      // 單顆升 2K：只升這段選中的版本，配原曲同一段，下載直接拿去剪。
+      const upscaleBar=document.createElement('div');upscaleBar.className='dan-toolbar';
+      const upscale=document.createElement('button');upscale.type='button';upscale.className='secondary';upscale.textContent='升級此丹 2K';
+      const upscaleLink=document.createElement('a');upscaleLink.textContent=`下載第 ${i+1} 段 2K ↓`;upscaleLink.download='';upscaleLink.hidden=true;
+      const upscaleNote=document.createElement('p');upscaleNote.className='muted';upscaleNote.hidden=true;
+      upscaleBar.append(upscale,upscaleLink);
       const branchHint=document.createElement('p');branchHint.className='muted';branchHint.hidden=true;branchHint.textContent='回爐本段→正式採用→從本段尾幀重寫 9B 並續拍；後續舊版不參與新成片。';
       branchBar.append(branchOnly,branchCascade);
-      version.append(select,use);card.append(title,label,video,version,branchBar,branchHint,note);$('clip-list').append(card);
+      version.append(select,use);card.append(title,label,video,version,upscaleBar,upscaleNote,branchBar,branchHint,note);$('clip-list').append(card);
       const fixLabel=document.createElement('label');fixLabel.textContent='局部修改建議（選填）';
       const correction=document.createElement('textarea');correction.rows=3;correction.maxLength=3000;
       correction.setAttribute('aria-label',`第 ${i+1} 顆丹藥的局部修改建議`);
@@ -142,7 +168,9 @@ function renderClipPreviews(job){
       promptSummary.textContent='✏️ 查看／修改這段提示詞';promptFold.append(promptSummary,promptLabel,promptInfo);
       formula.append(promptFold,buttons);card.append(formula);
       row={card,check,checkLabel:label,correctionLabel:fixLabel,branchHint,title,video,select,use,note,correction,segment,index:i,
-        promptEditor,promptInfo,rewriteButton,renderButton,branchOnly,branchCascade,loadedVersion:null,editorLoaded:false};clipView.rows.set(i,row);
+        promptEditor,promptInfo,rewriteButton,renderButton,branchOnly,branchCascade,upscale,upscaleLink,upscaleNote,
+        loadedVersion:null,editorLoaded:false};clipView.rows.set(i,row);
+      upscale.onclick=()=>runClipAction('api/mv/upscale-clip',{index:i,take:row.select.value});
       check.onchange=updateClipActions;select.onchange=()=>showClipVersion(row);
       use.onclick=()=>adoptClip(row.index,row.select.value);
       branchOnly.onclick=()=>runClipAction('api/mv/continue-branch',{index:i,take:row.select.value,mode:'only'});
@@ -158,6 +186,7 @@ function renderClipPreviews(job){
         if(!text){promptInfo.textContent='請先填寫或貼上本段完整 H3 提示詞。';return;}
         const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
         const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
+        const adopt=!autoResume&&adoptAfterRetake(i);
         const previous=previousTakeForClip(i);
         const draft=row.segment.prompt_rewrite||{};
         if(previous&&draft.status==='ready'&&draft.previous_take&&draft.previous_take!==previous){
@@ -165,7 +194,7 @@ function renderClipPreviews(job){
         }
         return runClipAction('api/mv/retake',{indices:[i],prompts:{[String(i)]:text},
           ...(previous?{previous_takes:{[String(i)]:previous}}:{}),
-          ...(autoResume?{auto_resume:true}:{})});
+          ...(autoResume?{auto_resume:true}:{}),...(adopt?{adopt_continue:true}:{})});
       };
     }
     const desired=segment.pending_take||segment.selected_take||'original';const changed=(row.segment.pending_take||row.segment.selected_take)!==desired;
@@ -234,6 +263,9 @@ function renderClipPreviews(job){
     `第 ${adoptedSource.index+1} 段已選用正式新版；按本段「從新版尾幀重拍後續」，從第 ${adoptedSource.index+2} 段重新交給 9B 寫咒接拍。`:
     batch?.branch&&batch.status==='running'?(batch.branch.mode==='cascade'?'新版尾幀分支：後續重新拍攝與 9B 當段重寫中。':'單段替換分支：保留現有後續。'):
     batch?.branch&&batch.status==='done'?(job.status==='running'?'新版已採用，正在接著生成未完成段落。':'分支續跑完成；原版影片仍在版本紀錄中。'):
+    batch?.adopt_continue_status==='error'&&clipIdle()?`本段已回爐完成，但自動採用續拍沒有啟動：${batch.adopt_continue_error} 可從版本選單選新版，按「確定使用此丹續拍」。`:
+    batch?.adopt_continue&&job.status==='retaking'?`回爐中：拍好會自動正式採用，並從新版尾幀續拍後段。`:
+    batch?.adopt_continue_status==='running'?'本段回爐完成，正在正式採用並交給 9B 續拍下一段…':
     batch?.status==='error'?`回爐未完成：${batch.error} 原版保留；可從版本選單挑選已完成新版。`+(continuous?' 採用後由新版尾幀續拍。':' 確認凝丹後更新成片。'):
     batch?.status==='cancelled'?'緊急停爐成功：目前未完成的候選已取消；舊片、先前完成的段落和候選都保留。可改丹方再回爐。':
     batch?.status==='done'&&batch.auto_resume?(job.status==='running'?

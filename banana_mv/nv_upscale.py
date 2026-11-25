@@ -202,3 +202,121 @@ def render(app, cfg, job, *, source_row=None, resolution=UPGRADE_RESOLUTION):
     except OSError as error:
         master['export_error'] = f'{resolution}P 另存失敗：{error}'
     return master
+
+
+def has_audio(path):
+    return any(stream['codec_type'] == 'audio' for stream in core.probe(path)['streams'])
+
+
+def clip_file(app, job, index, take_id):
+    from banana_mv import takes
+    return takes.take_file(job, index, take_id, '2k.mp4')
+
+
+def clip_download_name(app, job, index, take_id):
+    from banana_mv import takes
+    stem = app.finished_video_target(dict(job, current_master=None)).stem
+    return f'{stem}_第{index + 1:02d}段_V{takes.take_version(job, index, take_id)}_2K.mp4'
+
+
+def start_clip(app, job_id, index, take_id):
+    """Upscale one finished clip version to 2K on its own, for editing elsewhere."""
+    from banana_mv import takes
+    if not app.GPU_LOCK.acquire(blocking=False):
+        raise ValueError('目前有任務在跑，完成後再升級這顆丹藥。')
+    launched = False
+    try:
+        job = app.read_state(job_id)
+        idle = takes.TERMINAL + (('kitchen_ready',) if job.get('kitchen') else ())
+        if job['status'] not in idle:
+            raise ValueError('請先等這爐完成或停爐，再升級單段 2K。')
+        if not isinstance(take_id, str) or take_id == 'current':
+            raise ValueError('請選擇明確的丹藥版本。')
+        takes.segment(job, index)
+        source = takes.take_source(job, index, take_id)
+        executable()
+        cfg = app.backend.load_config()
+        app.CANCEL.discard(job_id)
+        job['clip_upscale'] = {'index': index, 'take': take_id, 'status': 'running'}
+        app.write_state(job)
+        Thread(target=clip_worker, args=(app, cfg, job, index, take_id, source), daemon=True).start()
+        launched = True
+        return takes.describe(job)
+    finally:
+        if not launched:
+            app.GPU_LOCK.release()
+
+
+def clip_worker(app, cfg, job, index, take_id, source):
+    from banana_mv import takes
+    work = app.job_dir(job['id'])
+    state = job['clip_upscale']
+
+    def cancelled():
+        return job['id'] in app.CANCEL
+
+    try:
+        tool = executable()
+        try:
+            app.backend.comfy(cfg, '/free', {'unload_models': True, 'free_memory': True})
+        except Exception:
+            pass
+        with TemporaryDirectory(prefix='nv_clip_', dir=work) as temp:
+            temp = Path(temp)
+            width, height = video_size(source)
+            prepared = source
+            crop = job.get('output_size')
+            # 跟母片一樣先切掉 32 對齊的補邊，再升頻。
+            if crop and (crop[0], crop[1]) != (width, height) and crop[0] <= width and crop[1] <= height:
+                prepared = temp / 'cropped.mp4'
+                core.command(['ffmpeg', '-y', '-v', 'error', '-i', source, '-map', '0:v:0',
+                              '-vf', f'crop={crop[0]}:{crop[1]}', '-c:v', 'libx264', '-crf', '14',
+                              '-pix_fmt', 'yuv420p', prepared])
+                width, height = crop
+            size = output_size(width, height)
+            if size is None:
+                raise ValueError('這段已達 2K（1440P）。')
+            encoded = temp / 'video.mp4'
+            if not encode(tool, prepared, encoded, size, cancelled) or cancelled():
+                raise InterruptedError('已停止單段 2K 升級。')
+            pending = temp / 'clip.mp4'
+            seg = takes.segment(job, index)
+            song = job.get('sources', {}).get('song')
+            if has_audio(source):
+                # 短片的毛片自帶 H3 原生聲音，原樣保留。
+                core.command(['ffmpeg', '-y', '-v', 'error', '-i', encoded, '-i', source,
+                              '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', '-movflags', '+faststart', pending])
+            elif song:
+                # MV 毛片沒有聲音：配上這段在原曲裡的同一段時間，拿去剪就對得上拍。
+                core.command(['ffmpeg', '-y', '-v', 'error', '-i', encoded,
+                              '-ss', f'{seg["start"]:.9f}', '-t', f'{seg["seconds"]:.9f}',
+                              '-i', app.backend.safe_child(work, song),
+                              '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+                              '-shortest', '-movflags', '+faststart', pending])
+            else:
+                shutil.copyfile(encoded, pending)
+            if video_size(pending) != size:
+                raise ValueError('2K 單段輸出尺寸驗證失敗。')
+            target = clip_file(app, job, index, take_id)
+            shutil.copyfile(pending, target)
+        # 從沒回爐過的段還沒有版本表；先建好，才記得住這顆的 2K 檔。
+        takes.archive_original(job, index)
+        row = next(take for take in takes.segment(job, index)['takes'] if take['id'] == take_id)
+        row['upscaled_2k'] = {'file': target.name, 'size': list(size)}
+        try:
+            folder = app.finished_video_target(job).parent
+            folder.mkdir(parents=True, exist_ok=True)
+            exported = folder / clip_download_name(app, job, index, take_id)
+            shutil.copyfile(target, exported)
+            row['upscaled_2k']['output_video'] = str(exported)
+        except OSError as error:
+            row['upscaled_2k']['export_error'] = f'另存失敗：{error}'
+        state.update(status='done')
+    except Exception as error:
+        state.update(status='error', error=str(error))
+    finally:
+        app.CANCEL.discard(job['id'])
+        try:
+            app.write_state(job)
+        finally:
+            app.GPU_LOCK.release()

@@ -1387,6 +1387,15 @@ class Handler(WebHandler):
                 return self.send_file(preview(job,int(args['index']),args.get('take','current')))
             except (ValueError,KeyError,OSError,RuntimeError) as e:
                 return self.send_json({'error':str(e)},400)
+        if url.path=='/api/mv/clip-2k':
+            try:
+                from banana_mv import nv_upscale
+                args=dict(urllib.parse.parse_qsl(url.query));job=read_state(args['id'])
+                index=int(args['index']);take=args['take']
+                return self.send_file(nv_upscale.clip_file(sys.modules[__name__],job,index,take),
+                                      download_name=nv_upscale.clip_download_name(sys.modules[__name__],job,index,take))
+            except (ValueError,KeyError,OSError) as e:
+                return self.send_json({'error':str(e)},400)
         if url.path=='/api/mv/native-sound':
             from banana_mv.native_sound import download_url, track_path
             try:
@@ -1463,6 +1472,10 @@ class Handler(WebHandler):
                 from banana_mv import nv_upscale
                 body=self.body_json()
                 return self.send_json(nv_upscale.start_finished(sys.modules[__name__], body['id'], body.get('version')), 202)
+            if path=='/api/mv/upscale-clip':
+                from banana_mv import nv_upscale
+                body=self.body_json()
+                return self.send_json(nv_upscale.start_clip(sys.modules[__name__],body['id'],body.get('index'),body.get('take')),202)
             if path=='/api/mv/promote-draft':
                 body=self.body_json()
                 return self.send_json(promote_draft(body['id'],body.get('steps',8)))
@@ -1475,7 +1488,7 @@ class Handler(WebHandler):
             if path=='/api/mv/retake':
                 from banana_mv.takes import retake
                 body=self.body_json()
-                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False),body.get('rebuild_prompt',False),body.get('previous_takes')))
+                return self.send_json(retake(body['id'],body.get('indices'),body.get('instructions'),body.get('prompts'),body.get('auto_resume',False),body.get('rebuild_prompt',False),body.get('previous_takes'),body.get('adopt_continue',False)))
             if path=='/api/mv/continue-branch':
                 from banana_mv.takes import continue_from_take
                 body=self.body_json()
@@ -1517,6 +1530,9 @@ if __name__=='__main__':
         job=json.loads(p.read_text(encoding='utf-8'))
         if job['status'] not in ('done','error','cancelled','interrupted','plan_ready'):
             job.update(status='interrupted',error='執行階段已重啟；已完成片段仍保存在工作資料夾。')
+            write_state(job)
+        if job.get('clip_upscale',{}).get('status')=='running':
+            job['clip_upscale'].update(status='error',error='執行階段已重啟，單段 2K 未完成。')
             write_state(job)
     print(f'Banana MV on http://127.0.0.1:{backend.PORT}',flush=True)
     if LIVE_PROGRESS is not None:
