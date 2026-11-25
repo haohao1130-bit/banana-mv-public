@@ -8,9 +8,11 @@ import re
 
 HEADING = re.compile(r'^(?P<marks>#{1,6})\s+(?P<title>.+?)\s*$')
 PLAIN_SCENE = re.compile(
-    r'^(?:CHAPTER\s+\d+|SEGMENT\s+\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
+    r'^(?:CHAPTER\s*\d+|SEGMENT\s*\d+|ACT\s*\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
     r'\s*[｜|:：]\s*', re.I
 )
+# 「ACT01｜00:00–00:10」「ACT 01｜…」：有時間的 ACT 一律照歌曲時間分段（不必開直譯劇本）。
+_TIMED_ACT_SCENE = re.compile(r'^ACT\s*\d+\s*[｜|:：]', re.I)
 PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
 PLAIN_CONTROL = re.compile(
     r'^【?(?:電影導演控制|電影攝影控制|角色表演控制|角色與物件連續性|'
@@ -20,8 +22,10 @@ PLAIN_CONTROL = re.compile(
 TIME_SPAN = re.compile(
     r'(?<!\d)(?P<begin>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
     r'\s*[-–—－~～至]\s*'
-    r'(?P<end>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
+    r'(?P<end>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?|音源結束|音樂結束|歌曲結束|曲終|結尾|結束|END)'
 )
+# 「03:10–音源結束」：章節一路到音源最後；分配時與實際片段取交集，自然截在曲尾。
+AUDIO_END_SECONDS = 86400.0
 STORY_NUMBER = re.compile(r'第([一二三四五六七八九十\d]+)段')
 TARGET_RULE = re.compile(
     r'^第(?P<a>[一二三四五六七八九十\d]+)'
@@ -40,6 +44,8 @@ def _number(s):
 
 
 def _seconds(clock):
+    if not re.match(r'\d', clock):
+        return AUDIO_END_SECONDS
     units = clock.split(':')
     seconds = float(units[-1])
     if len(units) > 1:
@@ -76,7 +82,8 @@ def parse_timed_source(prompt, *, authored_intervals=False):
         if not line or line in ('---', '——', '━━━━━━━━━━━━━━━━━━'):
             continue
         heading = HEADING.match(line)
-        plain_scene = authored_intervals and PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
+        plain_scene = bool(PLAIN_SCENE.match(line) and TIME_SPAN.search(line)
+                           and (authored_intervals or _TIMED_ACT_SCENE.match(line)))
         plain_section = authored_intervals and (PLAIN_SECTION.fullmatch(line) or PLAIN_CONTROL.fullmatch(line))
         if heading or plain_scene or plain_section:
             title = heading.group('title').strip() if heading else line
@@ -183,6 +190,10 @@ def allocate_timed_chapters(chapters, segments, commission):
     commission is the existing local 9B handoff writer, unmodified. No future
     scene content is passed to earlier slots.
     """
+    audio_end = segments[-1]['start']+segments[-1]['seconds'] if segments else 0.0
+    for chapter in chapters:
+        if chapter['end'] >= AUDIO_END_SECONDS:
+            chapter['end'] = max(audio_end, chapter['start'])   # 「音源結束」＝實際曲尾
     overlaps = []
     for chapter in chapters:
         matches = [i for i, segment in enumerate(segments)

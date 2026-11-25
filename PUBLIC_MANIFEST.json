@@ -136,7 +136,7 @@
     },
     {
       "path": "banana_mv/timed_slots.py",
-      "sha256": "79cb1d63c8f747e974ff2ebfc37a8777c70cd7ee8663d5e1ba58e254c933cb51"
+      "sha256": "987a465af69d40e0de3867382bc301ab73628c4664aff5685ccf3402449d141d"
     },
     {
       "path": "banana_mv/web/clip_review.js",
@@ -349,6 +349,10 @@
     {
       "path": "workflows/independent_api.json",
       "sha256": "c0f5cbf49800b9533c040417e53c70e2d68f9ece5ff6482c9b7460e20cd86f7d"
+    },
+    {
+      "path": "tests/test_timed_act_headings.py",
+      "sha256": "04e9e42b958e5507a444796a23a4135baf14ec9bae1980623dd50018f88da946"
     }
   ]
 }
