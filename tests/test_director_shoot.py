@@ -96,6 +96,19 @@ class FreeDirectorShotsTests(unittest.TestCase):
         with self.assertRaises(ValueError):   # 超出這段：退回重寫，不能均分再疊一組時間
             parse_director_shots(bad, 10, cues, (), 90.0)
 
+    def test_free_camera_commission_carries_the_full_shared_setup(self):
+        shared = ('@圖片1＝西索＝S1\n@圖片2＝庫洛洛＝S2\n'
+                  '兩人的皮膚始終維持自然真人膚色；彩色光芒屬於外部光源與反射。')
+        commission = _free_commission(
+            {'intensity': 'high'}, {'seconds': 10}, 'S1 坐上椅子。',
+            {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [cue(1, 3, 'S1')], fixed=shared)
+        self.assertIn('SHARED SETUP', commission)
+        self.assertIn('彩色光芒屬於外部光源與反射', commission)
+        self.assertNotIn('＝S1', commission)          # 跟精簡通告單一樣，給 9B 的版本拿掉角色代號
+        self.assertNotIn('SHARED SETUP', _free_commission(
+            {'intensity': 'high'}, {'seconds': 10}, 'S1 坐上椅子。',
+            {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [cue(1, 3, 'S1')]))
+
     def test_cross_srt_handoff_keeps_authorized_rap_and_singing_in_one_shot(self):
         cues = [cue(0, 4, 'S1'), cue(4.2, 10, 'S2')]
         raw = ('detailed_description:\n[Shot 1] <Subject 1> raps with visible '

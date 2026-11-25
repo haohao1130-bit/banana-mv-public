@@ -188,10 +188,17 @@ def _safe_vocals(blocks, slots, fixed):
 
 
 def _free_commission(req, segment, event, pictures, wardrobe, cues,
-                     continuity=False, scene_schedule=(), direction_policy='', body_form=None):
+                     continuity=False, scene_schedule=(), direction_policy='', body_form=None,
+                     fixed=''):
     body_form = body_form or {}
     duration = float(segment['seconds'])
-    lines = [
+    lines = []
+    if fixed and fixed.strip():
+        # 共同設定全文：跟精簡通告單一樣給 9B 看，兩條拍攝路徑資訊量一致。
+        from banana_mv.shoot_plan import fixed_settings_block
+        lines += ['=== 0. SHARED SETUP — USER-AUTHORED, APPLIES TO EVERY CLIP ===',
+                  fixed_settings_block(fixed.strip()), '']
+    lines += [
         '=== 1. CURRENT CLIP FACTS — VOCALS / CAST / CONTINUITY ===',
         f'CLIP DURATION: {duration:.3f}s (ALL times local).',
         'Singer S1 = <Subject 1>, identity picture ' + pictures['S1'] + '.',
@@ -293,7 +300,8 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
     task = _free_commission(req, segment, shoot_event if shoot_event is not None else event,
                             pictures, wardrobe, cues,
                             continuity=len(refs) > 2, scene_schedule=schedule,
-                            direction_policy=direction_policy, body_form=body_form)
+                            direction_policy=direction_policy, body_form=body_form,
+                            fixed=fixed)
     calls = 0
     retry_limit = rewrite_retry_count(req)
     draft_temperature = float(cfg['rewriter'].get('temperature', .7))

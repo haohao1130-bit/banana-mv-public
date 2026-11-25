@@ -120,7 +120,7 @@
     },
     {
       "path": "banana_mv/shoot_plan.py",
-      "sha256": "38c9b108ef53d38ca397b21380b1f3435f4e5f4088ff2b69489a0b6d1f66a716"
+      "sha256": "c323bfbac7c01f13653961441b83534e036e1859ea743380a5868f3671345741"
     },
     {
       "path": "banana_mv/song_context.py",

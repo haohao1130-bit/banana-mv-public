@@ -878,11 +878,7 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
     parts = [f"Target video duration: {seconds:.3f} seconds. Primary filming mode: {row['mode']}."]
     fixed = context.get('fixed_reference_settings')
     if fixed:
-        # 使用者的「= S1」是給 Python 對 SRT 用的；官方指南的 (S1) 是「誰在說話」的標記。
-        # 兩個 S1 撞名會讓 9B 把不唱歌的人標成 (S1)，所以給 9B 看的版本拿掉角色代號。
-        shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
-        shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
-        parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown)
+        parts.append(fixed_settings_block(fixed))
         parts.append(REFERENCE_IDENTITY)
     cast = cast_note(row.get('event', ''), fixed or '')
     if cast:
@@ -966,6 +962,15 @@ def motion_frame_parts(paths):
             im.thumbnail((512, 512))
             parts.extend([('text', f'Motion frame {label}:'), ('image', im.copy())])
     return parts
+
+
+def fixed_settings_block(fixed):
+    """共同設定全文給 9B 看（精簡通告單與雙人自由攝影共用，兩條路徑資訊量一致）。"""
+    # 使用者的「= S1」是給 Python 對 SRT 用的；官方指南的 (S1) 是「誰在說話」的標記。
+    # 兩個 S1 撞名會讓 9B 把不唱歌的人標成 (S1)，所以給 9B 看的版本拿掉角色代號。
+    shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
+    shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
+    return 'FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown
 
 
 def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
