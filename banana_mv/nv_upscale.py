@@ -215,8 +215,15 @@ def clip_file(app, job, index, take_id):
 
 def clip_download_name(app, job, index, take_id):
     from banana_mv import takes
-    stem = app.finished_video_target(dict(job, current_master=None)).stem
-    return f'{stem}_第{index + 1:02d}段_V{takes.take_version(job, index, take_id)}_2K.mp4'
+    title = ''.join(c for c in str(job.get('title') or 'Banana_MV')
+                    if c not in '<>:"/\\|?*' and ord(c) >= 32).strip(' .')[:60] or 'Banana_MV'
+    return f'{title}_{job["id"]}_第{index + 1:02d}段_V{takes.take_version(job, index, take_id)}_2K.mp4'
+
+
+def clip_export_folder(app, job):
+    if hasattr(app, 'finished_video_target'):
+        return app.finished_video_target(job).parent
+    return Path(os.environ.get('BANANA_FINISHED_VIDEOS') or app.backend.DATA / 'videos')
 
 
 def start_clip(app, job_id, index, take_id):
@@ -304,7 +311,7 @@ def clip_worker(app, cfg, job, index, take_id, source):
         row = next(take for take in takes.segment(job, index)['takes'] if take['id'] == take_id)
         row['upscaled_2k'] = {'file': target.name, 'size': list(size)}
         try:
-            folder = app.finished_video_target(job).parent
+            folder = clip_export_folder(app, job)
             folder.mkdir(parents=True, exist_ok=True)
             exported = folder / clip_download_name(app, job, index, take_id)
             shutil.copyfile(target, exported)
