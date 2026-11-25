@@ -50,7 +50,7 @@ REPAIR_SYSTEM = (
 )
 CLOCK = re.compile(
     r'^\s*(?:At\s+)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2}'
-    r'(?:\.\d{1,3})?)\s*[,;:]\s*', re.I
+    r'(?:\.\d{1,3})?)(?:\s*[,;:，—–-]+\s*|\s+)', re.I
 )
 MAX_SHOTS = 12
 
@@ -60,13 +60,29 @@ def _clock(value):
     return f'{minutes:02d}:{value - minutes * 60:06.3f}'
 
 
-def _fill_cut_times(bodies, seconds):
-    """回傳每一鏡補上的切鏡秒數（沒漏寫的是 None）；第一鏡不需要時間。"""
+def _shot_time(clock, seconds, clip_start):
+    """段內秒數；9B 若寫成整首歌的時間（例如 10–20 秒段寫 At 00:12.300），換回段內時間。"""
+    value = round(int(clock['minutes']) * 60 + float(clock['seconds']), 3)
+    if (value >= float(seconds) and clip_start is not None
+            and clip_start <= value < clip_start + float(seconds)):
+        value = round(value - clip_start, 3)
+    return value
+
+
+def _fill_cut_times(bodies, seconds, clip_start=None):
+    """回傳每一鏡補上的切鏡秒數（沒漏寫的是 None）；第一鏡不需要時間。
+    只補「完全沒寫時間」的鏡頭；開頭有 At 但格式怪的不補，免得變成兩組時間。"""
     times = []
     for i, body in enumerate(bodies):
         clock = CLOCK.match(body)
-        times.append(0.0 if i == 0 else
-                     (round(int(clock['minutes']) * 60 + float(clock['seconds']), 3) if clock else None))
+        if i == 0:
+            times.append(0.0)
+        elif clock:
+            times.append(_shot_time(clock, seconds, clip_start))
+        elif re.match(r'\s*At\b', body, re.I):
+            return [None] * len(bodies)
+        else:
+            times.append(None)
     missing = [i for i, value in enumerate(times) if value is None]
     if not missing:
         return [None] * len(bodies)
@@ -81,7 +97,7 @@ def _fill_cut_times(bodies, seconds):
     return [filled[i] if i in missing else None for i in range(len(bodies))]
 
 
-def parse_director_shots(raw, seconds, cues, scene_schedule=()):
+def parse_director_shots(raw, seconds, cues, scene_schedule=(), clip_start=None):
     """Parse 9B-authored CAMERA cuts; do not divide shots at SRT boundaries."""
     text = re.sub(r'<think>.*?</think>', '', raw, flags=re.I | re.S)
     has_native = bool(re.search(r'(?im)^\s*detailed_description\s*:', text))
@@ -104,7 +120,7 @@ def parse_director_shots(raw, seconds, cues, scene_schedule=()):
         parts = []
         bodies = [text[mark.end():labels[i].start() if i < len(labels) else len(text)].strip()
                   for i, mark in enumerate(labels, 1)]
-        filled = _fill_cut_times(bodies, seconds)
+        filled = _fill_cut_times(bodies, seconds, clip_start)
         for i, mark in enumerate(labels, 1):
             number = int(mark[1])
             if number != i:
@@ -125,7 +141,7 @@ def parse_director_shots(raw, seconds, cues, scene_schedule=()):
             else:
                 if not clock:
                     raise ValueError(f'[Shot {i}] needs At mm:ss.mmm camera cut time.')
-                start = round(int(clock['minutes']) * 60 + float(clock['seconds']), 3)
+                start = _shot_time(clock, seconds, clip_start)
                 body = body[clock.end():].strip()
                 if start <= parts[-1][1] + 0.001 or start >= float(seconds) - 0.01:
                     raise ValueError('9B camera shot cut times must strictly increase inside this clip.')
@@ -301,7 +317,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
             try:
                 blocks, slots = parse_director_shots(
                     call(images + [('text', prompt)], draft_temperature if attempt == 0 else .15),
-                    segment['seconds'], cues, schedule)
+                    segment['seconds'], cues, schedule, segment.get('start'))
                 break
             except ValueError as error:
                 why = str(error)

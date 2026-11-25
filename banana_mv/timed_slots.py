@@ -8,11 +8,11 @@ import re
 
 HEADING = re.compile(r'^(?P<marks>#{1,6})\s+(?P<title>.+?)\s*$')
 PLAIN_SCENE = re.compile(
-    r'^(?:CHAPTER\s+\d+|SEGMENT\s+\d+|ACT\s+\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
+    r'^(?:CHAPTER\s*\d+|SEGMENT\s*\d+|ACT\s*\d+|第[一二三四五六七八九十百零〇\d]+[章幕段])'
     r'\s*[｜|:：]\s*', re.I
 )
 PLAIN_SECTION = re.compile(r'^\d{1,2}\s*[｜|]\s*[^\d].*$')
-_TIMED_ACT_SCENE = re.compile(r'^ACT\s+\d+\s*[｜|:：]', re.I)
+_TIMED_ACT_SCENE = re.compile(r'^ACT\s*\d+\s*[｜|:：]', re.I)
 # The long-form Master Director Prompt uses numbered, unmarked English sections.
 # Close an ACT at these headings; never turn final checklists into film events.
 _DIRECTOR_SECTION = re.compile(
@@ -46,8 +46,10 @@ PLAIN_CONTROL = re.compile(
 TIME_SPAN = re.compile(
     r'(?<!\d)(?P<begin>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
     r'\s*[-–—－~～至]\s*'
-    r'(?P<end>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)'
+    r'(?P<end>\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?|音源結束|音樂結束|歌曲結束|曲終|結尾|結束|END)'
 )
+# 「03:10–音源結束」：章節一路到音源最後；分配時與實際片段取交集，自然截在曲尾。
+AUDIO_END_SECONDS = 86400.0
 BRACKET_TIMED_TITLE = re.compile(
     TIME_SPAN.pattern + r'(?:\s*[｜|]\s*.+)?'
 )
@@ -69,6 +71,8 @@ def _number(s):
 
 
 def _seconds(clock):
+    if not re.match(r'\d', clock):
+        return AUDIO_END_SECONDS
     units = clock.split(':')
     seconds = float(units[-1])
     if len(units) > 1:
@@ -421,6 +425,10 @@ def allocate_timed_chapters(chapters, segments, commission, srt_cues=None):
     commission is the existing local 9B handoff writer, unmodified. No future
     scene content is passed to earlier slots.
     """
+    audio_end = segments[-1]['start']+segments[-1]['seconds'] if segments else 0.0
+    for chapter in chapters:
+        if chapter['end'] >= AUDIO_END_SECONDS:
+            chapter['end'] = max(audio_end, chapter['start'])   # 「音源結束」＝實際曲尾
     overlaps = []
     for chapter in chapters:
         matches = [i for i, segment in enumerate(segments)

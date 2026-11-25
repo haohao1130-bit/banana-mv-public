@@ -84,6 +84,18 @@ class FreeDirectorShotsTests(unittest.TestCase):
         self.assertEqual([slot['start'] for slot in slots], [0.0, 4.0, 8.0])
         self.assertEqual(blocks[2], '<Subject 1> spins.')
 
+    def test_dash_separated_and_song_time_cuts_never_get_a_second_timestamp(self):
+        cues = [cue(0, 10, 'S1')]
+        raw = ('detailed_description:\n[Shot 1] <Subject 1> sings.\n'
+               '[Shot 2] At 00:12.300 — <Subject 1> spins.\n[Shot 3] At 00:14.100 — <Subject 1> bows.')
+        blocks, slots = parse_director_shots(raw, 10, cues, (), 10.0)   # 32b314ea7d8d 第 2 段
+        self.assertEqual([slot['start'] for slot in slots], [0.0, 2.3, 4.1])
+        self.assertEqual(blocks[2], '<Subject 1> spins.')
+        bad = ('detailed_description:\n[Shot 1] <Subject 1> sings.\n'
+               '[Shot 2] At 00:08.200 cut to <Subject 1>.\n[Shot 3] At 00:14.000 cut back.')
+        with self.assertRaises(ValueError):   # 超出這段：退回重寫，不能均分再疊一組時間
+            parse_director_shots(bad, 10, cues, (), 90.0)
+
     def test_cross_srt_handoff_keeps_authorized_rap_and_singing_in_one_shot(self):
         cues = [cue(0, 4, 'S1'), cue(4.2, 10, 'S2')]
         raw = ('detailed_description:\n[Shot 1] <Subject 1> raps with visible '
