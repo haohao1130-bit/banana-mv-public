@@ -175,8 +175,11 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(!aiGuide.includes('## 場景設定'));
   assert(aiGuide.length<3000,'5070 AI guide must stay concise');
     assert(/<select id="segment"><option value="5"[^>]*>[^<]*<\/option><option value="10" selected>/.test(html),'5070 default clip length must be 10 seconds');
-  assert(/<select id="resolution"><option value="480p"[^>]*>[^<]*<\/option><option value="720p" selected>/.test(html),'5070 default render must be 720P');
-  assert(html.includes('<input id="width" type="number" value="1280" readonly'),'16:9 initial width must match 720P');
+  assert(/<select id="resolution">.*<option value="576p" selected>/.test(html),'5070 default render must be 576P');
+  assert(!/<option value="720p" selected>/.test(html),'720P is no longer the default');
+  assert(html.includes('<input id="width" type="number" value="1024" readonly'),'16:9 initial width must match 576P');
+  assert(/<option value="chain5" selected>/.test(html),'5070 default mode must be last-five-frame chain');
+  assert(!html.includes('h3-model')&&!html.includes('nvfp4'),'NVFP4 choices are gone from the form');
   assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
   assert.equal(els['ai-guide-fallback-box'].hidden,true);
   const originalClipboard=context.navigator.clipboard;
