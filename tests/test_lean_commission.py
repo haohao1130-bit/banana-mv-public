@@ -78,6 +78,16 @@ class LeanWriterTests(unittest.TestCase):
         self.assertIn('clockwise', self.seg['end_state'])
         self.assertEqual(writer.call_count, 1)
 
+    def test_role_codes_in_prose_become_bound_names(self):
+        # 82d34b772bf0：「面對S2的攻勢」不能被刪成「面對的攻勢」。
+        self.seg['fixed_reference_settings'] = ('<Picture 1>＝蕉大師＝S1\n<Picture 2>＝小語＝S2\n'
+                                                  '面對S2的攻勢，擅長架招。\n面對S1偷懶，會翻白眼。')
+        writer = Mock(return_value=draft())
+        write_shoot_prompt(self.cfg, self.req, self.seg, self.images, None, writer)
+        text = writer.call_args.args[2][0][1]
+        self.assertIn('面對小語的攻勢', text)
+        self.assertIn('面對蕉大師偷懶', text)
+
     def test_previous_end_state_reaches_next_clip(self):
         self.seg['previous_end_state'] = 'motion: spinning clockwise as seen from the camera'
         writer = Mock(return_value=draft())
