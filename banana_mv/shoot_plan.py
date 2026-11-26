@@ -1012,6 +1012,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
     segment['director_mode'] = row['mode']
     segment['commission_words'] = len(text.split())
     repairs = fresh = 0
+    rejections = segment['writer_rejections'] = []   # 退稿原因留在專案裡
     total = (LEAN_MAX_FRESH + 1) * (LEAN_MAX_REPAIRS + 1)
     last_problem = None
     for attempt in range(total):
@@ -1037,6 +1038,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                 prompt = _apply_source_performance(prompt, vocals, context.get('fixed_reference_settings', ''))
             problems = cast_errors(prompt, row.get('event', ''), context.get('fixed_reference_settings', ''), bool(tail))
             if problems and repairs < LEAN_MAX_REPAIRS:
+                rejections.append({'call': attempt + 1, 'kind': 'repair', 'reason': ' | '.join(problems)[:500]})
                 repairs += 1
                 attempts = base + [('text', 'REPAIR THIS CLIP ONLY. Fix exactly these conflicts with the commission, '
                                     'keep everything else, and return all six sections plus END_STATE.\nCONFLICTS:\n'
@@ -1056,6 +1058,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
             return prompt
         except ValueError as error:
             last_problem = error
+            rejections.append({'call': attempt + 1, 'kind': 'format', 'reason': str(error)[:500]})
             if fresh >= LEAN_MAX_FRESH:
                 break
             fresh += 1

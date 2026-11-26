@@ -306,6 +306,12 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
     retry_limit = rewrite_retry_count(req)
     draft_temperature = float(cfg['rewriter'].get('temperature', .7))
     max_calls = (retry_limit+1) * (3 + 2 * MAX_SHOTS)
+    # 每次退稿的原因留在專案裡（status.json 會即時看到），查「為什麼重寫好幾次」不用猜。
+    rejections = segment['writer_rejections'] = []
+
+    def rejected(kind, reason):
+        rejections.append({'call': calls, 'kind': kind, 'reason': str(reason)[:500]})
+        del rejections[:-20]
     def call(parts, temperature, system=DIRECTOR_SYSTEM):
         nonlocal calls
         calls += 1
@@ -329,6 +335,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                 break
             except ValueError as error:
                 why = str(error)
+                rejected('format', why)
         if blocks is None:
             if restart < retry_limit:
                 continue
@@ -343,6 +350,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
             segment['commission_guard_errors'] = [
                 msg for messages in errors.values() for msg in messages
             ]
+            rejected('repair', ' | '.join(segment['commission_guard_errors']))
             if attempt >= 2:
                 failure = SceneStateError(
                     '9B 局部修稿仍有服裝或人物衝突：'
@@ -369,6 +377,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                     blocks, fixes = _safe_vocals(blocks, slots, fixed)
                     vocal_fixes.extend(fixes)
                 except ValueError as error:
+                    rejected('repair_format', f'[Shot {number}] {error}')
                     failure = SceneStateError(
                         f'9B 第 {number} 鏡修稿格式錯誤：{error}')
                     break

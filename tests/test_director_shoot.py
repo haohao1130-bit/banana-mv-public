@@ -109,6 +109,20 @@ class FreeDirectorShotsTests(unittest.TestCase):
             {'intensity': 'high'}, {'seconds': 10}, 'S1 坐上椅子。',
             {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [cue(1, 3, 'S1')]))
 
+    def test_rejected_drafts_leave_their_reason_on_the_clip(self):
+        good = ('detailed_description:\n[Shot 1] <Subject 1> waits.\n'
+                '[Shot 2] At 00:04.000 <Subject 2> answers.')
+        bad = ('detailed_description:\n[Shot 1] <Subject 1> waits.\n'
+               '[Shot 2] At 00:14.000 <Subject 2> answers.')
+        replies = iter([bad, good])
+        segment = {'index': 0, 'start': 0, 'seconds': 10}
+        write_director_shoot_prompt(
+            self.config, {'srt_cues': [], 'rewrite_retries': 0}, segment, '兩人對峙。',
+            self.fixed, self.cast, {}, ['tail', 'monk', 'snake'], [], lambda *a: next(replies))
+        self.assertEqual(len(segment['writer_rejections']), 1)
+        self.assertEqual(segment['writer_rejections'][0]['kind'], 'format')
+        self.assertIn('strictly increase', segment['writer_rejections'][0]['reason'])
+
     def test_free_camera_shared_setup_names_subjects_not_pictures(self):
         # 82d34b772bf0《大乘蕉宗住持》：共同設定的 <Picture N> 讓 9B 在鏡頭內文寫圖片編號，
         # 一直被退回局部修稿；接續段的 <Picture 1> 其實是上一段尾幀。
