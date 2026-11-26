@@ -14,6 +14,7 @@ MODELS = {
     'video_vae': 'minimax_h3_video_vae_int8_convrot.safetensors',
     'audio_vae': 'minimax_h3_audio_vae_fp32.safetensors',
 }
+H3_NVFP4_MODEL = 'minimax_h3_ref2va_pruned_nvfp4.safetensors'
 MOTION_LORAS = {'combat': 'H3_Combat_V2.safetensors', 'repair': 'Motion_Repair.safetensors'}
 
 
@@ -280,7 +281,7 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    first_frame=None, steps=8, *, acceleration=True, motion_lora=True,
                    director_mode='performance', intensity='high',
                    kitchen_attention=None, sparse_attention=None, guide_frames=None,
-                   native_sound=None, native_sound_event=None):
+                   native_sound=None, native_sound_event=None, h3_nvfp4=False):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
     if intensity not in ('normal', 'high', 'extreme'):
         raise ValueError('未知動作強度')
@@ -297,8 +298,9 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
     images = reference_images(image, bool(first_frame))
     def node(kind, **inputs):
         return {'class_type': kind, 'inputs': inputs}
+    unet = H3_NVFP4_MODEL if h3_nvfp4 else MODELS['unet']
     w = {
-        '1': node('UNETLoader', unet_name=MODELS['unet'], weight_dtype='default'),
+        '1': node('UNETLoader', unet_name=unet, weight_dtype='default'),
         '2': node('CLIPLoader', clip_name=MODELS['clip'], type='minimax', device='default'),
         '3': node('VAELoader', vae_name=MODELS['video_vae']),
         '4': node('VAELoader', vae_name=MODELS['audio_vae']),
