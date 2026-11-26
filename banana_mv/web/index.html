@@ -76,8 +76,9 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 <label for="h3-model">H3 生成模型</label>
 <select id="h3-model">
   <option value="int8" selected>PRISM INT8（預設）</option>
-  <option value="nvfp4-8">Ref2VA NVFP4｜8 步</option>
-  <option value="nvfp4-10">Ref2VA NVFP4｜10 步</option>
+  <option value="nvfp4-turbo-8">Ref2VA NVFP4＋Turbo LoRA｜8 步</option>
+  <option value="nvfp4-8">Ref2VA NVFP4 基礎版｜8 步</option>
+  <option value="nvfp4-10">Ref2VA NVFP4 基礎版｜10 步</option>
 </select>
 <div class="row"><div><label>影片風格</label><select id="director"><option value="auto">自動導演</option><option value="performance">演唱</option><option value="dance">舞蹈</option><option value="action">武打</option><option value="band">樂團</option><option value="chase">追逐</option><option value="fantasy">奇幻</option><option value="story">劇情</option><option value="horror">懸疑</option><option value="comedy">搞笑</option></select></div><div><label>動作強度</label><select id="intensity"><option value="normal">自然</option><option value="high" selected>高動態</option><option value="extreme">電影級爆發</option></select></div></div><label><input id="dynamic_cuts" type="checkbox" checked> 音樂導向動態切鏡</label><p class="muted">自動模式依故事與排除條件選擇適合的模式；音樂分析提供強弱與時機。各模式有具體動作、反應及鏡頭規則，切鏡與效果仍需看片確認。</p>
 <label><input id="rewrite" type="checkbox" checked> 使用本地 9B 自動導演</label><p class="muted">勾選時，Python 先分配事件與接續狀態，9B 逐段安排表演和運鏡。取消勾選時，Python 依你貼的劇本切段，直接交給 H3。</p><div id="rewriter-options">
@@ -658,6 +659,7 @@ $('resolution').addEventListener('change',renderSize);
 $('fast-vsr').addEventListener('change',renderSize);
 renderSize();
 function h3Sampling(fast, resolution, model) {
+  if (model === 'nvfp4-turbo-8') return {h3_nvfp4: true, h3_ref2va_turbo: true, sampling_steps: 8};
   if (model === 'nvfp4-10') return {h3_nvfp4: true, sampling_steps: 10};
   if (model === 'nvfp4-8') return {h3_nvfp4: true, sampling_steps: 8};
   return {sampling_steps: fast ? 6 : resolution === '360p' ? 4 : 8};
@@ -687,7 +689,8 @@ $('stop-emergency').onclick=async()=>{
 async function loadProjects(){const rows=await api('api/mv/projects');$('projects').replaceChildren();for(const row of rows){const option=document.createElement('option');option.value=row.id;option.textContent=`${row.title} · ${new Date((row.updated||row.created||0)*1000).toLocaleString()} · ${row.completed}/${row.total} 段 · ${row.status}`;$('projects').append(option);}return rows;}
 async function openProject(id){if(!id)throw Error('尚無可開啟的專案。');const j=await api('api/mv/status?id='+id);renderJobSeed(j);clearTimeout(timer);active=id;localStorage.setItem('banana_mv_job',id);renderFinalPreviews({});$('project-summary').textContent=`${j.title||j.id}｜${j.duration.toFixed(1)} 秒｜原設定與素材已保存在專案，續跑不需重新上傳；建立新作品請重新選檔。`;
 const r=j.request||{};
-$('h3-model').value = r.h3_nvfp4 ? (r.sampling_steps === 10 ? 'nvfp4-10' : 'nvfp4-8') : 'int8';
+$('h3-model').value = r.h3_ref2va_turbo ? 'nvfp4-turbo-8' :
+  r.h3_nvfp4 ? (r.sampling_steps === 10 ? 'nvfp4-10' : 'nvfp4-8') : 'int8';
 $('project_scope').value=r.project_scope||'full';$('rewrite_retries').value='5';$('persistent_scene_state').checked=r.scene_state_version===1;srtImportVersion++;srtRead=Promise.resolve();$('srt-file').value='';$('srt-reference').value=r.srt_reference||'';$('lyrics').value=r.lyrics||'';$('srt-import-status').textContent=r.srt_reference?'已載入專案保存的 SRT 參考。':'';$('audio_analysis').checked=r.audio_analysis===true;$('music_structure').checked=r.music_structure===true;$('kitchen_attention').checked=r.kitchen_attention??(r.acceleration!==false);$('sparse_attention').checked=r.sparse_attention??(r.acceleration!==false);for(const [key,value] of Object.entries({mode:r.mode,aspect:r.aspect,segment:r.segment_seconds,prompt:r.prompt,lyrics:r.lyrics,director:r.director,intensity:r.intensity,seed:j.seed,'project-name':j.title||''})){if(value!==undefined)$(key).value=String(value);}for(const key of ['rewrite','face_identity','motion_lora','dynamic_cuts'])$(key).checked=r[key]!==false;
 restoreRewriterOptions(r);
 $('fast-vsr').checked=false;
