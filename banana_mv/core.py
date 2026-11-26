@@ -15,6 +15,7 @@ MODELS = {
     'audio_vae': 'minimax_h3_audio_vae_fp32.safetensors',
 }
 H3_NVFP4_MODEL = 'minimax_h3_ref2va_pruned_nvfp4.safetensors'
+H3_REF2VA_TURBO_LORA = 'minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors'
 MOTION_LORAS = {'combat': 'H3_Combat_V2.safetensors', 'repair': 'Motion_Repair.safetensors'}
 
 
@@ -281,8 +282,10 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    first_frame=None, steps=8, *, acceleration=True, motion_lora=True,
                    director_mode='performance', intensity='high',
                    kitchen_attention=None, sparse_attention=None, guide_frames=None,
-                   native_sound=None, native_sound_event=None, h3_nvfp4=False):
+                   native_sound=None, native_sound_event=None, h3_nvfp4=False, h3_ref2va_turbo=False):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
+    if h3_ref2va_turbo and (not h3_nvfp4 or steps != 8):
+        raise ValueError('Ref2VA Turbo 須搭配 NVFP4 並使用 8 步。')
     if intensity not in ('normal', 'high', 'extreme'):
         raise ValueError('未知動作強度')
     # Legacy acceleration toggled both patches. Explicit fields override it independently.
@@ -346,6 +349,11 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                                 vae=['3',0], image=previous, frame_idx=0)
         w['9']['inputs']['conditioning'] = ['guide_last5',0]
     model = ['1',0]
+    if h3_ref2va_turbo:
+        w['h3_ref2va_turbo'] = node('LoraLoaderModelOnly', model=model,
+                                   lora_name=H3_REF2VA_TURBO_LORA, strength_model=1.0)
+        model = ['h3_ref2va_turbo', 0]
+        w['8']['inputs']['shift_video'] = 6.0
     if motion_lora:
         multiplier = {'normal': 0.6, 'high': 1.0, 'extreme': 1.3}[intensity]
         if director_mode == 'action':
