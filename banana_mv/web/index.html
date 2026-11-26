@@ -81,6 +81,12 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 </div>
 <details id="action-loras-box" class="action-loras"><summary>動作 LoRA 控制台（實驗，預設收起）</summary>
 <fieldset id="action-loras"><legend class="sr-only">動作 LoRA 控制台</legend>
+<div id="anti-jelly-settings" hidden>
+<label><input id="anti-jelly" type="checkbox" disabled aria-describedby="anti-jelly-status"> 高速動態修復（退果凍・實驗）</label>
+<p class="muted">Temporal Latent 自動修復。建議先用 480P、10／15 秒測試。保留原音軌，可能增加耗時。</p>
+<p id="anti-jelly-status" class="muted" role="status"></p>
+<button id="anti-jelly-check" type="button" class="secondary">檢查修復外掛</button>
+</div>
 <p class="muted">目前 8 步測試容易有殘影，可能要 10～20 步才好用；平常不用打開。勾選才載入，權重就是實際掛載值，不再乘動作強度。觸發詞由程式加在送進 H3 的提示詞最前面，9B 原稿不會被改。</p>
 <div class="action-lora"><label><input id="lora_combat" type="checkbox"> Combat V2｜武術動作</label><label>權重 <input id="lora_combat_strength" type="number" min="0" max="1.2" step="0.05" value="0.5"></label><select id="lora_combat_trigger" aria-label="Combat 觸發詞"><option value="none" selected>無觸發（最穩）</option><option value="prfight2">強化：prfight2</option><option value="prfight2_prfin1">重特技：prfight2, prfin1</option></select></div>
 <div class="action-lora"><label><input id="lora_fight_flow" type="checkbox"> Fight Flow V2｜連續攻防</label><label>權重 <input id="lora_fight_flow_strength" type="number" min="0" max="1.2" step="0.05" value="0.65"></label><select id="lora_fight_flow_mode" aria-label="Fight Flow 交互模式"><option value="unarmed" selected>徒手攻防</option><option value="melee">近戰兵器</option><option value="gunfu">Gun-fu</option></select></div>
@@ -688,10 +694,38 @@ function restoreActionLoras(saved){
 ['lora_combat','lora_combat_strength','lora_combat_trigger','lora_fight_flow','lora_fight_flow_strength','lora_fight_flow_mode',
  'lora_repair','lora_repair_strength','lora_repair_version','lora_repair_trigger'].forEach(id=>$(id).addEventListener('change',renderActionTriggers));
 renderActionTriggers();
+const antiJellyBox = $('anti-jelly');
+let antiJellyAvailable = false;
+function syncAntiJelly() {
+  antiJellyBox.disabled = !antiJellyAvailable && !antiJellyBox.checked;
+}
+async function checkAntiJelly() {
+  const status = $('anti-jelly-status');
+  const button = $('anti-jelly-check');
+  button.disabled = true;
+  antiJellyAvailable = false;
+  syncAntiJelly();
+  status.textContent = '正在檢查…';
+  try {
+    const capability = await api('api/mv/anti-jelly-capability', {cache:'no-store'});
+    $('anti-jelly-settings').hidden = !capability.local5070;
+    antiJellyAvailable = capability.available === true;
+    syncAntiJelly();
+    status.textContent = capability.available ? '修復外掛已就緒。' : (capability.reason || '修復外掛不可用。');
+  } catch (error) {
+    status.textContent = '檢查失敗：' + error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+$('anti-jelly-check').onclick = checkAntiJelly;
+antiJellyBox.addEventListener('change', syncAntiJelly);
+checkAntiJelly();
+
 function h3Sampling(fast, resolution) {
   return {sampling_steps: fast ? 6 : resolution === '360p' ? 4 : Number($('sampling-steps').value)};
 }
-$('form').onsubmit=async e=>{e.preventDefault();const review=e.submitter?.id==='plan-first';const fast=fastVsrEnabled();const aspect=$('aspect').value;const width=Number($('width').value);const upscale=fast||$('upscale_1080p').checked;mobileJobStatus='preparing';renderComfyProgress();renderRecipe({status:'running'});$('output-location').hidden=true;setFurnace('planning','正在把圖片與歌曲藥材投入爐中。');busy(true);$('progress').max=1;$('progress').value=0;$('progress-label').textContent='整體進度：正在建立任務';$('current-activity').hidden=false;$('activity-text').textContent='正在上傳素材…';promptView.job=null;renderPrompts({id:'pending-upload',segments:[]});renderClipPreviews({id:'pending-upload',segments:[],status:'running'});renderFinalPreviews({});clearTimeout(timer);try{if($('music_structure').checked&&!$('audio_analysis').checked)throw Error('音樂結構分析需要開啟音樂分析引導。');await srtRead;validateImages();$('resume-project').hidden=true;$('project-summary').textContent='';$('job-seed').textContent='本次 Seed：建立任務後顯示';$('audio-summary').textContent='';$('director-summary').textContent='';$('event-plan-details').hidden=true;$('event-plan-text').textContent='';message('正在上傳圖片與歌曲…');const images=[];for(const item of activeImages())images.push(item.id?{id:item.id}:await upload(item.file));const song=await upload($('song').files[0]);const vocal=$('vocal').files[0]?await upload($('vocal').files[0]):null;const effects=$('effects').files[0]?await upload($('effects').files[0]):null;const j=await api('api/mv/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_review:review,project_name:$('project-name').value,image_id:images[0].id,image_ids:images.map(image=>image.id),song_id:song.id,vocal_id:vocal?.id,effects_id:effects?.id,mode:$('mode').value,aspect,width,...h3Sampling(fast,$('resolution').value),segment_seconds:Number($('segment').value),prompt:$('prompt').value,lyrics:$('lyrics').value,srt_reference:$('srt-reference').value,persistent_scene_state:false,rewrite_retries:Number($('rewrite_retries').value),rewrite:$('rewrite').checked,...rewriterOptions(),lean_commission:$('lean_commission')?.checked!==false,shared_setup:$('shared_setup')?.value||'',story_plan:$('rewrite').checked,direct_script:!$('rewrite').checked,project_scope:$('project_scope').value,audio_analysis:$('audio_analysis').checked,music_structure:$('music_structure').checked,face_identity:$('face_identity').checked,kitchen_attention:$('kitchen_attention').checked,sparse_attention:$('sparse_attention').checked,face_refine:$('face_refine').checked,upscale_1080p:upscale,upscale_resolution:1440,face_refine_reference:Number($('face_refine_reference').value),face_refine_reference_2:$('face_refine_reference_2').value ? Number($('face_refine_reference_2').value) : null,motion_lora:false,action_loras:actionLoras(),director:$('director').value,intensity:$('intensity').value,dynamic_cuts:$('dynamic_cuts').checked,seed:$('seed').value})});renderJobSeed(j);active=j.id;localStorage.setItem('banana_mv_job',active);poll();}catch(e){setFurnace('error','任務未能開始，請查看下方錯誤。');message(e.message);busy(false);}};
+$('form').onsubmit=async e=>{e.preventDefault();const review=e.submitter?.id==='plan-first';const fast=fastVsrEnabled();const aspect=$('aspect').value;const width=Number($('width').value);const upscale=fast||$('upscale_1080p').checked;const repair=antiJellyBox.checked;if(repair&&!antiJellyAvailable){message('修復外掛尚未就緒，請檢查外掛或取消勾選。');return;}mobileJobStatus='preparing';renderComfyProgress();renderRecipe({status:'running'});$('output-location').hidden=true;setFurnace('planning','正在把圖片與歌曲藥材投入爐中。');busy(true);$('progress').max=1;$('progress').value=0;$('progress-label').textContent='整體進度：正在建立任務';$('current-activity').hidden=false;$('activity-text').textContent='正在上傳素材…';promptView.job=null;renderPrompts({id:'pending-upload',segments:[]});renderClipPreviews({id:'pending-upload',segments:[],status:'running'});renderFinalPreviews({});clearTimeout(timer);try{if($('music_structure').checked&&!$('audio_analysis').checked)throw Error('音樂結構分析需要開啟音樂分析引導。');await srtRead;validateImages();$('resume-project').hidden=true;$('project-summary').textContent='';$('job-seed').textContent='本次 Seed：建立任務後顯示';$('audio-summary').textContent='';$('director-summary').textContent='';$('event-plan-details').hidden=true;$('event-plan-text').textContent='';message('正在上傳圖片與歌曲…');const images=[];for(const item of activeImages())images.push(item.id?{id:item.id}:await upload(item.file));const song=await upload($('song').files[0]);const vocal=$('vocal').files[0]?await upload($('vocal').files[0]):null;const effects=$('effects').files[0]?await upload($('effects').files[0]):null;const j=await api('api/mv/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_review:review,project_name:$('project-name').value,image_id:images[0].id,image_ids:images.map(image=>image.id),song_id:song.id,vocal_id:vocal?.id,effects_id:effects?.id,mode:$('mode').value,aspect,width,...h3Sampling(fast,$('resolution').value),...(repair?{anti_jelly:true}:{}),segment_seconds:Number($('segment').value),prompt:$('prompt').value,lyrics:$('lyrics').value,srt_reference:$('srt-reference').value,persistent_scene_state:false,rewrite_retries:Number($('rewrite_retries').value),rewrite:$('rewrite').checked,...rewriterOptions(),lean_commission:$('lean_commission')?.checked!==false,shared_setup:$('shared_setup')?.value||'',story_plan:$('rewrite').checked,direct_script:!$('rewrite').checked,project_scope:$('project_scope').value,audio_analysis:$('audio_analysis').checked,music_structure:$('music_structure').checked,face_identity:$('face_identity').checked,kitchen_attention:$('kitchen_attention').checked,sparse_attention:$('sparse_attention').checked,face_refine:$('face_refine').checked,upscale_1080p:upscale,upscale_resolution:1440,face_refine_reference:Number($('face_refine_reference').value),face_refine_reference_2:$('face_refine_reference_2').value ? Number($('face_refine_reference_2').value) : null,motion_lora:false,action_loras:actionLoras(),director:$('director').value,intensity:$('intensity').value,dynamic_cuts:$('dynamic_cuts').checked,seed:$('seed').value})});renderJobSeed(j);active=j.id;localStorage.setItem('banana_mv_job',active);poll();}catch(e){setFurnace('error','任務未能開始，請查看下方錯誤。');message(e.message);busy(false);}};
 $('stop').onclick=async()=>{
  if(!active||$('stop').disabled)return;
  try{
@@ -719,6 +753,9 @@ const r=j.request||{};
 restoreActionLoras(r.action_loras);$('project_scope').value=r.project_scope||'full';$('rewrite_retries').value='5';$('persistent_scene_state').checked=r.scene_state_version===1;srtImportVersion++;srtRead=Promise.resolve();$('srt-file').value='';$('srt-reference').value=r.srt_reference||'';$('lyrics').value=r.lyrics||'';$('srt-import-status').textContent=r.srt_reference?'已載入專案保存的 SRT 參考。':'';$('audio_analysis').checked=r.audio_analysis===true;$('music_structure').checked=r.music_structure===true;$('kitchen_attention').checked=r.kitchen_attention??(r.acceleration!==false);$('sparse_attention').checked=r.sparse_attention??(r.acceleration!==false);for(const [key,value] of Object.entries({mode:r.mode,aspect:r.aspect,segment:r.segment_seconds,prompt:r.prompt,lyrics:r.lyrics,director:r.director,intensity:r.intensity,seed:j.seed,'project-name':j.title||''})){if(value!==undefined)$(key).value=String(value);}for(const key of ['rewrite','face_identity','dynamic_cuts'])$(key).checked=r[key]!==false;
 restoreRewriterOptions(r);
 $('fast-vsr').checked=false;
+antiJellyBox.checked=r.anti_jelly===true;
+syncAntiJelly();
+if(antiJellyBox.checked)$('anti-jelly-settings').closest('details')?.setAttribute('open','');
 $('sampling-steps').value=(!r.h3_nvfp4&&[10,12].includes(r.sampling_steps))?String(r.sampling_steps):'8';
 $('resolution').value=Object.entries(sizePresets).find(([,sizes])=>sizes[$('aspect').value][0]===Number(r.width??j.output_size?.[0]??j.size?.[0]))?.[0]||'720p';   // 沒存寬度的舊專案當年預設 720P
 for(const item of selectedImages)if(item)URL.revokeObjectURL(item.url);selectedImages.fill(null);for(let n=1;n<=9;n++)$(n===1?'image':'image-'+n).value='';for(const key of ['song','vocal','effects'])$(key).value='';renderImages();const referenceCount=j.sources?.images?.length||j.request?.image_ids?.length||1;for(let n=1;n<=Math.min(9,referenceCount);n++){const reference=document.createElement('img');reference.src='api/mv/reference?id='+id+'&image='+(n-1);reference.alt='專案保存的圖片'+n;$('image-preview-'+n).append(reference);$('image-name-'+n).textContent='已保存的圖片'+n+'（續跑沿用；新任務請重新選圖）';}renderSize();busy(!['done','error','cancelled','interrupted','plan_ready'].includes(j.status));await poll();}
