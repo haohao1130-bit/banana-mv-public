@@ -49,7 +49,9 @@ REPAIR_SYSTEM = (
     '[Shot N] in detailed_description. No new shots or dialogue.'
 )
 CLOCK = re.compile(
-    r'^\s*(?:(?:At\s+)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2}(?:\.\d{1,3})?)'
+    # mm:ss.mmm；也讀 hh:mm:ss.mmm、mm:ss:mmm、mm:ss,mmm（9B 偶爾這樣寫，以前會被讀錯）。
+    r'^\s*(?:(?:At\s+)?(?:(?P<hours>\d{1,2}):(?=\d{2}:\d{2}[.,]))?'
+    r'(?P<minutes>\d{1,2}):(?P<seconds>\d{2})(?:[.,](?P<frac>\d{1,3})|:(?P<ms>\d{3}))?'
     # 9B 也常照官方範例寫秒數：At 1.500s / At 1.5 秒 / At 1.5–3.2s（取起點）。
     r'|At\s+(?P<plain>\d{1,3}(?:\.\d{1,3})?)(?:\s*[–-]\s*\d{1,3}(?:\.\d{1,3})?)?'
     r'\s*(?:s|sec|secs|seconds|秒)(?![A-Za-z]))'
@@ -57,10 +59,16 @@ CLOCK = re.compile(
 )
 
 
+MIN_SHOT_SECONDS = 0.25
+
+
 def _clock_value(clock):
     if clock['plain'] is not None:
         return round(float(clock['plain']), 3)
-    return round(int(clock['minutes']) * 60 + float(clock['seconds']), 3)
+    fraction = (float('0.' + clock['frac']) if clock['frac'] else
+                int(clock['ms']) / 1000 if clock['ms'] else 0.0)
+    return round(int(clock['hours'] or 0) * 3600 + int(clock['minutes']) * 60
+                 + int(clock['seconds']) + fraction, 3)
 MAX_SHOTS = 12
 
 
@@ -152,8 +160,13 @@ def parse_director_shots(raw, seconds, cues, scene_schedule=(), clip_start=None)
                     raise ValueError(f'[Shot {i}] needs At mm:ss.mmm camera cut time.')
                 start = _shot_time(clock, seconds, clip_start)
                 body = body[clock.end():].strip()
-                if start <= parts[-1][1] + 0.001 or start >= float(seconds) - 0.01:
-                    raise ValueError('9B camera shot cut times must strictly increase inside this clip.')
+                # 每鏡至少 0.25 秒：529e579d3225 的 9B 把 2.8 秒寫成 At 00:00.002，
+                # 一路 0.002、0.005… 以前只要「晚 1 毫秒」就放行。
+                if start < parts[-1][1] + MIN_SHOT_SECONDS or start > float(seconds) - MIN_SHOT_SECONDS:
+                    raise ValueError(
+                        '9B camera shot cut times must strictly increase inside this clip, each shot lasting '
+                        f'at least {MIN_SHOT_SECONDS} s. Write seconds in the seconds field: At 00:02.800 '
+                        'means 2.8 s; At 00:00.002 means 2 milliseconds.')
             if not body:
                 raise ValueError(f'[Shot {i}] is empty.')
             parts.append((number, start, body))

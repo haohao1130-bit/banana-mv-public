@@ -123,6 +123,22 @@ class FreeDirectorShotsTests(unittest.TestCase):
             'detailed_description:\n[Shot 1] wide.\n[Shot 2] 3 seconds later she turns.', 10, [], ())
         self.assertIn('3 seconds later', blocks[2])
 
+    def test_millisecond_slot_cut_times_are_rejected(self):
+        # 529e579d3225：9B 把 2.8 秒寫成 At 00:00.002，整串 0.002、0.005… 被放行送進 H3。
+        raw = ('detailed_description:\n[Shot 1] wide.\n[Shot 2] At 00:00.002, overhead.\n'
+               '[Shot 3] At 00:00.005, blanket.\n[Shot 4] At 00:00.008, wide.')
+        with self.assertRaisesRegex(ValueError, 'At 00:02.800'):
+            parse_director_shots(raw, 15, [], ())
+
+    def test_odd_clock_spellings_read_as_seconds(self):
+        raw = ('detailed_description:\n[Shot 1] wide.\n[Shot 2] At 00:00:02.800, hours form.\n'
+               '[Shot 3] At 00:05:300, colon millis.\n[Shot 4] At 00:08,250, comma decimal.\n'
+               '[Shot 5] At 00:11, she turns.')
+        blocks, slots = parse_director_shots(raw, 15, [], ())
+        self.assertEqual([slot['start'] for slot in slots], [0.0, 2.8, 5.3, 8.25, 11.0])
+        self.assertEqual(blocks[3], 'colon millis.')
+        self.assertEqual(blocks[5], 'she turns.')
+
     def test_rejected_drafts_leave_their_reason_on_the_clip(self):
         good = ('detailed_description:\n[Shot 1] <Subject 1> waits.\n'
                 '[Shot 2] At 00:04.000 <Subject 2> answers.')
