@@ -964,12 +964,28 @@ def motion_frame_parts(paths):
     return parts
 
 
-def fixed_settings_block(fixed):
-    """共同設定全文給 9B 看（精簡通告單與雙人自由攝影共用，兩條路徑資訊量一致）。"""
+_SETUP_BINDING = re.compile(
+    r'^(\s*)(<Picture\s*(\d+)>|@圖片\s*(\d+))\s*[=＝]\s*([^=＝\n]+?)\s*[=＝]\s*(S[1-8])\b', re.M)
+
+
+def fixed_settings_block(fixed, subjects=False):
+    """共同設定全文給 9B 看（精簡通告單與雙人自由攝影共用，兩條路徑資訊量一致）。
+
+    subjects=True 是雙人自由攝影：人物由 Python 組 <Subject N>，所以綁定行改成
+    「名字＝<Subject N>」，不讓 9B 看到 <Picture N>（接續段的 <Picture 1> 是上一段尾幀）。
+    """
+    names = {role.upper(): name.strip() for *_, name, role in _SETUP_BINDING.findall(fixed)}
+    if subjects:
+        fixed = _SETUP_BINDING.sub(lambda m: f'{m[1]}{m[5].strip()}＝<Subject {m[6][1]}>', fixed)
     # 使用者的「= S1」是給 Python 對 SRT 用的；官方指南的 (S1) 是「誰在說話」的標記。
     # 兩個 S1 撞名會讓 9B 把不唱歌的人標成 (S1)，所以給 9B 看的版本拿掉角色代號。
     shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
-    shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
+    # 內文的 S1/S2 換成綁定的名字：「面對S2的攻勢」→「面對小語的攻勢」，不能直接刪掉變成「面對的攻勢」。
+    # 沒有綁定名字時沿用舊做法：「只有 S1 男主角」→「只有 男主角」。
+    def named(m):
+        name = names.get(m[1].upper(), '')
+        return '' if name and m.string.startswith(name, m.end()) else name   # 「S1 男主角」不疊字
+    shown = re.sub(r'(?<![A-Za-z<(])(S[1-8])\s*(?=[\u4e00-\u9fff])', named, shown)
     return 'FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown
 
 

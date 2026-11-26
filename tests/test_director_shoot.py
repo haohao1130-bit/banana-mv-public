@@ -109,6 +109,22 @@ class FreeDirectorShotsTests(unittest.TestCase):
             {'intensity': 'high'}, {'seconds': 10}, 'S1 坐上椅子。',
             {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [cue(1, 3, 'S1')]))
 
+    def test_free_camera_shared_setup_names_subjects_not_pictures(self):
+        # 82d34b772bf0《大乘蕉宗住持》：共同設定的 <Picture N> 讓 9B 在鏡頭內文寫圖片編號，
+        # 一直被退回局部修稿；接續段的 <Picture 1> 其實是上一段尾幀。
+        shared = ('@圖片1＝蕉大師＝S1\n@圖片2＝小語＝S2\n'
+                  '面對S2的攻勢，擅長從容架招。\n面對S1偷懶及狡辯，會翻白眼。')
+        commission = _free_commission(
+            {'intensity': 'high'}, {'seconds': 10}, 'S1 逃跑。',
+            {'S1': '<Picture 2>', 'S2': '<Picture 3>'}, {}, [cue(1, 3, 'S2')], fixed=shared)
+        setup = commission.split('=== 1.')[0]
+        self.assertNotIn('<Picture', setup)
+        self.assertNotIn('@圖片', setup)
+        self.assertIn('蕉大師＝<Subject 1>', setup)
+        self.assertIn('小語＝<Subject 2>', setup)
+        self.assertIn('面對小語的攻勢', setup)       # 不能被刪成「面對的攻勢」
+        self.assertIn('面對蕉大師偷懶', setup)
+
     def test_cross_srt_handoff_keeps_authorized_rap_and_singing_in_one_shot(self):
         cues = [cue(0, 4, 'S1'), cue(4.2, 10, 'S2')]
         raw = ('detailed_description:\n[Shot 1] <Subject 1> raps with visible '

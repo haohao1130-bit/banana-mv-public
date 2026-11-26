@@ -197,7 +197,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         # 共同設定全文：跟精簡通告單一樣給 9B 看，兩條拍攝路徑資訊量一致。
         from banana_mv.shoot_plan import fixed_settings_block
         lines += ['=== 0. SHARED SETUP — USER-AUTHORED, APPLIES TO EVERY CLIP ===',
-                  fixed_settings_block(fixed.strip()), '']
+                  fixed_settings_block(fixed.strip(), subjects=True), '']
     lines += [
         '=== 1. CURRENT CLIP FACTS — VOCALS / CAST / CONTINUITY ===',
         f'CLIP DURATION: {duration:.3f}s (ALL times local).',
