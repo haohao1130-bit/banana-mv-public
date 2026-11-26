@@ -736,7 +736,14 @@ def lean_commission(req, segment, tail, row, event, context, local_singers, conn
         # 使用者的「= S1」是給 Python 對 SRT 用的；官方指南的 (S1) 是「誰在說話」的標記。
         # 兩個 S1 撞名會讓 9B 把不唱歌的人標成 (S1)，所以給 9B 看的版本拿掉角色代號。
         shown = re.sub(r'\s*[=＝]\s*S[1-8]\b(?=\s*[，,。；;]|\s*$)', '', fixed, flags=re.M)
-        shown = re.sub(r'(?<![A-Za-z<(])S[1-8]\s*(?=[\u4e00-\u9fff])', '', shown)  # 「只有 S1 男主角」→「只有 男主角」
+        # 內文的 S1/S2 換成綁定的名字：「面對S2的攻勢」→「面對小語的攻勢」，不能刪成「面對的攻勢」。
+        names = {role.upper(): name.strip() for name, role in re.findall(
+            r'(?m)^\s*(?:<Picture\s*\d+>|@圖片\s*\d+)\s*[=＝]\s*([^=＝\n]+?)\s*[=＝]\s*(S[1-8])\b', fixed)}
+
+        def named(m):
+            name = names.get(m[1].upper(), '')
+            return '' if name and m.string.startswith(name, m.end()) else name   # 「S1 男主角」不疊字
+        shown = re.sub(r'(?<![A-Za-z<(])(S[1-8])\s*(?=[\u4e00-\u9fff])', named, shown)
         parts.append('FIXED REFERENCE SETTINGS (identities, voices, world; not a mandatory cast list):\n' + shown)
         parts.append(REFERENCE_IDENTITY)
     cast = cast_note(row.get('event', ''), fixed or '')
