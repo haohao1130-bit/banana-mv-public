@@ -18,6 +18,118 @@ H3_NVFP4_MODEL = 'minimax_h3_ref2va_pruned_nvfp4.safetensors'
 H3_REF2VA_TURBO_LORA = 'minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors'
 MOTION_LORAS = {'combat': 'H3_Combat_V2.safetensors', 'repair': 'Motion_Repair.safetensors'}
 
+# 動作 LoRA 控制台（JOKER141）。新專案用 action_loras；沒有這欄的舊專案照舊用 motion_lora。
+ACTION_LORA_FILES = {
+    'combat': 'H3_Combat_V2.safetensors',
+    'fight_flow': 'H3_Fight_Flow_V2.safetensors',
+    'repair_v1': 'Motion_Repair.safetensors',
+    'repair_v2': 'Motion_Repair_V2.safetensors',
+}
+ACTION_LORA_SHA256 = {
+    'H3_Fight_Flow_V2.safetensors': 'ee3af45c4ec4efb2460a20f08b122a2a8dabc2a8d317d257ac3623795477c608',
+    'Motion_Repair_V2.safetensors': 'edfa0e2858caeba7be9108883f61da8525d3c58af998c94ac7a449d9603d7574',
+}
+COMBAT_TRIGGERS = {'none': '', 'prfight2': 'prfight2.', 'prfight2_prfin1': 'prfight2, prfin1.'}
+FIGHT_FLOW_TRIGGERS = {'unarmed': 'Unarmed combat interaction.', 'melee': 'Melee weapon interaction.',
+                       'gunfu': 'Gun-fu interaction.'}
+REPAIR_TRIGGER = 'bunny_crisp_motion'
+ACTION_LORA_MAX = 1.2
+
+
+def normalize_action_loras(value):
+    """Validate the three-LoRA panel; strength 0 or unchecked means not loaded."""
+    if not isinstance(value, dict):
+        raise ValueError('動作 LoRA 設定格式錯誤。')
+    unknown = set(value) - {'combat', 'fight_flow', 'repair'}
+    if unknown:
+        raise ValueError('未知的動作 LoRA：' + '、'.join(sorted(unknown)))
+
+    def row(key, default, choice=None, choices=()):
+        item = value.get(key) or {}
+        if not isinstance(item, dict):
+            raise ValueError(f'{key} 設定格式錯誤。')
+        enabled = item.get('enabled', False)
+        strength = item.get('strength', default)
+        if not isinstance(enabled, bool):
+            raise ValueError(f'{key} 啟用必須為布林值。')
+        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not 0 <= strength <= ACTION_LORA_MAX:
+            raise ValueError(f'{key} 權重需介於 0～{ACTION_LORA_MAX}。')
+        out = {'enabled': enabled and strength > 0, 'strength': round(float(strength), 4)}
+        if choice:
+            picked = item.get(choice, choices[0])
+            if picked not in choices:
+                raise ValueError(f'{key} 的 {choice} 不支援：{picked}')
+            out[choice] = picked
+        return out
+
+    combat = row('combat', 0.5, 'trigger', tuple(COMBAT_TRIGGERS))
+    flow = row('fight_flow', 0.65, 'mode', tuple(FIGHT_FLOW_TRIGGERS))
+    repair = row('repair', 0.35, 'version', ('v2', 'v1'))
+    trigger = (value.get('repair') or {}).get('trigger', True)
+    if not isinstance(trigger, bool):
+        raise ValueError('Motion Repair 觸發詞開關必須為布林值。')
+    repair['trigger'] = trigger
+    return {'combat': combat, 'fight_flow': flow, 'repair': repair}
+
+
+def action_lora_mounts(loras):
+    """Fixed order Combat → Fight Flow → Motion Repair; only enabled ones are loaded."""
+    mounts = []
+    if loras['combat']['enabled']:
+        mounts.append(('combat', ACTION_LORA_FILES['combat'], loras['combat']['strength']))
+    if loras['fight_flow']['enabled']:
+        mounts.append(('fight_flow', ACTION_LORA_FILES['fight_flow'], loras['fight_flow']['strength']))
+    if loras['repair']['enabled']:
+        mounts.append(('repair', ACTION_LORA_FILES['repair_' + loras['repair']['version']],
+                       loras['repair']['strength']))
+    return mounts
+
+
+def action_lora_triggers(loras):
+    words = []
+    if loras['combat']['enabled'] and COMBAT_TRIGGERS[loras['combat']['trigger']]:
+        words.append(COMBAT_TRIGGERS[loras['combat']['trigger']])
+    if loras['fight_flow']['enabled']:
+        words.append(FIGHT_FLOW_TRIGGERS[loras['fight_flow']['mode']])
+    if loras['repair']['enabled'] and loras['repair']['trigger']:
+        words.append(REPAIR_TRIGGER)
+    return words
+
+
+def inject_action_triggers(prompt, words):
+    """Put the trigger line first in detailed_description (or atop a plain prompt).
+
+    Only text sent to H3 changes; the saved 9B draft does not. A trigger the
+    prompt already contains verbatim is not added again."""
+    words = [word for word in words if word not in prompt]
+    if not words:
+        return prompt
+    line = ' '.join(words)
+    match = re.search(r'(?mi)^detailed_description:[ \t]*\n', prompt)
+    if match:
+        return prompt[:match.end()] + line + '\n' + prompt[match.end():]
+    return line + '\n' + prompt
+
+
+def action_lora_brief(req):
+    """One short note for 9B when the action panel is on; empty otherwise."""
+    if 'action_loras' not in req:
+        return ''
+    loras = normalize_action_loras(req['action_loras'])
+    if not action_lora_mounts(loras):
+        return ''
+    names = []
+    if loras['combat']['enabled']:
+        names.append('Combat (martial-arts body mechanics)')
+    if loras['fight_flow']['enabled']:
+        names.append('Fight Flow (' + FIGHT_FLOW_TRIGGERS[loras['fight_flow']['mode']].rstrip('.').lower() + ')')
+    if loras['repair']['enabled']:
+        names.append('Motion Repair (continuity of spins, flips and landings)')
+    return ('ACTION LoRA ACTIVE: ' + ', '.join(names) + '. Python adds the trigger words; do not write them. '
+            'Where the story already fights, write each exchange as who attacks, the move, where it lands, '
+            'the reaction, and why the next move follows. Keep the story, singers and SRT timing unchanged; '
+            'do not add fights the story does not have.')
+
 
 def command(args):
     # ffprobe emits UTF-8 JSON. Windows' default subprocess codec can differ
@@ -278,11 +390,26 @@ def fallback_prompt(prompt, continuation=False, lyrics='', image_count=1, scene_
             '\nnon_diegetic_music:\nUse the provided soundtrack; do not compose a replacement song.')
 
 
+def action_lora_log(loras, mounts, words):
+    loaded = {key: (name, strength) for key, name, strength in mounts}
+    label = {'combat': 'Combat V2', 'fight_flow': 'Fight Flow V2', 'repair': 'Motion Repair'}
+    lines = []
+    for key in ('combat', 'fight_flow', 'repair'):
+        if key in loaded:
+            name, strength = loaded[key]
+            lines.append(f'[Action LoRA] {label[key]}: ON {name} strength={strength}')
+        else:
+            lines.append(f'[Action LoRA] {label[key]}: OFF')
+    lines.append(f'[Action LoRA] mounted={len(mounts)} triggers=' + (' '.join(words) or '(none)'))
+    return lines
+
+
 def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    first_frame=None, steps=8, *, acceleration=True, motion_lora=True,
                    director_mode='performance', intensity='high',
                    kitchen_attention=None, sparse_attention=None, guide_frames=None,
-                   native_sound=None, native_sound_event=None, h3_nvfp4=False, h3_ref2va_turbo=False):
+                   native_sound=None, native_sound_event=None, h3_nvfp4=False, h3_ref2va_turbo=False,
+                   action_loras=None):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
     if h3_ref2va_turbo and (not h3_nvfp4 or steps != 8):
         raise ValueError('Ref2VA Turbo 須搭配 NVFP4 並使用 8 步。')
@@ -354,7 +481,19 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                                    lora_name=H3_REF2VA_TURBO_LORA, strength_model=1.0)
         model = ['h3_ref2va_turbo', 0]
         w['8']['inputs']['shift_video'] = 6.0
-    if motion_lora:
+    if action_loras is not None:
+        # 動作 LoRA 控制台：一套入口，權重就是實際掛載值，不再乘強度倍率。
+        loras = normalize_action_loras(action_loras)
+        mounts = action_lora_mounts(loras)
+        for key, name, strength in mounts:
+            w['action_' + key] = node('LoraLoaderModelOnly', model=model, lora_name=name, strength_model=strength)
+            model = ['action_' + key, 0]
+        words = action_lora_triggers(loras)
+        w['7']['inputs']['prompt'] = inject_action_triggers(prompt, words) if prompt else prompt
+        if prompt:
+            for line in action_lora_log(loras, mounts, words):
+                print(line, flush=True)
+    elif motion_lora:
         multiplier = {'normal': 0.6, 'high': 1.0, 'extreme': 1.3}[intensity]
         if director_mode == 'action':
             w['motion_combat'] = node('LoraLoaderModelOnly', model=model,

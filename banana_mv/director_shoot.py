@@ -290,6 +290,9 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
     if direction_policy:
         lines.extend(('', '=== 4. ADAPTATION / PERFORMANCE / EDITING AUTHORITY ===',
                       direction_policy))
+    from banana_mv.core import action_lora_brief
+    if brief := action_lora_brief(req):
+        lines.extend(('', brief))
     return '\n'.join(lines)
 
 

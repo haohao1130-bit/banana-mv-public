@@ -925,6 +925,9 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
                            ('resolve_start_by', 'settle_by', 'end_time', 'hold_seconds')
                            if isinstance(ending_info.get(key), (int, float)))
         parts.append('ENDING FOR THIS CLIP: ' + ending + (f' (clip-local times: {timing})' if timing else ''))
+    from banana_mv.core import action_lora_brief
+    if brief := action_lora_brief(req):
+        parts.append(brief)
     parts.append('DIRECTION: ' + ('Free MV adaptation: invent striking staging, performance and montage that serve this beat.'
                                   if req.get('story_plan', True) else
                                   'Faithful: stage exactly the supplied events; camera choices are yours.')

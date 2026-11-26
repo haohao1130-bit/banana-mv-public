@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 if __name__=='__main__':
     sys.modules['banana_mv.server']=sys.modules[__name__]
 from banana_mv.director import director_prompt
-from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, align_frames, assemble, audio_window, build_workflow, dimensions,
+from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, ACTION_LORA_FILES, action_lora_mounts,
+                            normalize_action_loras, align_frames, assemble, audio_window, build_workflow, dimensions,
                             duration, enforce_face_identity, fallback_prompt, last_frame, last_frames,
                             output_dimensions, reference_images, segments, trim_video, probe,
                             source_audio_duration)
@@ -182,6 +183,10 @@ def preflight(cfg, graph):
                     raise ValueError(r'ComfyUI 找不到 H3 NVFP4。請執行一鍵安裝包或將模型放到 F:\AI\Models\diffusion_models，再重啟 ComfyUI。')
                 if name == 'lora_name' and n['inputs'][name] == H3_REF2VA_TURBO_LORA:
                     raise ValueError(r'ComfyUI 找不到 Ref2VA Turbo LoRA。請執行 Install_H3_Ref2VA_Turbo8.bat，把檔案裝到 F:\AI\Models\loras，再重啟 ComfyUI。')
+                if name == 'lora_name' and n['inputs'][name] in (ACTION_LORA_FILES['fight_flow'], ACTION_LORA_FILES['repair_v2']):
+                    raise ValueError('ComfyUI 找不到動作 LoRA：' + n['inputs'][name] +
+                                     r'。請執行 tools\install_action_loras.py，或放到 F:\AI\Models\loras 後重啟 ComfyUI；'
+                                     '也可以先在「動作 LoRA 控制台」關掉這顆再開爐。')
                 raise ValueError('尚未下載模型：' + n['inputs'][name] + '；請重跑 Colab ② 下載模型。')
 
 
@@ -216,6 +221,8 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
             'sparse_attention': req.get('sparse_attention',req.get('acceleration',True)),
             'motion_lora': req.get('motion_lora', True),
             'director_mode': mode, 'intensity': req.get('intensity', 'high'),
+            # 新的動作 LoRA 控制台；舊專案沒有這欄，照舊走 motion_lora。
+            **({'action_loras': normalize_action_loras(req['action_loras'])} if 'action_loras' in req else {}),
             **native}
 
 
@@ -1029,6 +1036,8 @@ def start(req):
             graph['unet'] = {'class_type': 'UNETLoader', 'inputs': {'unet_name': H3_NVFP4_MODEL}}
         if options['h3_ref2va_turbo']:
             graph['turbo'] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {'lora_name': H3_REF2VA_TURBO_LORA}}
+        for key, name, _ in action_lora_mounts(options['action_loras']) if 'action_loras' in options else ():
+            graph['action_' + key] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {'lora_name': name}}
     else:
         graph = build_workflow(images_comfy, 'preflight.wav', *size, plan[0]['model_frames'], '', seed, **options)
     preflight(cfg, graph)
