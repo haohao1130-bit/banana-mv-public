@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 if __name__=='__main__':
     sys.modules['banana_mv.server']=sys.modules[__name__]
 from banana_mv.director import director_prompt
+from banana_mv import anti_jelly
 from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, ACTION_LORA_FILES, action_lora_mounts,
                             normalize_action_loras, align_frames, assemble, audio_window, build_workflow, dimensions,
                             duration, enforce_face_identity, fallback_prompt, last_frame, last_frames,
@@ -167,6 +168,8 @@ def clear_progress(job_id):
 
 def preflight(cfg, graph):
     info = backend.comfy(cfg, '/object_info')
+    if 'tlu_repair' in graph:
+        anti_jelly.require_capability(info)
     missing = sorted({n['class_type'] for n in graph.values()} - set(info))
     if missing:
         raise ValueError('缺少節點，請重跑安裝並重啟：' + ', '.join(missing))
@@ -197,6 +200,11 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
     for field in ('acceleration', 'kitchen_attention', 'sparse_attention', 'motion_lora', 'h3_nvfp4', 'h3_ref2va_turbo'):
         if field in req and not isinstance(req[field], bool):
             raise ValueError(field + ' 必須為布林值。')
+    repair = req.get('anti_jelly', False)
+    if not isinstance(repair, bool):
+        raise ValueError('anti_jelly 必須為布林值。')
+    if repair:
+        anti_jelly.validate_request(req, local5070=backend.PORT == 8193)
     h3_nvfp4 = req.get('h3_nvfp4', False)
     h3_ref2va_turbo = req.get('h3_ref2va_turbo', False)
     steps = req.get('sampling_steps', 8)
@@ -225,6 +233,7 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
             'director_mode': mode, 'intensity': req.get('intensity', 'high'),
             # 新的動作 LoRA 控制台；舊專案沒有這欄，照舊走 motion_lora。
             **({'action_loras': normalize_action_loras(req['action_loras'])} if 'action_loras' in req else {}),
+            **({'anti_jelly': True} if repair else {}),
             **native}
 
 
@@ -1042,6 +1051,8 @@ def start(req):
             graph['action_' + key] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {'lora_name': name}}
     else:
         graph = build_workflow(images_comfy, 'preflight.wav', *size, plan[0]['model_frames'], '', seed, **options)
+    if options.get('anti_jelly') and req['plan_review'] and req.get('rewrite', True):
+        graph.update(build_workflow(images_comfy, 'preflight.wav', *size, plan[0]['model_frames'], '', seed, **options))
     preflight(cfg, graph)
     if req['director_schema'] == whole_song.VERSION and not req['plan_review']:
         preflight(cfg, {'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
@@ -1369,6 +1380,15 @@ class Handler(WebHandler):
                                    'version':SERVER_BUILD})
         if url.path=='/api/mv/face-refine-capability':
             return self.send_json({'local5070':backend.PORT==8193})
+        if url.path=='/api/mv/anti-jelly-capability':
+            if backend.PORT != 8193:
+                return self.send_json({'local5070': False, 'available': False})
+            try:
+                info = backend.comfy(backend.load_config(), '/object_info', timeout=8)
+                anti_jelly.require_capability(info)
+                return self.send_json({'local5070': True, 'available': True})
+            except (ValueError, RuntimeError, OSError) as error:
+                return self.send_json({'local5070': True, 'available': False, 'reason': str(error)})
         if url.path=='/api/mv/restart-capability':
             return self.send_json(restart_capability())
         if url.path=='/api/config':
