@@ -125,10 +125,7 @@ def action_lora_brief(req):
         names.append('Fight Flow (' + FIGHT_FLOW_TRIGGERS[loras['fight_flow']['mode']].rstrip('.').lower() + ')')
     if loras['repair']['enabled']:
         names.append('Motion Repair (continuity of spins, flips and landings)')
-    return ('ACTION LoRA ACTIVE: ' + ', '.join(names) + '. Python adds the trigger words; do not write them. '
-            'Where the story already fights, write each exchange as who attacks, the move, where it lands, '
-            'the reaction, and why the next move follows. Keep the story, singers and SRT timing unchanged; '
-            'do not add fights the story does not have.')
+    return 'ACTION LoRA ACTIVE: ' + ', '.join(names) + '. Python adds the trigger words; do not write them.'
 
 
 def command(args):
