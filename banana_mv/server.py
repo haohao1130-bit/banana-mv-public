@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 if __name__=='__main__':
     sys.modules['banana_mv.server']=sys.modules[__name__]
 from banana_mv.director import director_prompt
-from banana_mv.core import (FPS, H3_NVFP4_MODEL, align_frames, assemble, audio_window, build_workflow, dimensions,
+from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, align_frames, assemble, audio_window, build_workflow, dimensions,
                             duration, enforce_face_identity, fallback_prompt, last_frame, last_frames,
                             output_dimensions, reference_images, segments, trim_video, probe,
                             source_audio_duration)
@@ -180,6 +180,8 @@ def preflight(cfg, graph):
                     raise ValueError('Kitchen INT8 注意力不可用，請重跑安裝並重啟，或關閉注意力加速。')
                 if name == 'unet_name' and n['inputs'][name] == H3_NVFP4_MODEL:
                     raise ValueError(r'ComfyUI 找不到 H3 NVFP4。請執行一鍵安裝包或將模型放到 F:\AI\Models\diffusion_models，再重啟 ComfyUI。')
+                if name == 'lora_name' and n['inputs'][name] == H3_REF2VA_TURBO_LORA:
+                    raise ValueError(r'ComfyUI 找不到 Ref2VA Turbo LoRA。請執行 Install_H3_Ref2VA_Turbo8.bat，把檔案裝到 F:\AI\Models\loras，再重啟 ComfyUI。')
                 raise ValueError('尚未下載模型：' + n['inputs'][name] + '；請重跑 Colab ② 下載模型。')
 
 
@@ -187,11 +189,14 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
     if req.get("realism_lora"):
         raise ValueError("fal 真人 LoRA 已移除；此舊專案曾啟用 fal，請另建不使用 fal 的專案，避免續跑混用設定。")
     _, mode = director_prompt(req, seconds, segment)
-    for field in ('acceleration', 'kitchen_attention', 'sparse_attention', 'motion_lora', 'h3_nvfp4'):
+    for field in ('acceleration', 'kitchen_attention', 'sparse_attention', 'motion_lora', 'h3_nvfp4', 'h3_ref2va_turbo'):
         if field in req and not isinstance(req[field], bool):
             raise ValueError(field + ' 必須為布林值。')
     h3_nvfp4 = req.get('h3_nvfp4', False)
+    h3_ref2va_turbo = req.get('h3_ref2va_turbo', False)
     steps = req.get('sampling_steps', 8)
+    if h3_ref2va_turbo and (not h3_nvfp4 or steps != 8):
+        raise ValueError('Ref2VA Turbo 須搭配 NVFP4 並使用 8 步。')
     allowed_steps = (4, 6, 8, 10) if h3_nvfp4 else (4, 6, 8)
     if isinstance(steps, bool) or steps not in allowed_steps:
         raise ValueError('採樣步數支援 4（草稿）、6、8。H3 NVFP4 另支援 10 步。')
@@ -205,7 +210,8 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
             native['native_sound'] = True
             if segment is not None and req.get('rewrite', True) and not edited_prompt:
                 native['native_sound_event'] = segment.get('director_plan', {}).get('event')
-    return {'steps': int(steps), 'h3_nvfp4': h3_nvfp4, 'acceleration': req.get('acceleration', True),
+    return {'steps': int(steps), 'h3_nvfp4': h3_nvfp4, 'h3_ref2va_turbo': h3_ref2va_turbo,
+            'acceleration': req.get('acceleration', True),
             'kitchen_attention': req.get('kitchen_attention',req.get('acceleration',True)),
             'sparse_attention': req.get('sparse_attention',req.get('acceleration',True)),
             'motion_lora': req.get('motion_lora', True),
@@ -1021,6 +1027,8 @@ def start(req):
                  'generate': {'class_type': 'TextGenerate', 'inputs': {}}}
         if options['h3_nvfp4']:
             graph['unet'] = {'class_type': 'UNETLoader', 'inputs': {'unet_name': H3_NVFP4_MODEL}}
+        if options['h3_ref2va_turbo']:
+            graph['turbo'] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {'lora_name': H3_REF2VA_TURBO_LORA}}
     else:
         graph = build_workflow(images_comfy, 'preflight.wav', *size, plan[0]['model_frames'], '', seed, **options)
     preflight(cfg, graph)
