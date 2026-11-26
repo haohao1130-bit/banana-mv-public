@@ -109,6 +109,20 @@ class FreeDirectorShotsTests(unittest.TestCase):
             {'intensity': 'high'}, {'seconds': 10}, 'S1 坐上椅子。',
             {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [cue(1, 3, 'S1')]))
 
+    def test_seconds_style_cut_times_are_accepted(self):
+        # 251892bee152：9B 照官方範例寫 At 1.500s，三份稿都被當成「沒寫時間」退回。
+        raw = ('detailed_description:\n[Shot 1] At 0.000s, wide.\n[Shot 2] At 1.500s, POV doors.\n'
+               '[Shot 3] At 3.2 秒，overhead.\n[Shot 4] At 00:05.200, blanket.\n'
+               '[Shot 5] At 7.5–8.8s: close.\n[Shot 6] At 18.8s, whip pan.')
+        blocks, slots = parse_director_shots(raw, 10, [], (), 10.0)
+        self.assertEqual([slot['start'] for slot in slots], [0.0, 1.5, 3.2, 5.2, 7.5, 8.8])
+        self.assertEqual(blocks[2], 'POV doors.')
+        self.assertEqual(blocks[5], 'close.')
+        # 沒有 At 的「3 seconds later」不是切鏡時間，照舊用前後中點補。
+        blocks, slots = parse_director_shots(
+            'detailed_description:\n[Shot 1] wide.\n[Shot 2] 3 seconds later she turns.', 10, [], ())
+        self.assertIn('3 seconds later', blocks[2])
+
     def test_rejected_drafts_leave_their_reason_on_the_clip(self):
         good = ('detailed_description:\n[Shot 1] <Subject 1> waits.\n'
                 '[Shot 2] At 00:04.000 <Subject 2> answers.')

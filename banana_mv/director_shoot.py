@@ -49,9 +49,18 @@ REPAIR_SYSTEM = (
     '[Shot N] in detailed_description. No new shots or dialogue.'
 )
 CLOCK = re.compile(
-    r'^\s*(?:At\s+)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2}'
-    r'(?:\.\d{1,3})?)(?:\s*[,;:，—–-]+\s*|\s+)', re.I
+    r'^\s*(?:(?:At\s+)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2}(?:\.\d{1,3})?)'
+    # 9B 也常照官方範例寫秒數：At 1.500s / At 1.5 秒 / At 1.5–3.2s（取起點）。
+    r'|At\s+(?P<plain>\d{1,3}(?:\.\d{1,3})?)(?:\s*[–-]\s*\d{1,3}(?:\.\d{1,3})?)?'
+    r'\s*(?:s|sec|secs|seconds|秒)(?![A-Za-z]))'
+    r'(?:\s*[,;:，—–-]+\s*|\s+)', re.I
 )
+
+
+def _clock_value(clock):
+    if clock['plain'] is not None:
+        return round(float(clock['plain']), 3)
+    return round(int(clock['minutes']) * 60 + float(clock['seconds']), 3)
 MAX_SHOTS = 12
 
 
@@ -62,7 +71,7 @@ def _clock(value):
 
 def _shot_time(clock, seconds, clip_start):
     """段內秒數；9B 若寫成整首歌的時間（例如 10–20 秒段寫 At 00:12.300），換回段內時間。"""
-    value = round(int(clock['minutes']) * 60 + float(clock['seconds']), 3)
+    value = _clock_value(clock)
     if (value >= float(seconds) and clip_start is not None
             and clip_start <= value < clip_start + float(seconds)):
         value = round(value - clip_start, 3)
@@ -134,7 +143,7 @@ def parse_director_shots(raw, seconds, cues, scene_schedule=(), clip_start=None)
             if i == 1:
                 start = 0.0
                 if clock:
-                    start = round(int(clock['minutes']) * 60 + float(clock['seconds']), 3)
+                    start = _clock_value(clock)
                     body = body[clock.end():].strip()
                 if abs(start) > 0.001:
                     raise ValueError('First camera shot must start at 0 seconds.')
