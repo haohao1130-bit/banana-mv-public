@@ -67,53 +67,6 @@ class ShootPlanTests(unittest.TestCase):
                         {'start':5,'end':6,'text':'CURRENT_CUE'}])
         return images,cfg,req
 
-    def test_martial_direction_follows_effective_mode_with_all_action_loras_off(self):
-        from banana_mv.python_slots import mode_for
-
-        with tempfile.TemporaryDirectory() as tmp:
-            images, cfg, base = self.fixture(Path(tmp))
-            cfg['rewriter'] = {}
-            base['action_loras'] = {
-                name: {'enabled': False} for name in ('combat', 'fight_flow', 'repair')
-            }
-            routes = {
-                'legacy': {},
-                'lean': {'lean_commission': True},
-                'tagged_srt': {
-                    'director_schema': 6,
-                    'srt_cues': [{'start': 0, 'end': 3, 'text': '[S1] Vocals'}],
-                },
-            }
-            cases = (
-                ('auto', '兩人交拳後各退一步。', 'action'),
-                ('action', '兩人互相閃身後退開。', 'action'),
-                ('auto', '兩人在月光下對望。', 'story'),
-            )
-
-            class PromptCaptured(Exception):
-                pass
-
-            for route, options in routes.items():
-                for director, event, expected_mode in cases:
-                    with self.subTest(route=route, director=director, event=event):
-                        req = dict(base, director=director, **options)
-                        mode = mode_for(event, req)
-                        self.assertEqual(mode, expected_mode)
-                        segment = dict(
-                            timeline()[0],
-                            fixed_reference_settings='S1 = <Picture 1>\nS2 = <Picture 2>',
-                            director_plan={'handoff_version': 1, 'mode': mode, 'event': event},
-                        )
-                        writer = Mock(side_effect=PromptCaptured)
-                        with patch.object(server.backend, 'rewrite_local', writer):
-                            with self.assertRaises(PromptCaptured):
-                                server.local_prompt(cfg, req, segment, images, None)
-                        draft = '\n'.join(
-                            content for kind, content in writer.call_args.args[2] if kind == 'text'
-                        )
-                        self.assertEqual(draft.count('MARTIAL ARTS DIRECTION:'), int(mode == 'action'))
-                        self.assertNotIn('ACTION LoRA ACTIVE:', draft)
-
     def test_once_allocated_then_native_director_only_sees_current_brief(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);images,cfg,req=self.fixture(root)

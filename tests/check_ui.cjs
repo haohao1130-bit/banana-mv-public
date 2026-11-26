@@ -185,6 +185,8 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   assert(html.includes('<input id="width" type="number" value="1024" readonly'),'16:9 initial width must match 576P');
   assert(/<option value="chain5" selected>/.test(html),'5070 default mode must be last-five-frame chain');
   assert(!html.includes('h3-model')&&!html.includes('nvfp4'),'NVFP4 choices are gone from the form');
+  assert(/<details id="action-loras-box"[^>]*><summary>/.test(html)&&!/<details id="action-loras-box"[^>]*\bopen\b/.test(html),'action LoRA panel starts folded');
+  assert(!/id="lora_(combat|fight_flow|repair)" type="checkbox" checked/.test(html),'action LoRAs start off');
   assert(els['ai-guide-copy-status'].textContent.includes('已複製'));
   assert.equal(els['ai-guide-fallback-box'].hidden,true);
   const originalClipboard=context.navigator.clipboard;

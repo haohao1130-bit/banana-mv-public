@@ -104,15 +104,6 @@ Keep lip movement compatible with the supplied audio; add no new vocal material.
 """
 
 
-MARTIAL_ARTS_DIRECTION = """MARTIAL ARTS DIRECTION: Stage only the fight beats already in the current event.
-For each exchange, show who initiates, what they attempt, how the other actor
-responds, and how the visible outcome motivates the next beat. Frame both actors'
-movement clearly and keep their positions continuous across cuts. Give each
-exchange time to read. Preserve the scripted outcomes, cut times, cast, and SRT
-singer assignments. Add no new fight beats.
-"""
-
-
 AUTO_FILMING = """Direct the visual sequence around the current action, performance and reactions.
 Start with the first timed beat. Treat untimed cast, setting, carryover and
 expression notes (入鏡, 場景, 承接, 表情) as context for the timed shots. Place cast
@@ -696,8 +687,6 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
                 'or reaction. Keep dramatic changes and actor movement alive.',
             CLIP_INTENSITY[req.get('intensity', 'high')],
         ))
-        if row['mode'] == 'action':
-            direction_policy += '\n\n' + MARTIAL_ARTS_DIRECTION
         native = write_director_shoot_prompt(
             cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
             _pictures(refs), rewrite, progress, direction_policy=direction_policy,
@@ -815,8 +804,6 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
-    if row['mode'] == 'action':
-        text += '\n' + MARTIAL_ARTS_DIRECTION
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
@@ -938,8 +925,6 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
                            ('resolve_start_by', 'settle_by', 'end_time', 'hold_seconds')
                            if isinstance(ending_info.get(key), (int, float)))
         parts.append('ENDING FOR THIS CLIP: ' + ending + (f' (clip-local times: {timing})' if timing else ''))
-    if row['mode'] == 'action':
-        parts.append(MARTIAL_ARTS_DIRECTION)
     from banana_mv.core import action_lora_brief
     if brief := action_lora_brief(req):
         parts.append(brief)
