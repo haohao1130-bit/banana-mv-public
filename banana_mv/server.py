@@ -202,9 +202,11 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
     steps = req.get('sampling_steps', 8)
     if h3_ref2va_turbo and (not h3_nvfp4 or steps != 8):
         raise ValueError('Ref2VA Turbo 須搭配 NVFP4 並使用 8 步。')
-    allowed_steps = (4, 6, 8, 10) if h3_nvfp4 else (4, 6, 8)
+    allowed_steps = (4, 6, 8, 10) if h3_nvfp4 else (4, 6, 8, 10, 12)
     if isinstance(steps, bool) or steps not in allowed_steps:
-        raise ValueError('採樣步數支援 4（草稿）、6、8。H3 NVFP4 另支援 10 步。')
+        model = 'H3 NVFP4' if h3_nvfp4 else 'PRISM INT8'
+        supported = '、'.join(map(str, allowed_steps))
+        raise ValueError(f'{model} 採樣步數支援 {supported} 步。')
     native = {}
     if req.get('native_sound'):
         cues = req.get('native_sound_cues')
