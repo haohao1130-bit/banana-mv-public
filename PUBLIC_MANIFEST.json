@@ -144,7 +144,7 @@
     },
     {
       "path": "banana_mv/web/index.html",
-      "sha256": "895eb4c9fff822c9b1cec53d3404dd0ebf6ac86b24d75c78c44e716fe27a460c"
+      "sha256": "a2b2842849248d391d5f4ad1ff366c3d1bb93a3942b58ea31cdc2782a9e42cd4"
     },
     {
       "path": "banana_mv/whole_song.py",
@@ -172,7 +172,7 @@
     },
     {
       "path": "tests/check_ui.cjs",
-      "sha256": "d51fea54f13a6a1ecd2a87abfd0352965a7fca9fac7c5939d7760b3759aed9c0"
+      "sha256": "90cdd2fac3e83351d83d5d2778773aed74542e4f40bc73dce723b33e13f99d17"
     },
     {
       "path": "tests/fixtures/four_legs_act02_prompt.txt",
