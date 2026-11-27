@@ -72,6 +72,41 @@ class TemporalRepairTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'FileNotFoundError'):
             anti_jelly.require_capability(info)
 
+    def test_preflight_accepts_current_combo_metadata_and_mixed_formats(self):
+        info = node_info()
+        fields = (
+            ('H3AdaptiveLatentRepair', 'checkpoint'),
+            ('H3AdaptiveLatentRepair', 'motion_mode'),
+            ('H3RepairSchedule', 'scheduler'),
+            ('KSamplerSelect', 'sampler_name'),
+            (anti_jelly.CAPABILITY_NODE, 'readiness'),
+        )
+        for name, field in fields:
+            required = info[name]['input']['required']
+            options = required[field][0]
+            required[field] = ['COMBO', {'default': options[0], 'options': options,
+                                         'multiselect': False}]
+            anti_jelly.require_capability(info)
+
+    def test_preflight_rejects_missing_or_invalid_combo_choices(self):
+        for spec in (
+            ['COMBO', {'default': anti_jelly.CHECKPOINT, 'options': ['other.safetensors']}],
+            ['COMBO', {'default': anti_jelly.CHECKPOINT}],
+            ['COMBO', {'options': anti_jelly.CHECKPOINT}],
+            ['COMBO', {}],
+            [],
+        ):
+            with self.subTest(spec=spec):
+                info = node_info()
+                info['H3AdaptiveLatentRepair']['input']['required']['checkpoint'] = spec
+                with self.assertRaisesRegex(ValueError, 'H3AdaptiveLatentRepair.checkpoint'):
+                    anti_jelly.require_capability(info)
+        info = node_info()
+        info[anti_jelly.CAPABILITY_NODE]['input']['required']['readiness'] = [
+            'COMBO', {'options': ['FileNotFoundError'], 'default': 'ready'}]
+        with self.assertRaisesRegex(ValueError, 'FileNotFoundError'):
+            anti_jelly.require_capability(info)
+
     def test_only_requested_feature_is_guarded(self):
         with patch.object(server.backend, 'PORT', 8190):
             self.assertNotIn('anti_jelly', server.graph_options({}, 15))
