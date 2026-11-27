@@ -13,6 +13,7 @@ def node_info():
 
     return {
         'H3TemporalInsert': node(()),
+        anti_jelly.FFN_NODE: node(('model', 'chunks', 'seq_threshold'), ('MODEL',)),
         'H3AdaptiveLatentRepair': node(
             ('samples', 'conditioning', 'checkpoint', 'motion_mode',
              'spatial_scale', 'untouched_spatial_denoise'),
@@ -50,6 +51,11 @@ class TemporalRepairTests(unittest.TestCase):
                     self.assertEqual(repaired['tlu_repair']['inputs']['conditioning'],
                                      baseline['9']['inputs']['conditioning'])
                     self.assertEqual(repaired['tlu_model']['inputs']['model'], ['1', 0])
+                    self.assertEqual(repaired['tlu_ffn'], {'class_type': 'MiniMaxChunkFeedForward',
+                        'inputs': {'model': ['tlu_model', 0], 'chunks': 4, 'seq_threshold': 4096}})
+                    self.assertEqual(repaired['tlu_guider']['inputs']['model'], ['tlu_ffn', 0])
+                    self.assertEqual(repaired['tlu_sigmas']['inputs']['model'], ['tlu_ffn', 0])
+                    self.assertNotIn('tlu_ffn', baseline)
                     self.assertEqual(repaired['14']['inputs']['hold_map'], ['tlu_repair', 2])
                     self.assertEqual(repaired['15']['inputs']['audio'], ['7', 2])
                     self.assertEqual(repaired['tlu_sigmas']['inputs']['inject'], 0.42)
@@ -60,6 +66,14 @@ class TemporalRepairTests(unittest.TestCase):
     def test_preflight_requires_real_checkpoint_and_pinned_interface(self):
         info = node_info()
         anti_jelly.require_capability(info)
+        missing_ffn = deepcopy(info)
+        missing_ffn.pop(anti_jelly.FFN_NODE)
+        with self.assertRaisesRegex(ValueError, 'ComfyUI-KJNodes'):
+            anti_jelly.require_capability(missing_ffn)
+        bad_ffn = deepcopy(info)
+        bad_ffn[anti_jelly.FFN_NODE]['input']['required'].pop('seq_threshold')
+        with self.assertRaisesRegex(ValueError, 'MiniMaxChunkFeedForward'):
+            anti_jelly.require_capability(bad_ffn)
         missing = deepcopy(info)
         missing.pop('H3TemporalInsert')
         with self.assertRaisesRegex(ValueError, 'H3TemporalInsert'):
@@ -125,7 +139,7 @@ class TemporalRepairTests(unittest.TestCase):
                     self.assertEqual(set(sparse) - set(dense), {'tlu_sparse'})
                     self.assertEqual(sparse['tlu_sparse']['class_type'], 'BlockSparseAttention')
                     opts = sparse['tlu_sparse']['inputs']
-                    self.assertEqual(opts['model'], ['tlu_model', 0])
+                    self.assertEqual(opts['model'], ['tlu_ffn', 0])
                     self.assertEqual(opts['selection'], 'sol-attn')
                     self.assertEqual(opts['selection.tau'], 1.3)
                     self.assertEqual(opts['min_tokens'], 20480)
@@ -133,8 +147,8 @@ class TemporalRepairTests(unittest.TestCase):
                     self.assertEqual(sparse['tlu_model']['inputs']['model'], ['1', 0])
                     for key in ('tlu_sigmas', 'tlu_guider'):
                         self.assertEqual(sparse[key]['inputs']['model'], ['tlu_sparse', 0])
-                        self.assertEqual(dense[key]['inputs']['model'], ['tlu_model', 0])
-                        self.assertEqual(dict(sparse[key]['inputs'], model=['tlu_model', 0]), dense[key]['inputs'])
+                        self.assertEqual(dense[key]['inputs']['model'], ['tlu_ffn', 0])
+                        self.assertEqual(dict(sparse[key]['inputs'], model=['tlu_ffn', 0]), dense[key]['inputs'])
                     for key in dense.keys() - {'tlu_sigmas', 'tlu_guider'}:
                         self.assertEqual(dense[key], sparse[key])
                     self.assertEqual('sparse_attention' in sparse, first_pass_sparse)
