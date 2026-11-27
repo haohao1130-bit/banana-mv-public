@@ -57,6 +57,7 @@ class Element{
 }
 const els=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],new Element()]));
 Object.assign(els.mode,{value:'independent'});els.aspect.value='16:9';els.resolution.value='720p';els.width.value='1280';els.segment.value='10';els.project_scope.value='full';els.rewrite_retries.value='5';els.director.value='performance';els.intensity.value='high';els.face_identity.checked=true;els.audio_analysis.checked=true;els.music_structure.checked=true;els.rewrite.checked=true;els.persistent_scene_state.checked=true;els.kitchen_attention.checked=true;els.lora_fight_flow.checked=true;els.lora_fight_flow_strength.value='0.65';els.lora_fight_flow_mode.value='unarmed';els.lora_repair.checked=true;els.lora_repair_strength.value='0.5';els.lora_repair_version.value='v2';els.lora_repair_trigger.checked=true;els.lora_combat_strength.value='0.5';els.lora_combat_trigger.value='none';
+els.lora_dance_strength.value='0.70';els.lora_beat_sync_strength.value='1.00';els.lora_choreography_strength.value='0.40';
 const posts=[],uploads=[],resumes=[],copied=[],retakes=[],selections=[],rewrites=[],branches=[],gracefulStops=[],emergencyStops=[];let reviewJob;const approvals=[];let recipeOpened=false;
 let restartState={available:false,busy:false,reason:'5070 桌面管家尚未啟動'};
 let serverInstance='mv-service-a',restartRequestInstance='mv-service-a',reloadCount=0;
@@ -94,6 +95,24 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     return {status:'done',seed:42,segments:[]};
   }})});
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
+assert.equal(els['martial-guidance'].hidden,true);
+assert.equal(els['dance-guidance'].hidden,true);
+els.director.value='action';els.director.events.change();
+assert.equal(els['martial-guidance'].hidden,false);
+assert.equal(els['dance-guidance'].hidden,true);
+assert.equal(vm.runInContext('actionLoras().fight_flow.enabled',context),true);
+els.director.value='dance';els.director.events.change();
+els.lora_beat_sync.checked=true;els.lora_beat_sync_strength.value='1.35';
+assert.equal(els['martial-guidance'].hidden,true);
+assert.equal(els['dance-guidance'].hidden,false);
+assert.equal(vm.runInContext('actionLoras().fight_flow.enabled',context),false);
+assert.equal(vm.runInContext('actionLoras().beat_sync.enabled',context),true);
+assert.equal(vm.runInContext('actionLoras().beat_sync.strength',context),1.35);
+assert.equal(vm.runInContext('actionLoras().repair.enabled',context),true);
+els.director.value='performance';els.director.events.change();
+assert.equal(vm.runInContext('actionLoras().beat_sync.enabled',context),false);
+els.lora_beat_sync.checked=false;els.lora_beat_sync_strength.value='1.00';
+
 vm.runInContext(fs.readFileSync('banana_mv/web/clip_review.js','utf8'),context);
 const file=name=>({name,size:100,lastModified:1});
 async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault(){}});await vm.runInContext('poll()',context);return posts.at(-1);}
@@ -276,7 +295,7 @@ async function submit(){uploads.length=0;await els.form.onsubmit({preventDefault
   els['srt-file'].files=[{name:'song.srt',size:100,text:async()=>srt}];await els['srt-file'].onchange();assert.equal(els['srt-reference'].value,srt);
   els.lyrics.value='全曲歌詞';
   els.image.files=[file('main.png')];els.image.onchange();els.song.files=[file('song.wav')];
-  let req=await submit();assert.equal(req.preview_zh,undefined);assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,5);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.direct_script,false);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.music_structure,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,false);assert.deepEqual(req.action_loras,{combat:{enabled:false,strength:0.5,trigger:'none'},fight_flow:{enabled:true,strength:0.65,mode:'unarmed'},repair:{enabled:true,strength:0.5,version:'v2',trigger:true}});assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.deepEqual(req.image_ids,['main.png']);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
+  let req=await submit();assert.equal(req.preview_zh,undefined);assert.equal(req.project_scope,'full');assert.equal(req.rewrite_retries,5);assert.equal(req.lyrics,'全曲歌詞');assert.equal(req.srt_reference,srt);assert.equal(req.story_plan,true);assert.equal(req.direct_script,false);assert.equal(req.persistent_scene_state,false);assert.equal(req.audio_analysis,true);assert.equal(req.music_structure,true);assert.equal(req.realism_lora,undefined);assert.equal(req.realism_strength,undefined);assert.equal(req.face_identity,true);assert.equal(req.kitchen_attention,true);assert.equal(req.sparse_attention,false);assert.equal(req.motion_lora,false);assert.deepEqual(req.action_loras,{combat:{enabled:false,strength:0.5,trigger:'none'},fight_flow:{enabled:false,strength:0.65,mode:'unarmed'},dance:{enabled:false,strength:0.7},beat_sync:{enabled:false,strength:1},choreography:{enabled:false,strength:0.4},repair:{enabled:true,strength:0.5,version:'v2',trigger:true}});assert.equal(req.width,1280);assert.equal(req.long_side,undefined);assert.equal(els['size-help'].textContent.includes('1280 × 720'),true);assert.equal(req.image_id,'main.png');assert.deepEqual(req.image_ids,['main.png']);assert.equal(els['job-seed'].textContent,'本次 Seed：42');
   assert.deepEqual(uploads,['main.png','song.wav']);
   assert.equal(req.rewriter_thinking,false);
   assert.equal(els['rewriter-budget-row'].hidden,true);
