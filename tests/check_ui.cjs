@@ -1,6 +1,13 @@
 // Exercise the real frontend script with a tiny DOM and mocked HTTP; no npm packages.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const html=fs.readFileSync('banana_mv/web/index.html','utf8');
+assert(/id="anti-jelly-sparse" type="checkbox" disabled>/.test(html),
+  'Pass 2 sparse acceleration must be opt-in');
+assert(html.indexOf('id="anti-jelly"')<html.indexOf('id="anti-jelly-sparse"')
+    &&html.indexOf('id="anti-jelly-sparse"')<html.indexOf('id="anti-jelly-check"'),
+  'Pass 2 acceleration belongs inside the repair controls');
+assert(html.includes('anti_jelly_sparse:antiJellySparseBox.checked'));
+assert(html.includes('antiJellySparseBox.checked=r.anti_jelly_sparse===true;'))
 assert(html.indexOf('id="final-previews"')<html.indexOf('id="clip-review"'),
   'finished master and 1080P controls belong above the per-clip take list');
 assert(html.indexOf('id="upscale-again"')<html.indexOf('id="upscale-preview"'),
