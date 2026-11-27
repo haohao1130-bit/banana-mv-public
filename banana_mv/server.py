@@ -27,6 +27,7 @@ from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, ACTION_LO
 from banana_mv import services as backend
 from banana_mv.http_server import WebHandler
 from banana_mv.live_progress import LiveProgress
+from banana_mv.fire_monitor import FireMonitor
 from banana_mv.lyrics_reference import (normalize_references, clip_reference, clean_lyric_output,
                                         POLICY as LYRIC_POLICY, OUTPUT_POLICY as LYRIC_OUTPUT_POLICY)
 from banana_mv.scene_state import (SceneStateError, ensure_scene_state, clip_input, state_context,
@@ -53,6 +54,7 @@ STOP_AFTER_CURRENT = set()
 RESTART_LOCK = threading.Lock()
 SERVER_INSTANCE = uuid.uuid4().hex
 LIVE_PROGRESS = LiveProgress() if backend.PORT == 8193 else None
+FIRE_MONITOR = FireMonitor(LIVE_PROGRESS.sampling_state) if LIVE_PROGRESS is not None and sys.platform == 'win32' else None
 RESTART_REQUEST = backend.DATA / 'restart-request.json'
 RESTART_HEARTBEAT = backend.DATA / 'restart-controller.heartbeat'
 
@@ -1388,6 +1390,10 @@ class Handler(WebHandler):
                                    'version':SERVER_BUILD})
         if url.path=='/api/mv/face-refine-capability':
             return self.send_json({'local5070':backend.PORT==8193})
+        if url.path=='/api/mv/dan-fire':
+            if FIRE_MONITOR is None:
+                return self.send_json({'local5070': False, 'available': False})
+            return self.send_json(dict(FIRE_MONITOR.snapshot(), local5070=True))
         if url.path=='/api/mv/anti-jelly-capability':
             if backend.PORT != 8193:
                 return self.send_json({'local5070': False, 'available': False})
