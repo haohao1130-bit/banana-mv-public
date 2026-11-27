@@ -55,6 +55,19 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
  .mobile-furnace-bar .mobile-furnace-link{flex:1;min-width:0;text-align:left}
  .mobile-furnace-label{display:block;font-size:.78rem}
  #alchemy-title{scroll-margin-top:12px}
+ #dan-fire[hidden]{display:none}
+ .dan-fire{border:1px solid #8c7041;border-radius:12px;margin:12px 0;padding:12px;background:#211e16;color:#f0dfb7}
+ .dan-fire-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+ .dan-fire-head h3,.dan-fire-head p{margin:0 0 4px}
+ #dan-fire-state{color:#e7c481;font-size:.95rem}
+ .dan-fire-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+ .dan-fire-grid>div{background:#30291c;border:1px solid #5c4c30;border-radius:8px;padding:8px;min-width:0}
+ .dan-fire-grid span{display:block;font-size:.76rem;color:#c6b68e}
+ .dan-fire-grid strong{display:block;font-size:1.12rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+ .dan-fire[data-warning="true"]{border-color:#f19763}
+ .dan-fire[data-warning="true"] #dan-fire-state,.dan-fire[data-warning="true"] #dan-fire-note{color:#ffb080}
+ #dan-fire-note{margin:4px 0 0}
+ @media(max-width:560px){.dan-fire-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
  .dan-prompt-workbench{overflow-anchor:none}
  .dan-card .dan-prompt-workbench label{display:block}
  .dan-card .dan-prompt-workbench textarea{display:block;width:100%;margin-top:8px}
@@ -121,7 +134,18 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 <details><summary>人聲與進階設定</summary><label>隔離人聲（選填）</label><input id="vocal" type="file" accept="audio/*"><p class="muted">人聲須與原曲同起點、同長度，保留靜音。未提供時以完整混音驅動畫面；目前不自動分離人聲。</p><label>音效／短配音軌（選填）</label><input id="effects" type="file" accept="audio/*"><p class="muted">另行製作的純音效／配音軌，請勿混入歌曲。與原曲同起點、同長度，空白處保留靜音。有聲部分最多佔全曲 25%，每次最多 3 秒；合成時自動壓低音效音量、保留原曲主體。目前不自動生成音效或配音。</p></details>
 <div class="row"><button id="generate" type="submit">直接煉丹</button><button id="plan-first" type="submit" class="secondary">先搓丹方</button></div><p class="muted">直接煉丹：規劃後接著生成。先搓丹方：先看 9B 的各段故事，確認後才開爐。</p></form>
 </section><section class="card"><h2>專案與生成紀錄</h2>
-<div class="action-buttons" role="group" aria-label="專案操作"><button id="open-last" class="secondary" type="button">開啟上次專案</button> <button id="refresh-projects" class="secondary" type="button">重新整理專案</button></div><label for="projects">已保存的專案</label><div class="project-picker"><select id="projects"><option value="">請先讀取專案</option></select><button id="open-project" class="secondary" type="button">開啟選取專案</button></div><p id="project-summary" class="muted"></p><button id="resume-project" type="button" hidden>續跑未完成段落</button><button id="promote-draft" type="button" hidden>✨ 草稿定稿：用同一份提示詞升級 720P 八步</button><p class="muted">Colab ③ 勾選作品存到雲端硬碟後，可在下次啟動接回專案；未勾選則只列出本次執行階段的專案。</p><p id="job-seed" class="muted" style="overflow-wrap:anywhere;user-select:text" aria-live="polite">本次 Seed：尚未開始</p><p id="rewrite-status" class="muted" aria-live="polite"></p><p id="director-summary" class="muted" aria-live="polite"></p><p id="audio-summary" class="muted" aria-live="polite"></p><details id="music-structure-details" hidden><summary>音樂段落預測</summary><pre id="music-structure-text" style="white-space:pre-wrap"></pre></details><section id="recipe-review" class="dan-review" hidden><h2>丹方已備妥・待確認</h2><p class="muted">各段事件已規劃完成，確認後直接使用這份丹方、圖片與歌曲開爐，不會重傳或重排。</p><button id="approve-recipe" type="button">丹方無誤，開爐</button><p id="recipe-feedback" class="muted" role="status"></p><details id="recipe-plan-details" open><summary>查看完整丹方與人物分工（選填）</summary><pre id="recipe-text" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit"></pre></details></section><details id="event-plan-details" class="event-plan-card" hidden><summary>📋 各段事件規劃（展開／收合）</summary><p class="muted">先核對每段事件與人物分工，再查看下面的生成進度和丹藥檢查。</p><pre id="event-plan-text" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit"></pre></details><section class="alchemy-hero" aria-labelledby="alchemy-title">
+<div class="action-buttons" role="group" aria-label="專案操作"><button id="open-last" class="secondary" type="button">開啟上次專案</button> <button id="refresh-projects" class="secondary" type="button">重新整理專案</button></div><label for="projects">已保存的專案</label><div class="project-picker"><select id="projects"><option value="">請先讀取專案</option></select><button id="open-project" class="secondary" type="button">開啟選取專案</button></div><p id="project-summary" class="muted"></p><button id="resume-project" type="button" hidden>續跑未完成段落</button><button id="promote-draft" type="button" hidden>✨ 草稿定稿：用同一份提示詞升級 720P 八步</button><p class="muted">Colab ③ 勾選作品存到雲端硬碟後，可在下次啟動接回專案；未勾選則只列出本次執行階段的專案。</p><p id="job-seed" class="muted" style="overflow-wrap:anywhere;user-select:text" aria-live="polite">本次 Seed：尚未開始</p><p id="rewrite-status" class="muted" aria-live="polite"></p><p id="director-summary" class="muted" aria-live="polite"></p><p id="audio-summary" class="muted" aria-live="polite"></p><details id="music-structure-details" hidden><summary>音樂段落預測</summary><pre id="music-structure-text" style="white-space:pre-wrap"></pre></details><section id="recipe-review" class="dan-review" hidden><h2>丹方已備妥・待確認</h2><p class="muted">各段事件已規劃完成，確認後直接使用這份丹方、圖片與歌曲開爐，不會重傳或重排。</p><button id="approve-recipe" type="button">丹方無誤，開爐</button><p id="recipe-feedback" class="muted" role="status"></p><details id="recipe-plan-details" open><summary>查看完整丹方與人物分工（選填）</summary><pre id="recipe-text" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit"></pre></details></section><details id="event-plan-details" class="event-plan-card" hidden><summary>📋 各段事件規劃（展開／收合）</summary><p class="muted">先核對每段事件與人物分工，再查看下面的生成進度和丹藥檢查。</p><pre id="event-plan-text" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit"></pre></details><section id="dan-fire" class="dan-fire" aria-labelledby="dan-fire-title" hidden>
+ <div class="dan-fire-head"><div><h3 id="dan-fire-title">🔥 蕉宗丹火鑑測儀</h3><p class="muted" id="dan-fire-device">天機尚未接通</p></div><strong id="dan-fire-state">候測</strong></div>
+ <div class="dan-fire-grid">
+  <div><span>丹火溫度</span><strong id="dan-fire-temp">—</strong></div>
+  <div><span>靈力輸出</span><strong id="dan-fire-power">—</strong></div>
+  <div><span>丹爐負載 GPU</span><strong id="dan-fire-gpu">—</strong></div>
+  <div><span>搬運靈氣｜記憶體控制器</span><strong id="dan-fire-mem">—</strong></div>
+  <div><span>爐內空間 VRAM</span><strong id="dan-fire-vram">—</strong></div>
+  <div><span>藥材庫 RAM</span><strong id="dan-fire-ram">—</strong></div>
+ </div>
+ <p id="dan-fire-note" class="muted" role="status">每三秒觀測一次天機。不干涉煉丹。</p>
+</section><section class="alchemy-hero" aria-labelledby="alchemy-title">
   <div class="alchemy-copy">
     <div class="hero-eyebrow"><span></span> 大乘蕉宗 · 公開煉丹房</div>
     <h2 id="alchemy-title">煉丹實況</h2>
@@ -550,6 +574,41 @@ function renderEventPlan(j){
    ...rows.map(s=>`${s.index+1}. ${s.director_plan.mode}\n${manual?originalRefs(s.director_plan.event):s.director_plan.event}`)
  ].filter(Boolean).join('\n\n');
 }
+let danFirePending=false,danFireSupported=true;
+function renderDanFire(info){
+ const panel=$('dan-fire');
+ if(info?.local5070===false){panel.hidden=true;danFireSupported=false;return;}
+ if(info?.local5070!==true)return;
+ panel.hidden=false;
+ const available=info.available===true;
+ const number=(v,suffix)=>Number.isFinite(v)?Math.round(v)+suffix:'—';
+ const bytes=(used,total)=>Number.isFinite(used)&&Number.isFinite(total)
+   ?(used/1073741824).toFixed(1)+' / '+(total/1073741824).toFixed(1)+' GiB':'—';
+ $('dan-fire-device').textContent=available?(info.name||'NVIDIA GPU'):'鑑測儀尚未就緒';
+ $('dan-fire-temp').textContent=available?number(info.temperature,'°C'):'—';
+ $('dan-fire-power').textContent=available?number(info.power_w,' W'):'—';
+ $('dan-fire-gpu').textContent=available?number(info.gpu_percent,'%'):'—';
+ $('dan-fire-mem').textContent=available?number(info.memory_percent,'%'):'—';
+ $('dan-fire-vram').textContent=available?bytes(info.vram_used,info.vram_total):'—';
+ $('dan-fire-ram').textContent=available?bytes(info.ram_used,info.ram_total):'—';
+ const warning=available&&info.warning===true;
+ panel.setAttribute('data-warning',String(warning));
+ $('dan-fire-state').textContent=!available?'天機難測':warning?'丹火虛旺・疑似裝死':
+   info.sampling?'運功採丹':'候火觀測';
+ $('dan-fire-note').textContent=!available?(info.reason||'丹火訊號暫不可用。'):
+   warning?'稟報住持：丹爐持續高負載、低功耗且採樣未前進。疑似顯卡裝死；本儀只呈報，不擅自停爐。':
+   (info.sampling?(info.phase||'H3 採樣')+'｜':'')+'每三秒觀測一次天機。僅供參考，不干涉煉丹。';
+}
+async function refreshDanFire(){
+ if(!danFireSupported||danFirePending)return;
+ danFirePending=true;
+ try{renderDanFire(await api('api/mv/dan-fire',{cache:'no-store'}));}
+ catch(_){if(!$('dan-fire').hidden)renderDanFire({local5070:true,available:false,reason:'天機斷訊，稍後重新觀測。'});}
+ finally{danFirePending=false;}
+}
+void refreshDanFire();
+setInterval(refreshDanFire,3000);
+
 function renderComfyProgress(info){
  const panel=$('comfy-progress'), mobile=$('mobile-comfy-progress');
  const h3=['SamplerCustomAdvanced','KSampler','KSamplerAdvanced'].includes(info?.node);
