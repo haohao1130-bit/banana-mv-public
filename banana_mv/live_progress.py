@@ -37,6 +37,18 @@ class LiveProgress:
                 info.update(done=done, elapsed=round(self._task["last_time"] - self._task["first_time"], 3))
             return info
 
+    def sampling_state(self):
+        """Read-only current sampler identity and last confirmed progress time."""
+        with self._lock:
+            task = self._task
+            if (self._connection != "connected" or task.get("state") != "running"
+                    or task.get("node") not in ("SamplerCustomAdvanced", "KSampler", "KSamplerAdvanced")
+                    or "last_time" not in task or task.get("value", 0) >= task.get("max", 0)):
+                return None
+            node = task.get("node_id")
+            phase = "精煉｜退果凍" if node == "tlu_sample" else "母丹｜H3 採樣"
+            return ((task.get("prompt_id"), node, task["value"]), task["last_time"], phase)
+
     def clear(self, job_id):
         with self._lock:
             if self._job_id == job_id:
