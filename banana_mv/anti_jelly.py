@@ -9,6 +9,22 @@ def validate_request(request, *, local5070):
         raise ValueError('高速動態修復目前只支援本機 5070 的 PRISM INT8 原音軌工作流。')
 
 
+def _combo_options(info, name, field):
+    """Read legacy list choices and current ComfyUI COMBO metadata."""
+    fields = info.get(name, {}).get('input', {})
+    accepted = fields.get('required', {}) | fields.get('optional', {})
+    spec = accepted.get(field)
+    if not isinstance(spec, (list, tuple)) or not spec:
+        return []
+    if isinstance(spec[0], list):
+        return spec[0]
+    if spec[0] == 'COMBO' and len(spec) > 1 and isinstance(spec[1], dict):
+        options = spec[1].get('options')
+        if isinstance(options, list):
+            return options
+    return []
+
+
 def require_capability(info):
     expected = {
         'H3TemporalInsert': ((), ()),
@@ -29,7 +45,7 @@ def require_capability(info):
         accepted = fields.get('required', {}) | fields.get('optional', {})
         if not set(inputs) <= set(accepted) or tuple(node.get('output', ())[:len(outputs)]) != outputs:
             raise ValueError(f'高速動態修復節點介面不相容：{name}。')
-    status = info[CAPABILITY_NODE]['input']['required']['readiness'][0]
+    status = _combo_options(info, CAPABILITY_NODE, 'readiness')
     if status != ['ready']:
         detail = status[0] if isinstance(status, list) and status else '未知狀態'
         raise ValueError('高速動態修復尚未就緒：' + str(detail))
@@ -39,7 +55,7 @@ def require_capability(info):
         ('H3RepairSchedule', 'scheduler', 'beta'),
         ('KSamplerSelect', 'sampler_name', 'res_multistep'),
     ):
-        options = info.get(name, {}).get('input', {}).get('required', {}).get(field, [[]])[0]
+        options = _combo_options(info, name, field)
         if not isinstance(options, list) or value not in options:
             raise ValueError(f'高速動態修復不支援 {name}.{field} = {value}。')
 
