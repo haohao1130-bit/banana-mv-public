@@ -66,7 +66,7 @@ def require_capability(info):
             raise ValueError(f'高速動態修復不支援 {name}.{field} = {value}。')
 
 
-def add_temporal_repair(graph, *, h3_nvfp4, native_sound, sparse_attention=False):
+def add_temporal_repair(graph, *, h3_nvfp4, native_sound, sparse_attention=False, sparse_final=False):
     if h3_nvfp4 or native_sound:
         raise ValueError('高速動態修復目前只支援 PRISM INT8 的原音軌片段。')
 
@@ -85,7 +85,7 @@ def add_temporal_repair(graph, *, h3_nvfp4, native_sound, sparse_attention=False
         graph['tlu_sparse'] = node(
             'BlockSparseAttention', model=model_ref,
             selection='sol-attn', **{'selection.tau': 1.3},
-            start_percent=0.0, end_percent=0.95, dense_blocks='',
+            start_percent=0.0, end_percent=1.0 if sparse_final else 0.95, dense_blocks='',
             min_tokens=20480, extra_tokens=256,
             sink_conditioning='exact_kv_and_rows', verbose=True)
         model_ref = ['tlu_sparse', 0]
