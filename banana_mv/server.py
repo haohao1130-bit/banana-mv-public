@@ -18,7 +18,7 @@ if __name__=='__main__':
     sys.modules['banana_mv.server']=sys.modules[__name__]
 from banana_mv.director import director_prompt
 from banana_mv import anti_jelly
-from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, ACTION_LORA_FILES, action_lora_mounts,
+from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, ACTION_LORA_FILES, DANCE_LORA_SPECS, action_lora_mounts,
                             normalize_action_loras, align_frames, assemble, audio_window, build_workflow, dimensions,
                             duration, enforce_face_identity, fallback_prompt, last_frame, last_frames,
                             output_dimensions, reference_images, segments, trim_video, probe,
@@ -178,6 +178,11 @@ def preflight(cfg, graph):
                   'LoraLoaderModelOnly':'lora_name', 'ModelAttentionBackend':'attention'}
         if n['class_type'] in fields:
             name = fields[n['class_type']]
+            if name == 'lora_name' and n['inputs'][name] in {spec[0] for spec in DANCE_LORA_SPECS.values()}:
+                if n['inputs'][name] not in anti_jelly._combo_options(info, n['class_type'], name):
+                    raise ValueError('舞蹈 LoRA 找不到：' + n['inputs'][name] +
+                                     '。請執行舞蹈模型安裝包並重啟 ComfyUI。')
+                continue
             choices = info[n['class_type']]['input']['required'][name][0]
             if isinstance(choices,list) and n['inputs'][name] not in choices:
                 if name == 'attention':
