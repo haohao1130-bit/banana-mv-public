@@ -406,7 +406,7 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
                    director_mode='performance', intensity='high',
                    kitchen_attention=None, sparse_attention=None, guide_frames=None,
                    native_sound=None, native_sound_event=None, h3_nvfp4=False, h3_ref2va_turbo=False,
-                   action_loras=None, anti_jelly=False):
+                   action_loras=None, anti_jelly=False, anti_jelly_sparse=False):
     """Preserve source-audio sampling; optional model patches precede SigmaShift."""
     if h3_ref2va_turbo and (not h3_nvfp4 or steps != 8):
         raise ValueError('Ref2VA Turbo 須搭配 NVFP4 並使用 8 步。')
@@ -530,7 +530,8 @@ def build_workflow(image, audio, width, height, model_frames, prompt, seed,
     if anti_jelly:
         from banana_mv.anti_jelly import add_temporal_repair
 
-        add_temporal_repair(w, h3_nvfp4=h3_nvfp4, native_sound=native_sound)
+        add_temporal_repair(w, h3_nvfp4=h3_nvfp4, native_sound=native_sound,
+                            sparse_attention=anti_jelly_sparse)
     return w
 
 
