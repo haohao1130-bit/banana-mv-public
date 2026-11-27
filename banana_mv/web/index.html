@@ -106,6 +106,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 <div id="anti-jelly-settings" hidden>
 <label><input id="anti-jelly" type="checkbox" disabled aria-describedby="anti-jelly-status"> 高速動態修復（退果凍・實驗）</label>
 <label><input id="anti-jelly-sparse" type="checkbox" disabled> 第二輪 Sparse Attention 加速（實驗）</label>
+<p class="muted">第二輪 FFN 洩壓閥：退果凍啟用時自動分 4 塊運算（需 KJNodes）；第一輪不受影響。</p>
 <p class="muted">只加速退果凍的第二輪，SOL-Attn；預設關閉，便於比較畫質與速度。Temporal Latent 自動修復建議先用 480P、10／15 秒測試，保留原音軌。</p>
 <p id="anti-jelly-status" class="muted" role="status"></p>
 <button id="anti-jelly-check" type="button" class="secondary">檢查修復外掛</button>
@@ -794,7 +795,7 @@ async function checkAntiJelly() {
     $('anti-jelly-settings').hidden = !capability.local5070;
     antiJellyAvailable = capability.available === true;
     syncAntiJelly();
-    status.textContent = capability.available ? '修復外掛已就緒。' : (capability.reason || '修復外掛不可用。');
+    status.textContent = capability.available ? '修復外掛已就緒・第二輪 FFN 洩壓閥 4 chunks。' : (capability.reason || '修復外掛不可用。');
   } catch (error) {
     status.textContent = '檢查失敗：' + error.message;
   } finally {
