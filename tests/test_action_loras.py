@@ -96,6 +96,25 @@ class ActionLoraPanel(unittest.TestCase):
         self.assertNotIn('prfight2', brief)
 
 
+
+class DanceLoraTests(unittest.TestCase):
+    def test_dance_mounts_and_weights(self):
+        base, _ = build(action_loras={})
+        off, _ = build(action_loras={'dance': {'enabled': False}, 'beat_sync': {'enabled': True, 'strength': 0}})
+        self.assertEqual(base, off)
+        graph, _ = build(action_loras={'dance': {'enabled': True}, 'beat_sync': {'enabled': True, 'strength': 1.35},
+                                      'choreography': {'enabled': True}, 'repair': {'enabled': True}})
+        self.assertEqual(graph['action_dance']['inputs']['strength_model'], 0.7)
+        self.assertEqual(graph['action_beat_sync']['inputs']['strength_model'], 1.35)
+        self.assertEqual(graph['action_choreography']['inputs']['strength_model'], 0.4)
+        self.assertEqual(graph['action_repair']['inputs']['model'], ['action_choreography', 0])
+        self.assertEqual(action_lora_brief({'action_loras': {'dance': {'enabled': True}}}), '')
+        with self.assertRaises(ValueError):
+            normalize_action_loras({'beat_sync': {'strength': 2.01}})
+        with self.assertRaises(ValueError):
+            normalize_action_loras({'dance': {'strength': 1.01}})
+
+
 if __name__ == '__main__':
     unittest.main()
 
