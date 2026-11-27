@@ -7,7 +7,12 @@ assert(html.indexOf('id="anti-jelly"')<html.indexOf('id="anti-jelly-sparse"')
     &&html.indexOf('id="anti-jelly-sparse"')<html.indexOf('id="anti-jelly-check"'),
   'Pass 2 acceleration belongs inside the repair controls');
 assert(html.includes('anti_jelly_sparse:antiJellySparseBox.checked'));
-assert(html.includes('antiJellySparseBox.checked=r.anti_jelly_sparse===true;'))
+assert(html.includes('antiJellySparseBox.checked=r.anti_jelly_sparse===true;'));
+assert(/id="anti-jelly-sparse-final" type="checkbox" disabled>/.test(html));
+assert(html.indexOf('id="anti-jelly-check"')<html.indexOf('id="action-loras-box"'),'temporal repair is visible outside folded Motion Repair');
+assert(html.includes('anti_jelly_sparse_final:antiJellySparseBox.checked&&antiJellySparseFinalBox.checked'));
+assert(html.includes('antiJellySparseFinalBox.checked=r.anti_jelly_sparse_final===true;'));
+assert(!html.includes("$('anti-jelly-settings').closest('details')"));
 assert(html.indexOf('id="final-previews"')<html.indexOf('id="clip-review"'),
   'finished master and 1080P controls belong above the per-clip take list');
 assert(html.indexOf('id="upscale-again"')<html.indexOf('id="upscale-preview"'),
@@ -97,6 +102,14 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     return {status:'done',seed:42,segments:[]};
   }})});
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
+vm.runInContext('antiJellyAvailable=true;syncAntiJelly()',context);
+assert.equal(els['anti-jelly-sparse-final'].disabled,true);
+els['anti-jelly'].checked=true;els['anti-jelly'].events.change();
+assert.equal(els['anti-jelly-sparse-final'].disabled,true);
+els['anti-jelly-sparse'].checked=true;els['anti-jelly-sparse'].events.change();
+assert.equal(els['anti-jelly-sparse-final'].disabled,false);
+els['anti-jelly'].checked=false;els['anti-jelly-sparse'].checked=false;els['anti-jelly'].events.change();
+assert.equal(els['anti-jelly-sparse-final'].disabled,true);
 vm.runInContext("renderDanFire({local5070:true,available:true,name:'RTX 5070',temperature:41,power_w:51,gpu_percent:100,memory_percent:2,vram_used:10737418240,vram_total:12884901888,ram_used:42949672960,ram_total:68719476736,sampling:true,warning:true})",context);
 assert.equal(els['dan-fire'].hidden,false);
 assert.equal(els['dan-fire-state'].textContent,'丹火虛旺・疑似裝死');
