@@ -2,6 +2,9 @@
 CHECKPOINT = 'minimax_h3_latent_upscaler_3d_conv_v2_temporal_bf16.safetensors'
 MOTION_MODE = 'auto_2x'
 CAPABILITY_NODE = 'BananaH3TLUCapability'
+FFN_NODE = 'MiniMaxChunkFeedForward'
+FFN_CHUNKS = 4
+FFN_THRESHOLD = 4096
 
 
 def validate_request(request, *, local5070):
@@ -26,7 +29,10 @@ def _combo_options(info, name, field):
 
 
 def require_capability(info):
+    if FFN_NODE not in info:
+        raise ValueError('第二輪 FFN 防爆缺少 MiniMaxChunkFeedForward。請安裝或更新 ComfyUI-KJNodes，重啟 ComfyUI 後再檢查修復外掛。')
     expected = {
+        FFN_NODE: (('model', 'chunks', 'seq_threshold'), ('MODEL',)),
         'H3TemporalInsert': ((), ()),
         'H3AdaptiveLatentRepair': (
             ('samples', 'conditioning', 'checkpoint', 'motion_mode',
@@ -71,7 +77,10 @@ def add_temporal_repair(graph, *, h3_nvfp4, native_sound, sparse_attention=False
     # Pass 1 keeps its selected LoRAs, attention settings and Euler schedule.
     shift = dict(graph['8']['inputs'], model=['1', 0])
     # Independent opt-in Pass 2 patch: never inherit Pass 1 LoRAs or attention.
-    model_ref = ['tlu_model', 0]
+    # Match upstream's FFN chunking settings, scoped to Pass 2 for this A/B test.
+    graph['tlu_ffn'] = node(FFN_NODE, model=['tlu_model', 0],
+                            chunks=FFN_CHUNKS, seq_threshold=FFN_THRESHOLD)
+    model_ref = ['tlu_ffn', 0]
     if sparse_attention:
         graph['tlu_sparse'] = node(
             'BlockSparseAttention', model=model_ref,
