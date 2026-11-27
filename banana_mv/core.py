@@ -34,17 +34,22 @@ FIGHT_FLOW_TRIGGERS = {'unarmed': 'Unarmed combat interaction.', 'melee': 'Melee
                        'gunfu': 'Gun-fu interaction.'}
 REPAIR_TRIGGER = 'bunny_crisp_motion'
 ACTION_LORA_MAX = 1.2
+DANCE_LORA_SPECS = {
+    'dance': ('DANCE-minimax-h3.safetensors', 0.70, 1.0),
+    'beat_sync': ('舞蹈卡点滑块.safetensors', 1.00, 2.0),
+    'choreography': ('Dance_Choreography_minimaxh3_3394768_epoch_10.safetensors', 0.40, 1.0),
+}
 
 
 def normalize_action_loras(value):
     """Validate the three-LoRA panel; strength 0 or unchecked means not loaded."""
     if not isinstance(value, dict):
         raise ValueError('動作 LoRA 設定格式錯誤。')
-    unknown = set(value) - {'combat', 'fight_flow', 'repair'}
+    unknown = set(value) - {'combat', 'fight_flow', 'repair'} - set(DANCE_LORA_SPECS)
     if unknown:
         raise ValueError('未知的動作 LoRA：' + '、'.join(sorted(unknown)))
 
-    def row(key, default, choice=None, choices=()):
+    def row(key, default, choice=None, choices=(), max_strength=ACTION_LORA_MAX):
         item = value.get(key) or {}
         if not isinstance(item, dict):
             raise ValueError(f'{key} 設定格式錯誤。')
@@ -52,8 +57,8 @@ def normalize_action_loras(value):
         strength = item.get('strength', default)
         if not isinstance(enabled, bool):
             raise ValueError(f'{key} 啟用必須為布林值。')
-        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not 0 <= strength <= ACTION_LORA_MAX:
-            raise ValueError(f'{key} 權重需介於 0～{ACTION_LORA_MAX}。')
+        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not 0 <= strength <= max_strength:
+            raise ValueError(f'{key} 權重需介於 0～{max_strength}。')
         out = {'enabled': enabled and strength > 0, 'strength': round(float(strength), 4)}
         if choice:
             picked = item.get(choice, choices[0])
@@ -69,7 +74,9 @@ def normalize_action_loras(value):
     if not isinstance(trigger, bool):
         raise ValueError('Motion Repair 觸發詞開關必須為布林值。')
     repair['trigger'] = trigger
-    return {'combat': combat, 'fight_flow': flow, 'repair': repair}
+    return {'combat': combat, 'fight_flow': flow, 'repair': repair,
+            **{key: row(key, default, max_strength=maximum)
+               for key, (_, default, maximum) in DANCE_LORA_SPECS.items() if key in value}}
 
 
 def action_lora_mounts(loras):
@@ -79,6 +86,9 @@ def action_lora_mounts(loras):
         mounts.append(('combat', ACTION_LORA_FILES['combat'], loras['combat']['strength']))
     if loras['fight_flow']['enabled']:
         mounts.append(('fight_flow', ACTION_LORA_FILES['fight_flow'], loras['fight_flow']['strength']))
+    for key, (filename, _, _) in DANCE_LORA_SPECS.items():
+        if loras.get(key, {}).get('enabled'):
+            mounts.append((key, filename, loras[key]['strength']))
     if loras['repair']['enabled']:
         mounts.append(('repair', ACTION_LORA_FILES['repair_' + loras['repair']['version']],
                        loras['repair']['strength']))
@@ -125,7 +135,7 @@ def action_lora_brief(req):
         names.append('Fight Flow (' + FIGHT_FLOW_TRIGGERS[loras['fight_flow']['mode']].rstrip('.').lower() + ')')
     if loras['repair']['enabled']:
         names.append('Motion Repair (continuity of spins, flips and landings)')
-    return 'ACTION LoRA ACTIVE: ' + ', '.join(names) + '. Python adds the trigger words; do not write them.'
+    return ('ACTION LoRA ACTIVE: ' + ', '.join(names) + '. Python adds the trigger words; do not write them.') if names else ''
 
 
 def command(args):
@@ -397,6 +407,10 @@ def action_lora_log(loras, mounts, words):
             lines.append(f'[Action LoRA] {label[key]}: ON {name} strength={strength}')
         else:
             lines.append(f'[Action LoRA] {label[key]}: OFF')
+    for key in DANCE_LORA_SPECS:
+        if key in loaded:
+            name, strength = loaded[key]
+            lines.append(f'[Dance LoRA] {key}: ON {name} strength={strength} stage=1')
     lines.append(f'[Action LoRA] mounted={len(mounts)} triggers=' + (' '.join(words) or '(none)'))
     return lines
 
