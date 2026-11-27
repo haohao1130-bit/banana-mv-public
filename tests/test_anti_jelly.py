@@ -107,6 +107,40 @@ class TemporalRepairTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'FileNotFoundError'):
             anti_jelly.require_capability(info)
 
+    def test_pass2_sparse_is_independent_and_opt_in(self):
+        for seconds in (10, 15):
+            for first_pass_sparse in (False, True):
+                with self.subTest(seconds=seconds, first_pass_sparse=first_pass_sparse), patch.object(server.backend, 'PORT', 8193):
+                    request = dict(sampling_steps=12, sparse_attention=first_pass_sparse,
+                                   action_loras={'combat': {'enabled': True, 'strength': 0.5}})
+                    def build(**options):
+                        return build_workflow('ref.png', 'source.wav', 864, 480,
+                                              align_frames(seconds * 24), 'A shot', 70,
+                                              **server.graph_options(dict(request, **options), seconds))
+                    baseline = build()
+                    self.assertEqual(baseline, build(anti_jelly_sparse=True))
+                    dense = build(anti_jelly=True)
+                    self.assertEqual(dense, build(anti_jelly=True, anti_jelly_sparse=False))
+                    sparse = build(anti_jelly=True, anti_jelly_sparse=True)
+                    self.assertEqual(set(sparse) - set(dense), {'tlu_sparse'})
+                    self.assertEqual(sparse['tlu_sparse']['class_type'], 'BlockSparseAttention')
+                    opts = sparse['tlu_sparse']['inputs']
+                    self.assertEqual(opts['model'], ['tlu_model', 0])
+                    self.assertEqual(opts['selection'], 'sol-attn')
+                    self.assertEqual(opts['selection.tau'], 1.3)
+                    self.assertEqual(opts['min_tokens'], 20480)
+                    self.assertEqual(opts['end_percent'], 0.95)
+                    self.assertEqual(sparse['tlu_model']['inputs']['model'], ['1', 0])
+                    for key in ('tlu_sigmas', 'tlu_guider'):
+                        self.assertEqual(sparse[key]['inputs']['model'], ['tlu_sparse', 0])
+                        self.assertEqual(dense[key]['inputs']['model'], ['tlu_model', 0])
+                        self.assertEqual(dict(sparse[key]['inputs'], model=['tlu_model', 0]), dense[key]['inputs'])
+                    for key in dense.keys() - {'tlu_sigmas', 'tlu_guider'}:
+                        self.assertEqual(dense[key], sparse[key])
+                    self.assertEqual('sparse_attention' in sparse, first_pass_sparse)
+        with self.assertRaisesRegex(ValueError, 'anti_jelly_sparse'):
+            server.graph_options({'anti_jelly_sparse': 'true'}, 10)
+
     def test_only_requested_feature_is_guarded(self):
         with patch.object(server.backend, 'PORT', 8190):
             self.assertNotIn('anti_jelly', server.graph_options({}, 15))
