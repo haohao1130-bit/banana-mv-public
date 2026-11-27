@@ -144,6 +144,13 @@ class TemporalRepairTests(unittest.TestCase):
                     self.assertEqual(opts['selection.tau'], 1.3)
                     self.assertEqual(opts['min_tokens'], 20480)
                     self.assertEqual(opts['end_percent'], 0.95)
+                    self.assertEqual(baseline, build(anti_jelly_sparse=True, anti_jelly_sparse_final=True))
+                    self.assertEqual(dense, build(anti_jelly=True, anti_jelly_sparse_final=True))
+                    self.assertEqual(sparse, build(anti_jelly=True, anti_jelly_sparse=True, anti_jelly_sparse_final=False))
+                    fast = build(anti_jelly=True, anti_jelly_sparse=True, anti_jelly_sparse_final=True)
+                    self.assertEqual(fast['tlu_sparse']['inputs']['end_percent'], 1.0)
+                    fast['tlu_sparse']['inputs']['end_percent'] = 0.95
+                    self.assertEqual(fast, sparse)
                     self.assertEqual(sparse['tlu_model']['inputs']['model'], ['1', 0])
                     for key in ('tlu_sigmas', 'tlu_guider'):
                         self.assertEqual(sparse[key]['inputs']['model'], ['tlu_sparse', 0])
@@ -154,6 +161,8 @@ class TemporalRepairTests(unittest.TestCase):
                     self.assertEqual('sparse_attention' in sparse, first_pass_sparse)
         with self.assertRaisesRegex(ValueError, 'anti_jelly_sparse'):
             server.graph_options({'anti_jelly_sparse': 'true'}, 10)
+        with self.assertRaisesRegex(ValueError, 'anti_jelly_sparse_final'):
+            server.graph_options({'anti_jelly_sparse_final': 'true'}, 10)
 
     def test_only_requested_feature_is_guarded(self):
         with patch.object(server.backend, 'PORT', 8190):
