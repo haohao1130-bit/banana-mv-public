@@ -15,6 +15,7 @@ assert(html.indexOf('id="upscale-again"')<html.indexOf('id="upscale-preview"'),
 assert.equal(html.split('id="upscale-again"').length,2,'exactly one working upgrade button');
 assert(html.indexOf('id="recipe-review"')<html.indexOf('id="event-plan-details"'),
   'recipe confirmation and full cast review must sit above the event plan');
+assert(html.indexOf('id="dan-fire"')<html.indexOf('id="alchemy-title"'),'fire telemetry precedes furnace');
 assert(html.indexOf('id="event-plan-details"')<html.indexOf('id="alchemy-title"'),
   'full commission details belong above the live furnace on both layouts');
 assert(html.indexOf('id="alchemy-title"')<html.indexOf('id="stop"')
@@ -71,6 +72,7 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
   window:{confirm:()=>true,location:{reload:()=>{reloadCount++;}},matchMedia:()=>mobileViewport},
   setTimeout:(fn,ms)=>{if(ms===2000)fn();return 0;},clearTimeout:()=>{},setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},console,navigator:{clipboard:{writeText:async text=>{copied.push(text);}}},
   fetch:async(url,options)=>({ok:true,status:200,json:async()=>{
+    if(url==='api/mv/dan-fire')return {local5070:true,available:false};
     if(url==='api/mv/restart-capability')return restartState;
     if(url==='api/health')return {service:'banana-mv',instance:serverInstance};
     if(url==='api/mv/restart'){restartRequests.push(JSON.parse(options.body));return {ok:true,instance:restartRequestInstance,restarting:true};}
@@ -95,6 +97,14 @@ const context=vm.createContext({document:{getElementById:id=>{assert(els[id],`Mi
     return {status:'done',seed:42,segments:[]};
   }})});
 vm.runInContext(html.split('<script>')[1].split('</script>')[0],context);
+vm.runInContext("renderDanFire({local5070:true,available:true,name:'RTX 5070',temperature:41,power_w:51,gpu_percent:100,memory_percent:2,vram_used:10737418240,vram_total:12884901888,ram_used:42949672960,ram_total:68719476736,sampling:true,warning:true})",context);
+assert.equal(els['dan-fire'].hidden,false);
+assert.equal(els['dan-fire-state'].textContent,'丹火虛旺・疑似裝死');
+assert.equal(els['dan-fire-power'].textContent,'51 W');
+assert.equal(els['dan-fire-vram'].textContent,'10.0 / 12.0 GiB');
+vm.runInContext("renderDanFire({local5070:true,available:false})",context);
+assert.equal(els['dan-fire-power'].textContent,'—');
+
 assert.equal(els['martial-guidance'].hidden,true);
 assert.equal(els['dance-guidance'].hidden,true);
 els.director.value='action';els.director.events.change();
