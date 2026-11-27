@@ -60,7 +60,7 @@ def require_capability(info):
             raise ValueError(f'高速動態修復不支援 {name}.{field} = {value}。')
 
 
-def add_temporal_repair(graph, *, h3_nvfp4, native_sound):
+def add_temporal_repair(graph, *, h3_nvfp4, native_sound, sparse_attention=False):
     if h3_nvfp4 or native_sound:
         raise ValueError('高速動態修復目前只支援 PRISM INT8 的原音軌片段。')
 
@@ -70,15 +70,25 @@ def add_temporal_repair(graph, *, h3_nvfp4, native_sound):
     # Pass 2 has its own sampling settings and a clean model branch.
     # Pass 1 keeps its selected LoRAs, attention settings and Euler schedule.
     shift = dict(graph['8']['inputs'], model=['1', 0])
+    # Independent opt-in Pass 2 patch: never inherit Pass 1 LoRAs or attention.
+    model_ref = ['tlu_model', 0]
+    if sparse_attention:
+        graph['tlu_sparse'] = node(
+            'BlockSparseAttention', model=model_ref,
+            selection='sol-attn', **{'selection.tau': 1.3},
+            start_percent=0.0, end_percent=0.95, dense_blocks='',
+            min_tokens=20480, extra_tokens=256,
+            sink_conditioning='exact_kv_and_rows', verbose=True)
+        model_ref = ['tlu_sparse', 0]
     graph.update({
         'tlu_repair': node('H3AdaptiveLatentRepair',
                            samples=['13', 0], conditioning=graph['9']['inputs']['conditioning'],
                            checkpoint=CHECKPOINT, motion_mode=MOTION_MODE,
                            spatial_scale=1.0, untouched_spatial_denoise=1.0),
         'tlu_model': node(graph['8']['class_type'], **shift),
-        'tlu_sigmas': node('H3RepairSchedule', model=['tlu_model', 0], samples=['tlu_repair', 0],
+        'tlu_sigmas': node('H3RepairSchedule', model=model_ref, samples=['tlu_repair', 0],
                            scheduler='beta', total_steps=12, inject=0.42, skip_if_unmasked=True),
-        'tlu_guider': node('BasicGuider', model=['tlu_model', 0], conditioning=['tlu_repair', 1]),
+        'tlu_guider': node('BasicGuider', model=model_ref, conditioning=['tlu_repair', 1]),
         'tlu_sampler': node('KSamplerSelect', sampler_name='res_multistep'),
         'tlu_sample': node('SamplerCustomAdvanced', noise=['10', 0], guider=['tlu_guider', 0],
                            sampler=['tlu_sampler', 0], sigmas=['tlu_sigmas', 0],
