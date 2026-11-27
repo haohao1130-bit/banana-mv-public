@@ -203,6 +203,9 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
     repair = req.get('anti_jelly', False)
     if not isinstance(repair, bool):
         raise ValueError('anti_jelly 必須為布林值。')
+    repair_sparse = req.get('anti_jelly_sparse', False)
+    if not isinstance(repair_sparse, bool):
+        raise ValueError('anti_jelly_sparse 必須為布林值。')
     if repair:
         anti_jelly.validate_request(req, local5070=backend.PORT == 8193)
     h3_nvfp4 = req.get('h3_nvfp4', False)
@@ -233,7 +236,7 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
             'director_mode': mode, 'intensity': req.get('intensity', 'high'),
             # 新的動作 LoRA 控制台；舊專案沒有這欄，照舊走 motion_lora。
             **({'action_loras': normalize_action_loras(req['action_loras'])} if 'action_loras' in req else {}),
-            **({'anti_jelly': True} if repair else {}),
+            **({'anti_jelly': True, **({'anti_jelly_sparse': True} if repair_sparse else {})} if repair else {}),
             **native}
 
 
