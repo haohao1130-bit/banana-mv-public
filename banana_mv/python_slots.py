@@ -371,16 +371,8 @@ def span_counts(chapters, slots):
 
 
 def mode_for(event, req):
-    user_mode = req.get('director', 'auto')
-    if user_mode != 'auto' and user_mode in MODES:
-        return user_mode
-    if re.search(r'唱|歌|RAP|舞台|主唱|副歌|SING|VOCAL|CHORUS', event, re.I):
-        return 'performance'
-    if re.search(r'拳|戰|打|擊|爆炸|追逐|衝刺|FIGHT|BOX|EXPLODE', event, re.I):
-        return 'action'
-    if re.search(r'變身|法術|魔法|幻影|量子|MAGIC', event, re.I):
-        return 'fantasy'
-    return 'story'
+    from banana_mv.activity_router import route_activity
+    return route_activity(event, req.get('director', 'auto'))
 
 
 def commission(chapter, chapter_slot, chapter_slots, previous):
