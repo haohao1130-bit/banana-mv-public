@@ -78,7 +78,13 @@ class DirectorLibraryTests(unittest.TestCase):
         creative = _free_commission(*args, creative35=True)
         self.assertIn('ONE-SHOT SHAPE', legacy)
         self.assertNotIn('ONE-SHOT SHAPE', creative)
-        self.assertIn('six native H3 section headers', creative)
+        self.assertIn('Write only detailed_description:', creative)
+        self.assertNotIn('Write native SIX H3 Ref2VA sections', creative)
+        self.assertIn('Python assembles the other five H3 fields', creative)
+        policy = 'POLICY_SENTINEL'
+        ordered = _free_commission(*args, direction_policy=policy, creative35=True)
+        self.assertLess(ordered.index(policy), ordered.index('Current scene'))
+        self.assertLess(ordered.index('Current scene'), ordered.index('DELIVER THE FINISHED SHOTS'))
         self.assertEqual(_auto_filming({}), AUTO_FILMING)
         self.assertNotIn('Use only the shot details', _auto_filming({'director35': {}}))
         self.assertIn('fully developed creative decisions', _auto_filming({'director35': {}}))
@@ -122,6 +128,71 @@ class DirectorLibraryTests(unittest.TestCase):
         self.assertNotIn('FUTURE_SECRET', dance_prompt({'dance_memory': memory}))
         self.assertIn('not visual observation', dance_prompt({'dance_memory': memory}))
         self.assertEqual(dance_memory([(0, p)], 2)['previous_last_shot'], '')
+
+
+    def test_shot_only_35b_assembles_native_without_extra_call(self):
+        from banana_mv.director_shoot import write_director_shoot_prompt
+        calls = []
+        def rewrite(cfg, system, parts, _):
+            calls.append((cfg, system, parts))
+            return ('detailed_description:\n[Shot 1] <Subject 1> steps forward. '
+                    '<Subject 2> watches.\n[Shot 2] At 00:02.500, '
+                    '<Subject 2> turns toward the audience.')
+        req = {'director': 'dance', 'srt_cues': [
+            {'start': .25, 'end': 4.5, 'text': '[S1] example lyric'}]}
+        seg = {'index': 0, 'start': 0, 'seconds': 5,
+               'director_plan': {'mode': 'dance', 'event': 'Current scene'}}
+        cfg = {'director35': {}, 'rewriter': {'thinking': True, 'temperature': .7}}
+        output = write_director_shoot_prompt(
+            cfg, req, seg, 'Current scene', '',
+            {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {},
+            [None, None], [], rewrite)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0][0]['rewriter']['thinking'])
+        system = calls[0][1]
+        task = calls[0][2][-1][1]
+        self.assertIn('You are the cinematic MV director', system)
+        self.assertIn('banana-dance-library-v3', system)
+        self.assertIn('REFERENCE EXAMPLE', system)
+        self.assertIn('knee-height 24mm', system)
+        self.assertNotIn('350-500', system)
+        self.assertNotIn('coffee shop', system)
+        self.assertIn('Write only detailed_description:', task)
+        for field in ('subject_definitions', 'summary', 'retention_analysis',
+                      'detailed_description', 'overall_soundscape', 'non_diegetic_music'):
+            self.assertIn(field + ':', output)
+        self.assertIn('[Shot 2] At 00:02.500, <Subject 2> turns toward the audience.', output)
+        self.assertIn('SRT CAST HINTS', output)
+        self.assertIn('<Audio 1>: fully_copy', output)
+        self.assertEqual(seg['prompt_profile']['draft_contract'], '35b-director-first-v1')
+
+    def test_shot_only_35b_retry_and_legacy_contract(self):
+        from banana_mv.director_shoot import write_director_shoot_prompt, DIRECTOR_SYSTEM
+        for creative in (True, False):
+            calls = []
+            def rewrite(cfg, system, parts, _):
+                calls.append((system, parts[-1][1]))
+                if len(calls) == 1:
+                    return 'Invalid reply'
+                return 'detailed_description:\n[Shot 1] <Subject 1> steps forward.'
+            req = {'director': 'dance'}
+            seg = {'index': 0, 'start': 0, 'seconds': 5}
+            cfg = {'rewriter': {'thinking': False}}
+            if creative:
+                cfg['director35'] = {}
+            output = write_director_shoot_prompt(
+                cfg, req, seg, 'Current scene', '',
+                {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {},
+                [None, None], [], rewrite)
+            self.assertEqual(len(calls), 2)
+            self.assertIn('[Shot 1] <Subject 1> steps forward.', output)
+            if creative:
+                self.assertIn('Reissue only detailed_description', calls[1][1])
+            else:
+                self.assertEqual(calls[0][0], DIRECTOR_SYSTEM)
+                self.assertIn('Reissue the SIX H3 sections', calls[1][1])
+                self.assertIn('ONE-SHOT SHAPE', calls[0][1])
+                self.assertNotIn('draft_contract', seg['prompt_profile'])
 
 
 if __name__ == '__main__':
