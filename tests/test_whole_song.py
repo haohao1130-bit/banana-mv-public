@@ -99,6 +99,7 @@ class WholeSongTests(TestCase):
             {'setup': 'Evening backlight follows the cast.',
              'beats': [{'index': i + 1, 'event': f'Performance beat {i + 1}.',
                         **({'activity': 'Dance', 'style': 'vogue, waacking',
+                            'scene': '黑色伸展台，紅色側光', 'cast': '<Picture 1>、<Picture 2>',
                             'formation': '<Picture 1> left, <Picture 2> right, facing camera'}
                            if i == 0 else {'activity': 'moonwalking'} if i == 1 else {})}
                        for i in range(9)]},
@@ -139,7 +140,12 @@ class WholeSongTests(TestCase):
         self.assertEqual(second['predicted_downbeats_s'], [0, 2.56])
         self.assertEqual(first['planned'], {
             'activity': 'dance', 'style': 'vogue, waacking',
+            'scene': '黑色伸展台，紅色側光', 'cast': '<Picture 1>、<Picture 2>',
             'formation': '<Picture 1> left, <Picture 2> right, facing camera'})
+        self.assertIn('你是 BANANAMV 的編劇', calls[0].args[1])
+        self.assertIn('REFERENCE INDEX', calls[0].args[1])
+        self.assertIn('wing chun', calls[0].args[1])
+        self.assertIn('retrieved from the validated BANANAMV index', calls[1].args[1])
         self.assertNotIn('planned', second)  # unsupported activity is dropped, not fatal
         first_system = calls[1].args[1]
         self.assertIn('SHOT CRAFT', first_system)

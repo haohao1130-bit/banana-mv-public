@@ -49,21 +49,40 @@ No notes for a downstream writer, no commentary, no extra JSON fields required."
 
 
 BATCH_SIZE = 3
-OUTLINE_SYSTEM = """Plan the entire MV before any shots are written. Return one JSON object:
-{"setup":"additional stable creative design or missing cast bindings",
- "beats":[{"index":<slot index>,"event":"one or two sentences on the story or performance beat and its outcome",
- "activity":"main on-screen activity, one supported activity",
- "style":"a few movement or genre keywords, e.g. vogue, waacking, wing chun",
- "formation":"cast positions and facing at the slot start",
- "end_state":"positions, pose and ongoing motion at the slot end"}]}
-activity, style, formation and end_state are short index keys for the later
-shot-writing passes; leave style empty when no specific vocabulary applies.
-Fill every fixed clip window in order. Preserve authored events, roles, chronology
-and the ending. Use the original reference numbers and treat author_setup as
-authoritative. Do not repeat it. For a rough cue, develop a causal arc and put
-recurring motifs and their payoffs in the relevant beats. Use music and SRT to
-align events, without copying lyrics or inventing sounds. Leave shot timing,
-lens, framing and camera moves for the subsequent shot-writing passes."""
+# Screenwriter rules adapted from the front-end "copy to AI" brief for the 35B
+# outline pass. Python owns the timeline; the outline never writes shots.
+OUTLINE_SYSTEM = """你是 BANANAMV 的編劇。你只寫「共同設定」與「逐段事件」，不寫鏡頭、切點、運鏡或英文提示詞；那是下一階段導演的工作。
+
+輸入：Python 已提供歌曲總長、固定的 clip_windows（段落已切好）、參考圖編號、author_setup、音樂段落與能量、SRT（若有）。不要更動段落時間，也不要回頭提問。
+
+回傳一個 JSON 物件：
+{"setup":"共同設定中缺少的穩定事實或角色綁定",
+ "beats":[{"index":<段號>,
+   "scene":"地點、天氣、光線、看得到的物件（新地點第一次出現才寫）",
+   "cast":"本段看得到的角色",
+   "event":"誰做了什麼具體動作 → 對方怎麼反應 → 造成什麼結果與情緒",
+   "end_state":"段尾的站位、朝向、道具，以及服裝或身上的狀態（濕、髒、破損、受傷）",
+   "activity":"本段主要活動，限支援清單",
+   "style":"幾個動作或曲風關鍵字，沒有就留空"}]}
+
+共同設定：只寫整首不變的事實——角色外貌與原始服裝（依原圖，不加配件）、體型比例、非人類角色的身體結構與移動方式、多條故事線時各角色所屬場景。author_setup 具權威，不要重複它。使用原始參考圖編號。不寫大綱、未來劇情、結局或導演意圖。
+
+逐段事件：
+- 每個 clip_window 都要填，依序，不跳號。
+- 一段 1～3 件事，要具體：「A 把信摔在桌上，B 停下腳步回頭，兩人僵在原地」，不要「氣氛緊張」；「A 轉身甩開外套，B 接住後跟上同一組舞步」，不要「熱舞」。
+- 每個關鍵動作（出手、碰撞、轉身、落地、交換位置）只發生一次，不重演；已發生的事不在下一段重寫。
+- 動作可在段尾沒做完（手伸到一半、舞步轉到一半），下一段同方向接著做完，不倒退重來。
+- 多人在場時每個人都有反應和視線，不罰站。
+- 還沒登場的角色不能出現。非最後一段不謝幕、不淡出；最後一段照使用者指定收尾。
+- 使用者寫好的事件、角色、先後順序與結局要保留；粗 CUE 則發展成完整的因果，重複出現的母題在相關段落回收。
+- 粗 CUE 裡的剪接點子（例如不完整切鏡、硬切到另一條線、動作呼應、朝鏡頭逼近）保留在落點那一段的事件裡；重複的招式只放在故事的關鍵時刻，一次比一次強。
+- 依曲風與能量決定事件密度：快歌、副歌、打鬥或舞蹈段落動作密；抒情或安靜段落事件少而深。
+- 用音樂段落和 SRT 對齊事件；不抄歌詞，不編 SRT，沒有 SRT 的區間不判定為間奏或靜音。
+- 有 SRT 才知道誰在唱；沒標聲部就不指定，不叫角色停下來站著唱。
+- 不用空泛詞：epic、cinematic、壯觀、震撼、充滿能量。
+- 欄位內容用使用者劇本的語言。
+
+參考索引：BANANAMV 有一份實拍驗證過的範例索引，列在 REFERENCE INDEX。不要盲猜拍法：段落的活動或曲風符合某一列時，把該列的關鍵字寫進 style（例如詠春對打寫「wing chun push hands」），Python 會在導演階段調出那份範例。沒有相符的就留空，導演會依通則寫。"""
 
 SLOT_SYSTEM = """Write shots only for the supplied clip_windows. Return one JSON object:
 {"clips":[{"index":<slot index>,"handoff":"concise visible state at the cut out",
@@ -80,8 +99,8 @@ final positions, current appearance, props and ongoing motion for the next slot
 in one or two sentences. All structured time values in each window are seconds
 from its own start. Start the clock at 0 for every slot, regardless of its index.
 Treat music cues as action or editing options; a beat does not require a cut.
-A window's planned keys are the outline's intended activity, style, formation
-and end state. Follow them unless the window's source notes say otherwise.
+A window's planned keys are the outline's scene, cast, activity, style and end
+state. Follow them unless the window's source notes say otherwise.
 Assign mode by actual on-screen activity. Honor authored events, roles,
 chronology and ending. Develop recurring visual motifs.
 Write finished English H3 camera prose with usable framing, camera motion,
@@ -133,6 +152,10 @@ def _slot_system(req, windows, setup):
             continue
         chosen.add(item['source'])
         examples.append(example_prompt(mode, style))
+    if examples:
+        examples.insert(0, 'The reference examples below were retrieved from the validated BANANAMV index '
+                           "for these windows' planned style. Use them for the level of detail instead "
+                           'of guessing, but design your own shots for the current events.')
     return '\n\n'.join([SLOT_SYSTEM + '\nSupported modes: ' + ', '.join(MODES), SHOT_CRAFT, *examples])
 
 
@@ -350,7 +373,7 @@ def _beat_keys(beat, req, count):
     activity = beat.get('activity')
     if isinstance(activity, str) and activity.strip().lower() in MODES:
         keys['activity'] = activity.strip().lower()
-    for name in ('style', 'formation', 'end_state'):
+    for name in ('scene', 'cast', 'style', 'formation', 'end_state'):
         value = beat.get(name)
         if isinstance(value, str) and value.strip():
             value = _visual(value, name, req, count, False).strip()
@@ -433,7 +456,9 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
     if progress:
         progress(len(accepted), len(segments), bool(state['beats']))
     if not state['beats']:
-        outline = direct(OUTLINE_SYSTEM + '\nSupported activities: ' + ', '.join(MODES),
+        from banana_mv.director_examples import reference_index
+        outline = direct(OUTLINE_SYSTEM + '\nSupported activities: ' + ', '.join(MODES)
+                         + '\nREFERENCE INDEX (activity: keys):\n' + reference_index(),
                          _outline_task(task), 'outline')
         beats = outline.get('beats')
         if not isinstance(beats, list) or len(beats) != len(segments):
