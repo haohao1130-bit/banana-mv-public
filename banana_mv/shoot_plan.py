@@ -125,6 +125,13 @@ serve the shot. Use the native guide's Shot labels and local cut times. The firs
 shot begins at zero without a timestamp. Each later shot starts at its cut time.
 """
 
+def _auto_filming(cfg):
+    if cfg.get('director35') is None:
+        return AUTO_FILMING
+    return AUTO_FILMING.replace("Use only the shot details that matter to the beat. Carry established appearance,\nsetting, lighting and sound forward, mentioning them again when they change or\nserve the shot.",
+                               "Develop the visible action and all meaningful physical, performance, spatial,\nlighting and camera details that realize the beat. Carry established appearance\nand geography forward; describe their actual on-screen response where useful.\nExpress fully developed creative decisions in the final shot prose.")
+
+
 DYNAMIC_EDITING = """Dynamic editing is enabled: actively design editorial coverage, not just camera
 movement. Separate changes of storyline from changes of viewpoint within a scene.
 For an energetic passage with several distinct action or performance accents, use
@@ -680,7 +687,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         direction_policy = '\n\n'.join((
             adaptation_direction(req),
             REFERENCE_PERFORMANCE,
-            AUTO_FILMING,
+            _auto_filming(cfg),
             DYNAMIC_EDITING if req.get('dynamic_cuts', True) else
                 'EDITORIAL DIRECTION: Favor motivated continuous takes; '
                 'use a camera cut whenever the event requires a new viewpoint '
@@ -805,7 +812,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
         text += ('\nUse the referenced face and hairstyle, but replace prior clothing '
                  'in ALL subject_definitions, retention_analysis and shots. '
                  'This is current state, not an upcoming story event.\n')
-    text+='\n'+AUTO_FILMING
+    text+='\n'+_auto_filming(cfg)
     text+='\n'+(DYNAMIC_EDITING if req.get('dynamic_cuts',True) else
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
