@@ -345,8 +345,15 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                       'attempt': calls, 'max_attempts': max_calls})
         call_cfg = _cfg(cfg, temperature)
         # Existing 9B path stays non-thinking; selected 35B may think on the first draft only.
-        if cfg.get('director35') is not None and calls == 1:
-            call_cfg['rewriter']['thinking'] = bool(cfg['rewriter'].get('thinking', False))
+        if cfg.get('director35') is not None:
+            if calls == 1:
+                call_cfg['rewriter']['thinking'] = bool(cfg['rewriter'].get('thinking', False))
+            if system == DIRECTOR_SYSTEM:
+                # The native 9B is already trained on this guide. The general MoE
+                # director receives it explicitly; the current commission wins.
+                from pathlib import Path
+                guide = Path(cfg['guides']['ref']).read_text(encoding='utf-8')
+                system = guide + '\n\nCURRENT MV DIRECTOR CONTRACT (overrides guide examples):\n' + system
         return rewrite(call_cfg, system, parts, uuid.uuid4().hex[:8])
 
     for restart in range(retry_limit+1):
