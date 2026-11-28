@@ -210,6 +210,35 @@ class WholeSongTests(TestCase):
         self.assertTrue((self.work/'director_plan.json').is_file())
         self.queue.assert_not_called()
 
+    def test_35b_recovers_saved_batch_with_extra_closing_braces_on_resume(self):
+        req = {'whole_song_director': True, 'director_engine': '35b'}
+        slots = segments(116.808, 15)
+        for seg in slots:
+            seg.update(song_seconds=116.808, segment_count=8)
+        beats = [{'index': i, 'event': f'Beat {i}'} for i in range(1, 9)]
+        clips = [{'index': i, 'handoff': f'Position {i}',
+                  'shots': [{'at': 0, 'mode': 'dance', 'visual': f'Shot {i}.'}]}
+                 for i in range(1, 9)]
+        broken = '{"clips":[' + '},'.join(json.dumps(clip) for clip in clips[3:6]) + ']}'
+        self.model.side_effect = [
+            {'beats': beats}, {'clips': clips[:3]}, broken, {'clips': clips[6:]},
+        ]
+        args = (self.cfg, req, slots, self.images, self.work, self.model)
+        with mock.patch.object(whole_song, '_repair_batch_json', return_value=None):
+            with self.assertRaisesRegex(ValueError, "Expecting ',' delimiter"):
+                whole_song.ensure_whole_song_plan(*args)
+        saved = json.loads((self.work/'whole_song_checkpoint.json').read_text())
+        self.assertEqual(len(saved['state']['accepted']), 3)
+        self.assertIsNone(whole_song._repair_batch_json(broken.replace('"at": 0', '"at":', 1)))
+
+        plan = whole_song.ensure_whole_song_plan(*args)
+        self.assertEqual(len(plan['segments']), 8)
+        self.assertIn('Shot 4.', plan['segments'][3]['event'])
+        self.assertEqual(self.model.call_count, 4)
+        last = json.loads(self.model.call_args.args[2][0][1])
+        self.assertEqual([window['index'] for window in last['clip_windows']], [7, 8])
+        self.assertEqual(last['incoming_handoff'], 'Position 6')
+
     def test_fixed_slot_rejects_cut_at_real_song_end(self):
         shots = [{'at': at, 'mode': 'story', 'visual': 'Follow the actor.'} for at in (0, 2.560)]
         with self.assertRaisesRegex(ValueError, '第 9 槽第 2 鏡起點無效'):

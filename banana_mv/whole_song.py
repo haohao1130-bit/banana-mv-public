@@ -228,6 +228,43 @@ def h3_prompt(req, segment, picture_count, tail):
     return normalize_mv_prompt(prompt, picture_count + int(bool(tail)))
 
 
+def _repair_batch_json(raw):
+    """Remove surplus closing braces only at parser-confirmed clip boundaries."""
+    source = re.sub(r'^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$', '', raw.strip(), flags=re.I)
+    repairs = 0
+    while True:
+        try:
+            parsed = json.loads(source)
+        except json.JSONDecodeError as error:
+            pos = error.pos
+            if (repairs >= BATCH_SIZE - 1 or error.msg != "Expecting ',' delimiter"
+                    or not re.search(r'\]\s*\}\s*$', source[:pos])
+                    or not re.match(r'\}\s*,\s*\{\s*"index"\s*:', source[pos:])):
+                return None
+            source = source[:pos] + source[pos + 1:]
+            repairs += 1
+        else:
+            if repairs and isinstance(parsed, dict) and list(parsed) == ['clips']:
+                return parse_object(source)
+            return None
+
+
+def _recover_batch(work, label, previous_error):
+    if not previous_error.startswith('狀態回傳不是有效 JSON：'):
+        return None
+    candidates = list(work.glob(f'whole_song_{label}_????????_raw.txt'))
+    if not candidates:
+        return None
+    path = max(candidates, key=lambda candidate: candidate.stat().st_mtime_ns)
+    raw = path.read_text(encoding='utf-8')
+    try:
+        parse_object(raw)
+    except SceneStateError as error:
+        if str(error) == previous_error:
+            return _repair_batch_json(raw)
+    return None
+
+
 def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint, progress, cancelled):
     count = len(originals)
     work = Path(work)
@@ -249,14 +286,21 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
         if progress:
             progress(len(accepted), len(segments), bool(state['beats']))
 
-    def direct(system, payload, label):
+    def direct(system, payload, label, *, batch=False):
         if cancelled and cancelled():
             raise InterruptedError('已停止 35B 全曲導演。')
         call_id = uuid.uuid4().hex[:8]
         parts = [('text', json.dumps(payload, ensure_ascii=False, separators=(',', ':')))] + pictures
         raw = rewrite(cfg, system, parts, call_id)
         (work / f'whole_song_{label}_{call_id}_raw.txt').write_text(str(raw), encoding='utf-8')
-        return parse_object(raw)
+        try:
+            return parse_object(raw)
+        except SceneStateError as error:
+            if batch and isinstance(raw, str) and error.errors[0]['code'] == 'invalid_json':
+                repaired = _repair_batch_json(raw)
+                if repaired is not None:
+                    return repaired
+            raise
 
     if progress:
         progress(len(accepted), len(segments), bool(state['beats']))
@@ -295,8 +339,13 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
         if state['last_error']:
             local_task['previous_validation_error'] = state['last_error']
         try:
-            delivery = direct(SLOT_SYSTEM + '\nSupported modes: ' + ', '.join(MODES),
-                              local_task, f'slots_{start + 1:02d}_{stop:02d}')
+            if cancelled and cancelled():
+                raise InterruptedError('已停止 35B 全曲導演。')
+            label = f'slots_{start + 1:02d}_{stop:02d}'
+            delivery = _recover_batch(work, label, state['last_error'])
+            if delivery is None:
+                delivery = direct(SLOT_SYSTEM + '\nSupported modes: ' + ', '.join(MODES),
+                                  local_task, label, batch=True)
             clips = delivery.get('clips')
             if not isinstance(clips, list) or len(clips) > stop - start:
                 raise SceneStateError(f'本批只接受第 {start + 1} 至 {stop} 槽。')
