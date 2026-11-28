@@ -354,6 +354,8 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                 from pathlib import Path
                 guide = Path(cfg['guides']['ref']).read_text(encoding='utf-8')
                 system = guide + '\n\nCURRENT MV DIRECTOR CONTRACT (overrides guide examples):\n' + system
+                from banana_mv.director35 import creative_system
+                system = creative_system(system)
         return rewrite(call_cfg, system, parts, uuid.uuid4().hex[:8])
 
     for restart in range(retry_limit+1):
