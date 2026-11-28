@@ -715,13 +715,15 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
             )
         else:
             context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
-    guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
-    system=NATIVE_ENHANCER_SYSTEM+guide
-    if cfg.get('director35') is not None:
-        from banana_mv.director35 import creative_system
+    generic35 = cfg.get('director35') is not None
+    if generic35:
+        from banana_mv.director_draft import SYSTEM, VERSION, DELIVERY, assemble
         from banana_mv.director_library import creative_prompt
-        system = creative_system(system)
-        draft_system = creative_prompt(system, req, segment)
+        draft_system = creative_prompt(SYSTEM, req, segment)
+        system = draft_system
+    else:
+        guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
+        system=NATIVE_ENHANCER_SYSTEM+guide
     continuation_note = (
         'CHAIN5 CONTINUATION: H3 receives a five-frame overlap preceding this clip. '
         'Continue its established action and physical consequences; advance the current '
@@ -819,7 +821,12 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
     text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
-    parts=[('text',text)]+_pictures(refs)
+    if generic35:
+        text = lean_commission(req, segment, tail, row, shoot_event, context,
+                               vocals, pictures, connected, creative35=True, end_state=False)
+        parts = _pictures(refs) + [('text', text)]
+    else:
+        parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
     # 只有格式壞掉才重試，最多 2 次（舊的「修稿兩輪、重寫五次、最多 18 次」退稿機制已移除）。
     retry_limit = min(rewrite_retry_count(req), 2)
@@ -829,12 +836,15 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                               'attempt':attempt+1,'max_attempts':max_attempts})
         segment['prompt_profile']={'source':'isolated_native_director','writer_calls':attempt+1,
                                    'contract_check_calls':0}
+        if generic35:
+            segment['prompt_profile']['draft_contract'] = VERSION
         call_cfg = cfg
         if attempt and cfg.get('rewriter', {}).get('thinking'):
             call_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
         raw=rewrite(call_cfg,draft_system if cfg.get('director35') is not None else system,attempts,uuid.uuid4().hex[:8])
         try:
-            prompt=normalize_mv_prompt(_text(raw),len(refs))
+            body = _text(raw)
+            prompt=normalize_mv_prompt(assemble(body, bool(tail)) if generic35 else body,len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
             if vocals:
@@ -853,7 +863,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
         except ValueError as error:
             if attempt >= retry_limit:
                 raise SceneStateError('當段拍攝稿交稿失敗：'+str(error)) from error
-            attempts=parts+[('text','Return only the current native H3 prompt. Fix connected-media delivery: '+str(error))]
+            attempts=parts+[('text',(DELIVERY if generic35 else 'Return only the current native H3 prompt.')+' Fix connected-media delivery: '+str(error))]
 
 
 
@@ -884,13 +894,13 @@ def degenerate_draft(text):
 LEAN_MAX_FRESH = 1
 
 
-def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected):
+def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected, creative35=False, end_state=True):
     from banana_mv.continuity import END_STATE_REQUEST, cast_note, handoff_note, wardrobe_note
     seconds = float(segment['seconds'])
     parts = [f"Target video duration: {seconds:.3f} seconds. Primary filming mode: {row['mode']}."]
     fixed = context.get('fixed_reference_settings')
     if fixed:
-        parts.append(fixed_settings_block(fixed))
+        parts.append('FIXED REFERENCE SETTINGS (explicit authored bindings):\n' + fixed if creative35 else fixed_settings_block(fixed))
         parts.append(REFERENCE_IDENTITY)
     cast = cast_note(row.get('event', ''), fixed or '')
     if cast:
@@ -911,7 +921,9 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
     handoff = handoff_note(segment.get('previous_end_state'))
     if handoff:
         parts.append(handoff.rstrip())
-    parts.append('THIS CLIP (the only events to perform; later story is not yours):\n' + connected(shoot_event))
+    current_event = 'THIS CLIP (the only events to perform; later story is not yours):\n' + connected(shoot_event)
+    if not creative35:
+        parts.append(current_event)
     if vocals:
         from banana_mv.continuity import reference_names
         names = reference_names(fixed or '')
@@ -932,7 +944,11 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
                  'performer gets one; never tag a silent actor, and do not write lyrics as <d> lines.')
     ending_info = context.get('ending') or {}
     ending = ending_info.get('instruction')
-    if ending:
+    if creative35:
+        from banana_mv.director_shoot import _clip_phase_note
+        if note := _clip_phase_note(ending_info):
+            parts.append(note)
+    elif ending:
         timing = ', '.join(f'{key}={float(ending_info[key]):g}s' for key in
                            ('resolve_start_by', 'settle_by', 'end_time', 'hold_seconds')
                            if isinstance(ending_info.get(key), (int, float)))
@@ -946,6 +962,17 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
                  + ' ' + LEAN_INTENSITY.get(req.get('intensity', 'high'), LEAN_INTENSITY['high'])
                  + (' Use motivated short shots and intercuts where the music has accents.'
                     if req.get('dynamic_cuts', True) else ' Prefer motivated longer takes.'))
+    if creative35:
+        from banana_mv.director_draft import DELIVERY
+        if pictures:
+            parts.append('EXPLICIT SRT ROLE BINDINGS: ' + '; '.join(role + ' = ' + picture for role, picture in pictures.items()))
+        parts.append(REFERENCE_PERFORMANCE)
+        parts.append(_auto_filming({'director35': {}}))
+        parts.append(current_event)
+        parts.append(DELIVERY)
+        if end_state:
+            parts.append(END_STATE_REQUEST.replace('After the six sections', 'After the shot paragraphs'))
+        return '\n\n'.join(parts)
     parts.append('PYTHON FILLS IN LATER (do not deliberate): overall_soundscape and non_diegetic_music are replaced '
                  'with the unchanged source song after you finish, so write each as one short line. Props and set '
                  'dressing (furniture, a desk furnace, screens, drinks) are described inside the shots and need no '
@@ -1008,13 +1035,16 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                        row, shoot_event, context, vocals, pictures, connected):
     from banana_mv.continuity import absent_pictures, cast_errors, split_end_state
     refs = ([tail] if tail else []) + list(originals)
-    text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected)
-    system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
-    if cfg.get('director35') is not None:
-        from banana_mv.director35 import creative_system
+    generic35 = cfg.get('director35') is not None
+    text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected,
+                           creative35=generic35)
+    if generic35:
+        from banana_mv.director_draft import SYSTEM, VERSION, DELIVERY, assemble
         from banana_mv.director_library import creative_prompt
-        system = creative_system(system)
-        draft_system = creative_prompt(system, req, segment)
+        draft_system = creative_prompt(SYSTEM, req, segment)
+        system = SYSTEM
+    else:
+        system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     motion = motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []
     segment['motion_frames_to_9b'] = sum(1 for kind, _ in motion if kind == 'image')
     # 沒入鏡的角色：圖片不給 9B 看，只留一行文字，其他人的 <Picture N> 編號不變。
@@ -1027,7 +1057,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
             image = _pictures([path])[1]          # ('image', 縮好的圖)；標籤用正確編號
             pictures_parts.extend([('text', f'<Picture {number}>:'), image])
     segment['withheld_pictures'] = sorted(hidden)
-    base = [('text', text)] + pictures_parts + motion
+    base = pictures_parts + motion + [('text', text)] if generic35 else [('text', text)] + pictures_parts + motion
     attempts = base
     segment['director_mode'] = row['mode']
     segment['commission_words'] = len(text.split())
@@ -1039,6 +1069,8 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
         if progress:
             progress({'stage': 'rewriting', 'clip_index': segment['index'], 'attempt': attempt + 1, 'max_attempts': total})
         segment['prompt_profile'] = {'source': 'lean_commission', 'writer_calls': attempt + 1, 'fresh_restarts': fresh}
+        if generic35:
+            segment['prompt_profile']['draft_contract'] = VERSION
         call_cfg = cfg
         if attempt and cfg.get('rewriter', {}).get('thinking'):
             # 修稿與重寫只處理格式或衝突，關掉 thinking 讓它快速交稿。
@@ -1055,7 +1087,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
             broken = degenerate_draft(body)
             if broken:
                 raise SceneStateError(broken)
-            prompt = normalize_mv_prompt(body, len(refs))
+            prompt = normalize_mv_prompt(assemble(body, bool(tail)) if generic35 else body, len(refs))
             if len(originals) > 1 and not re.search(r'<Picture \d+>', prompt):
                 raise SceneStateError('多圖拍攝稿缺少原始圖片綁定。')
             if vocals:
@@ -1067,7 +1099,7 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                 rejections.append({'call': attempt + 1, 'kind': 'repair', 'reason': ' | '.join(problems)[:500]})
                 repairs += 1
                 attempts = base + [('text', 'REPAIR THIS CLIP ONLY. Fix exactly these conflicts with the commission, '
-                                    'keep everything else, and return all six sections plus END_STATE.\nCONFLICTS:\n'
+                                    + ('keep everything else, and return short bindings, shots and END_STATE.\nCONFLICTS:\n' if generic35 else 'keep everything else, and return all six sections plus END_STATE.\nCONFLICTS:\n')
                                     + '\n'.join(problems) + '\nPREVIOUS DRAFT:\n' + prompt)]
                 continue
             # 修稿兩輪後仍有衝突：交出這版並標示，讓使用者在毛片室決定，不再無限重寫。
@@ -1089,5 +1121,5 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
                 break
             fresh += 1
             repairs = 0
-            attempts = base + [('text', 'Return only the six native H3 sections plus END_STATE. Fix: ' + str(error))]
+            attempts = base + [('text', (DELIVERY + ' Append END_STATE.' if generic35 else 'Return only the six native H3 sections plus END_STATE.') + ' Fix: ' + str(error))]
     raise SceneStateError(f'當段拍攝稿交稿失敗（已重寫 {fresh} 次）：{last_problem}')
