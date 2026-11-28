@@ -712,7 +712,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     system=NATIVE_ENHANCER_SYSTEM+guide
     if cfg.get('director35') is not None:
         from banana_mv.director35 import creative_system
+        from banana_mv.director_library import creative_prompt
         system = creative_system(system)
+        draft_system = creative_prompt(system, req, segment)
     continuation_note = (
         'CHAIN5 CONTINUATION: H3 receives a five-frame overlap preceding this clip. '
         'Continue its established action and physical consequences; advance the current '
@@ -823,7 +825,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
         call_cfg = cfg
         if attempt and cfg.get('rewriter', {}).get('thinking'):
             call_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
-        raw=rewrite(call_cfg,system,attempts,uuid.uuid4().hex[:8])
+        raw=rewrite(call_cfg,draft_system if cfg.get('director35') is not None else system,attempts,uuid.uuid4().hex[:8])
         try:
             prompt=normalize_mv_prompt(_text(raw),len(refs))
             if len(originals)>1 and not re.search(r'<Picture \d+>',prompt):
@@ -1003,7 +1005,9 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
     system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     if cfg.get('director35') is not None:
         from banana_mv.director35 import creative_system
+        from banana_mv.director_library import creative_prompt
         system = creative_system(system)
+        draft_system = creative_prompt(system, req, segment)
     motion = motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []
     segment['motion_frames_to_9b'] = sum(1 for kind, _ in motion if kind == 'image')
     # 沒入鏡的角色：圖片不給 9B 看，只留一行文字，其他人的 <Picture N> 編號不變。
@@ -1032,7 +1036,13 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
         if attempt and cfg.get('rewriter', {}).get('thinking'):
             # 修稿與重寫只處理格式或衝突，關掉 thinking 讓它快速交稿。
             call_cfg = dict(cfg, rewriter=dict(cfg['rewriter'], thinking=False, max_length=8192))
-        raw = rewrite(call_cfg, system, attempts, uuid.uuid4().hex[:8])
+        # A scoped cast repair keeps the existing shot instead of re-directing it.
+        active_system = (draft_system if cfg.get('director35') is not None
+                         and not (repairs and attempts is not base and
+                                  attempts[-1][0] == 'text' and
+                                  attempts[-1][1].startswith('REPAIR THIS CLIP ONLY.'))
+                         else system)
+        raw = rewrite(call_cfg, active_system, attempts, uuid.uuid4().hex[:8])
         try:
             body, end_state = split_end_state(_text(raw))
             broken = degenerate_draft(body)
