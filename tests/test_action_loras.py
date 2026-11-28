@@ -127,3 +127,46 @@ class ActionLoraServerOptions(unittest.TestCase):
         self.assertNotIn('action_loras', graph_options({'director': 'performance'}, 10))
         with self.assertRaises(ValueError):
             graph_options({'director': 'performance', 'action_loras': {'combat': {'strength': -1}}}, 10)
+
+
+    def test_segment_scope_matches_director_hints_workflow_and_triggers(self):
+        from banana_mv.director_library import build_library
+        from banana_mv.server import graph_options
+
+        configured = dict(ALL_ON, **{
+            'dance': {'enabled': True, 'strength': 0.71},
+            'beat_sync': {'enabled': True, 'strength': 1.14},
+            'choreography': {'enabled': True, 'strength': 0.49},
+        })
+        req = {'director': 'auto', 'action_lora_scope': 'segment', 'action_loras': configured}
+        for event, mode, adapters in (
+            ('兩人群舞與合唱', 'dance', {'dance', 'beat_sync', 'choreography', 'repair'}),
+            ('擂台選手揮拳格擋', 'action', {'combat', 'fight_flow', 'repair'}),
+            ('主角走出舞蹈教室回家', 'story', {'repair'}),
+        ):
+            with self.subTest(mode=mode):
+                # A stale saved dance classification must not mount dance adapters.
+                seg = {'director_plan': {'event': event, 'mode': 'dance'}, 'seconds': 10}
+                options = graph_options(req, 10, seg)
+                graph, _ = build(**options)
+                _, hints = build_library(req, seg)
+                self.assertEqual(options['director_mode'], mode)
+                self.assertEqual(set(hints['active_loras']), adapters)
+                self.assertEqual({key.removeprefix('action_') for key in graph if key.startswith('action_')}, adapters)
+                self.assertEqual('prfight2.' in graph['7']['inputs']['prompt'], mode == 'action')
+                self.assertEqual('Combat (' in action_lora_brief(req, seg), mode == 'action')
+                self.assertIn('bunny_crisp_motion', graph['7']['inputs']['prompt'])
+                if mode == 'dance':
+                    self.assertEqual(graph['action_dance']['inputs']['strength_model'], 0.71)
+        self.assertTrue(configured['combat']['enabled'])
+        self.assertTrue(configured['dance']['enabled'])
+
+    def test_manual_mode_and_initial_auto_preflight(self):
+        from banana_mv.server import graph_options
+
+        req = {'director': 'auto', 'action_lora_scope': 'segment', 'action_loras': ALL_ON}
+        preflight = graph_options(req, 10)['action_loras']
+        self.assertFalse(preflight['combat']['enabled'])
+        self.assertTrue(preflight['repair']['enabled'])
+        manual = graph_options(dict(req, director='action'), 10)['action_loras']
+        self.assertTrue(manual['combat']['enabled'])

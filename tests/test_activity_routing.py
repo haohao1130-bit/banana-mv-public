@@ -28,6 +28,24 @@ class ActivityRoutingTests(unittest.TestCase):
         self.assertEqual(route_activity(event), 'performance')
         self.assertEqual(route_activity('舞蹈表演', 'performance'), 'performance')
 
+    def test_locations_negation_and_history_do_not_mount_specialties(self):
+        for event, expected in (
+            ('主角從舞蹈教室走回家', 'story'),
+            ('主唱演唱，不要做任何舞蹈動作', 'performance'),
+            ('They are locking the door.', 'story'),
+            ('拳擊手走出拳擊館', 'story'),
+            ('CURRENT_ACTOR_STATE (at clip start):\nTorso: 舞蹈服.\n\n'
+             'SOURCE SONG SHORT TAIL — continuation ONLY.\nPreviously established: dancing', 'story'),
+            ('ALREADY ESTABLISHED; do not restage: dancing', 'story'),
+            ('She walks past the dance studio then dances on the pier.', 'dance'),
+            ('Current interval actions in original order:\n- He walks.\n'
+             'Stage these actions with physical cause.\n'
+             'ALREADY ESTABLISHED; do not restage: boxing\n'
+             'Current interval actions in original order:\n- She dances.', 'dance'),
+        ):
+            with self.subTest(event=event):
+                self.assertEqual(route_activity(event), expected)
+
     def test_saved_auto_plan_and_music_are_independent(self):
         seg = {'seconds': 15, 'director_plan': {
             'mode': 'performance', 'event': '三人群舞並合唱'},

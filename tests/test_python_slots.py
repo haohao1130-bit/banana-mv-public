@@ -470,8 +470,8 @@ class PythonSlotsTests(unittest.TestCase):
         self.assertNotIn('ALREADY ESTABLISHED; do not restage or repeat: 本段只完成',
                          '\n'.join(events))
         self.assertNotIn('黑色長靴的卸除', '\n'.join(events[:6]))
-        # Input scene and film mode must remain meaningful despite state header.
-        self.assertEqual(plan['segments'][7]['mode'], 'story')
+        # The current action explicitly continues dancing after the wardrobe change.
+        self.assertEqual(plan['segments'][7]['mode'], 'dance')
 
 
     def test_python_retains_global_story_route_for_local_slot_allocation(self):

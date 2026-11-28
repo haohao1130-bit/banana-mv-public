@@ -4,8 +4,8 @@ Text knowledge, not motion-capture assets or a required camera recipe.
 No inference call, vector store, H3 trigger mutation, or acceptance gate.
 """
 from banana_mv.director import MODES, RECIPES
-from banana_mv.activity_router import route_activity
-from banana_mv.core import normalize_action_loras
+from banana_mv.activity_router import select_mode
+from banana_mv.core import action_loras_for_segment
 
 VERSION = 'banana-director-library-v3.1'
 MODE_LIBRARY = {
@@ -155,13 +155,6 @@ LORA_HINTS = {
 }
 
 
-def select_mode(req, segment):
-    """Re-evaluate local activity, including previously saved auto plans."""
-    row = segment.get('director_plan') or {}
-    planned = row.get('mode') or segment.get('director_mode') or 'story'
-    return route_activity(row.get('event', ''), req.get('director', 'auto'), planned)
-
-
 def _rank(entries, mode, event, index, limit, tagged=False):
     # Relevance first. Rotate ties across clips to vary the *suggestions*, not
     # the actual action/camera decisions. No global storyline is inspected.
@@ -185,12 +178,8 @@ def build_library(req, segment):
     row = segment.get('director_plan') or {}
     event = str(row.get('event') or '')
     index = int(segment.get('index', 0))
-    # Existing action adapters remain independent from genre knowledge.
-    raw = req.get('action_loras')
-    active = []
-    if isinstance(raw, dict):
-        loras = normalize_action_loras(raw)
-        active = [key for key in LORA_HINTS if loras.get(key, {}).get('enabled')]
+    loras = action_loras_for_segment(req, segment) or {}
+    active = [key for key in LORA_HINTS if loras.get(key, {}).get('enabled')]
     from banana_mv.dance_library import VERSION as DANCE_VERSION, DANCE_CATEGORIES, dance_prompt, audio_context
     movement = (dance_prompt(segment, include_music=False) if mode == 'dance' else
                 _format('MOVEMENT / STAGING INGREDIENTS', _rank(MODE_LIBRARY[mode], mode, event, index, 7)))

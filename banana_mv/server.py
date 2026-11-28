@@ -19,7 +19,7 @@ if __name__=='__main__':
 from banana_mv.director import director_prompt
 from banana_mv import anti_jelly
 from banana_mv.core import (FPS, H3_NVFP4_MODEL, H3_REF2VA_TURBO_LORA, ACTION_LORA_FILES, DANCE_LORA_SPECS, action_lora_mounts,
-                            normalize_action_loras, align_frames, assemble, audio_window, build_workflow, dimensions,
+                            action_loras_for_segment, align_frames, assemble, audio_window, build_workflow, dimensions,
                             duration, enforce_face_identity, fallback_prompt, last_frame, last_frames,
                             output_dimensions, reference_images, segments, trim_video, probe,
                             source_audio_duration)
@@ -209,6 +209,10 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
     if req.get("realism_lora"):
         raise ValueError("fal 真人 LoRA 已移除；此舊專案曾啟用 fal，請另建不使用 fal 的專案，避免續跑混用設定。")
     _, mode = director_prompt(req, seconds, segment)
+    if req.get('action_lora_scope') == 'segment':
+        from banana_mv.activity_router import select_mode
+        mode = select_mode(req, segment)
+    loras = action_loras_for_segment(req, segment)
     for field in ('acceleration', 'kitchen_attention', 'sparse_attention', 'motion_lora', 'h3_nvfp4', 'h3_ref2va_turbo'):
         if field in req and not isinstance(req[field], bool):
             raise ValueError(field + ' 必須為布林值。')
@@ -250,7 +254,7 @@ def graph_options(req, seconds, segment=None, *, edited_prompt=False):
             'motion_lora': req.get('motion_lora', True),
             'director_mode': mode, 'intensity': req.get('intensity', 'high'),
             # 新的動作 LoRA 控制台；舊專案沒有這欄，照舊走 motion_lora。
-            **({'action_loras': normalize_action_loras(req['action_loras'])} if 'action_loras' in req else {}),
+            **({'action_loras': loras} if loras is not None else {}),
             **({'anti_jelly': True,
                 **({'anti_jelly_sparse': True} if repair_sparse else {}),
                 **({'anti_jelly_sparse_final': True} if repair_sparse and repair_sparse_final else {})} if repair else {}),
@@ -969,6 +973,7 @@ def promote_draft(source_id,steps=8):
     if steps not in (6,8):
         raise ValueError('正式版步數請選 6 或 8。')
     req=dict(source['request'])
+    req.setdefault('action_lora_scope', 'project')
     aspect=req.get('aspect','16:9')
     req.update(width=OUTPUT_SIZE_PRESETS['720p'][aspect][0],sampling_steps=steps,
                plan_review=False,prompt_source_job=source_id,
@@ -983,6 +988,10 @@ def promote_draft(source_id,steps=8):
 def start(req):
     cfg = backend.project_config(req)
     req = dict(req)
+    if 'action_loras' in req:
+        scope = req.setdefault('action_lora_scope', 'segment')
+        if scope not in ('segment', 'project'):
+            raise ValueError('未知的動作 LoRA 套用範圍。')
     req.pop('native_sound', None)
     req.pop('native_sound_cues', None)
     if not isinstance(req.get('upscale_1080p', False), bool):

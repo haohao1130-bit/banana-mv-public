@@ -637,7 +637,7 @@ def _filming_reference_settings(fixed_setup):
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
-    if cfg.get('director35') is not None:
+    if cfg.get('director35') is not None or req.get('action_lora_scope') == 'segment':
         # Keep saved plan and authored event intact; correct the local
         # filming specialty even when an older auto plan misclassified it.
         from banana_mv.director_library import select_mode
@@ -824,6 +824,10 @@ Return only the native filming prompt, no analysis, JSON or management instructi
                 'Prefer motivated longer takes. Reveal changes through blocking, reframing or camera movement; do not force short-shot clusters.')
     text+='\n'+CLIP_INTENSITY[req.get('intensity','high')]
     if req.get('face_identity',True):text+='\nPreserve the assigned reference identities through motion and expressions.'
+    if not generic35 and req.get('action_lora_scope') == 'segment':
+        from banana_mv.core import action_lora_brief
+        if brief := action_lora_brief(req, segment):
+            text += '\n' + brief
     text += '\n\nClip timing and audio context:\n' + json.dumps(context, ensure_ascii=False)
     refs=([tail] if tail else [])+list(originals)
     if generic35:
@@ -970,7 +974,7 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
                            if isinstance(ending_info.get(key), (int, float)))
         parts.append('ENDING FOR THIS CLIP: ' + ending + (f' (clip-local times: {timing})' if timing else ''))
     from banana_mv.core import action_lora_brief
-    if brief := action_lora_brief(req):
+    if brief := action_lora_brief(req, segment):
         parts.append(brief)
     parts.append('DIRECTION: ' + ('Free MV adaptation: invent striking staging, performance and montage that serve this beat.'
                                   if req.get('story_plan', True) else

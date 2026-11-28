@@ -79,6 +79,22 @@ def normalize_action_loras(value):
                for key, (_, default, maximum) in DANCE_LORA_SPECS.items() if key in value}}
 
 
+def action_loras_for_segment(req, segment=None):
+    """Resolve the configured adapters once against the clip's filming mode."""
+    if 'action_loras' not in req:
+        return None
+    loras = normalize_action_loras(req['action_loras'])
+    if req.get('action_lora_scope') == 'segment':
+        from banana_mv.activity_router import select_mode
+
+        mode = select_mode(req, segment)
+        for key, specialty in (('combat', 'action'), ('fight_flow', 'action'),
+                               *((key, 'dance') for key in DANCE_LORA_SPECS)):
+            if key in loras and mode != specialty:
+                loras[key]['enabled'] = False
+    return loras
+
+
 def action_lora_mounts(loras):
     """Fixed order Combat → Fight Flow → Motion Repair; only enabled ones are loaded."""
     mounts = []
@@ -121,12 +137,10 @@ def inject_action_triggers(prompt, words):
     return line + '\n' + prompt
 
 
-def action_lora_brief(req):
+def action_lora_brief(req, segment=None):
     """One short note for 9B when the action panel is on; empty otherwise."""
-    if 'action_loras' not in req:
-        return ''
-    loras = normalize_action_loras(req['action_loras'])
-    if not action_lora_mounts(loras):
+    loras = action_loras_for_segment(req, segment)
+    if not loras or not action_lora_mounts(loras):
         return ''
     names = []
     if loras['combat']['enabled']:
