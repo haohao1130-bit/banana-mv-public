@@ -97,8 +97,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 <div class="action-lora"><label><input id="lora_beat_sync" type="checkbox"> 節拍指導（實驗）</label><label>權重 <input id="lora_beat_sync_strength" type="number" min="0" max="2" step="0.05" value="1.00"></label></div>
 <div class="action-lora"><label><input id="lora_choreography" type="checkbox"> 編舞指導（實驗）</label><label>權重 <input id="lora_choreography_strength" type="number" min="0" max="1" step="0.05" value="0.40"></label></div>
 <p class="muted">三顆獨立選配；不自動加未確認的觸發詞。需先安裝相應模型。</p></div>
-<label><input id="rewrite" type="checkbox" checked> 使用本地 9B 自動導演</label><p class="muted">勾選時，Python 先分配事件與接續狀態，9B 逐段安排表演和運鏡。取消勾選時，Python 依你貼的劇本切段，直接交給 H3。</p><div id="rewriter-options">
-<label><input id="lean_commission" type="checkbox" checked> 精簡通告單（推薦）</label><p class="muted">只給 9B 這段需要的事實：固定設定、目前服裝、上一段怎麼結束（含動作方向）、這段事件與歌聲。取消勾選回到舊版長規則，方便比較。</p><label><input id="rewriter_thinking" type="checkbox"> 9B 思考模式</label>
+<label><input id="rewrite" type="checkbox" checked> 使用本地自動導演</label><p class="muted">勾選時，Python 先分配事件與接續狀態，選定的導演逐段安排表演和運鏡。取消勾選時，Python 依你貼的劇本切段，直接交給 H3。</p><div id="rewriter-options">
+<div id="director35-engine-row" hidden><label for="director-engine">導演引擎</label><select id="director-engine"><option value="9b" selected>9B H3 特化導演</option><option value="35b" disabled>35B MoE 導演（實驗）</option></select><p id="director35-availability" class="muted"></p></div>
+<div id="director35-options" class="action-loras" hidden><h4>35B MoE 調校</h4><label><input id="director35-mtp" type="checkbox" checked> MTP 加速（含視覺模式・實驗）</label><label for="director35-context">上下文容量</label><select id="director35-context"><option value="8192">8K</option><option value="16384" selected>16K</option><option value="32768">32K</option></select><label for="director35-cpu-moe">CPU 專家層數（越低越多專家在 GPU）</label><input id="director35-cpu-moe" type="number" min="24" max="40" step="1" value="36"><label for="director35-kv">KV Cache</label><select id="director35-kv"><option value="q8_0" selected>Q8_0</option><option value="q4_0">Q4_0</option><option value="f16">FP16</option></select><label for="director35-output">生成上限（思考＋正式稿）</label><select id="director35-output"><option value="2048">2K</option><option value="4096" selected>4K</option><option value="8192">8K</option><option value="16384">16K</option></select><p class="muted">沿用原本通告單、角色圖片與接續影格；每次交稿後卸載35B，才交給 H3。MTP＋視覺尚待實機驗證；若失敗可關閉 MTP 重開新任務，不會暗中切回9B。</p></div>
+<label><input id="lean_commission" type="checkbox" checked> 精簡通告單（推薦）</label><p class="muted">只給 9B 這段需要的事實：固定設定、目前服裝、上一段怎麼結束（含動作方向）、這段事件與歌聲。取消勾選回到舊版長規則，方便比較。</p><label><input id="rewriter_thinking" type="checkbox"> 導演思考模式</label>
 <div id="rewriter-budget-row" hidden><label for="rewriter_budget">9B 生成上限（思考＋正式稿）</label><select id="rewriter_budget" disabled><option value="16384" selected>16K</option><option value="32768">32K</option></select></div>
 </div>
 <div id="anti-jelly-settings" class="action-loras" hidden><h4>高速動態修復｜退果凍</h4>
@@ -700,24 +702,39 @@ for(let i=0;i<9;i++){const n=i+1,input=$(i===0?'image':'image-'+n);input.onchang
 $('mode').addEventListener('change',renderImages);renderImages();
 let rewriterOptionsChanged=false;
 function rewriterOptions(){
- return {rewriter_thinking:$('rewrite').checked&&$('rewriter_thinking').checked,
+ const engine=$('director-engine').value==='35b'?'35b':'9b';
+ const options={rewriter_thinking:$('rewrite').checked&&$('rewriter_thinking').checked,
          rewriter_budget:Number($('rewriter_budget').value)||16384};
+ if(engine==='35b')Object.assign(options,{director_engine:engine,director35_mtp:$('director35-mtp').checked,
+ director35_context:Number($('director35-context').value),director35_cpu_moe:Number($('director35-cpu-moe').value),
+ director35_kv:$('director35-kv').value,director35_output:Number($('director35-output').value)});
+ else options.director_engine='9b';
+ return options;
 }
 function restoreRewriterOptions(request){
  $('rewriter_thinking').checked=request.rewriter_thinking===true;
  $('rewriter_budget').value=request.rewriter_budget===32768?'32768':'16384';
+ $('director-engine').value=request.director_engine==='35b'?'35b':'9b';
+ $('director35-mtp').checked=request.director35_mtp!==false;
+ $('director35-context').value=String(request.director35_context??16384);
+ $('director35-cpu-moe').value=String(request.director35_cpu_moe??36);
+ $('director35-kv').value=request.director35_kv??'q8_0';
+ $('director35-output').value=String(request.director35_output??4096);
  if($('lean_commission'))$('lean_commission').checked=request.lean_commission!==false;
  rewriterOptionsChanged=false;syncRewriterOptions();
 }
 function syncRewriterOptions(){
  $('rewriter-options').hidden=!$('rewrite').checked;
  $('rewriter_thinking').disabled=!$('rewrite').checked;
- $('rewriter-budget-row').hidden=!rewriterOptions().rewriter_thinking;
+ const using35=$('director-engine').value==='35b';
+ $('director35-options').hidden=!using35||!$('rewrite').checked;
+ $('rewriter-budget-row').hidden=using35||!rewriterOptions().rewriter_thinking;
  $('rewriter_budget').disabled=$('rewriter-budget-row').hidden;
 }
 $('rewrite').addEventListener('change',syncRewriterOptions);
 $('rewriter_thinking').addEventListener('change',()=>{rewriterOptionsChanged=true;syncRewriterOptions();});
 $('rewriter_budget').addEventListener('change',()=>{rewriterOptionsChanged=true;});
+for(const id of ['director-engine','director35-mtp','director35-context','director35-cpu-moe','director35-kv','director35-output'])$(id).addEventListener('change',()=>{rewriterOptionsChanged=true;syncRewriterOptions();});
 syncRewriterOptions();
 const sizePresets={'720p':{'16:9':[1280,720],'9:16':[720,1280],'4:5':[720,900],'1:1':[720,720]},'480p':{'16:9':[854,480],'9:16':[480,854],'4:5':[480,600],'1:1':[480,480]},'360p':{'16:9':[640,360],'9:16':[360,640],'4:5':[360,450],'1:1':[360,360]},'576p':{'16:9':[1024,576],'9:16':[576,1024],'4:5':[576,720],'1:1':[576,576]},'640p':{'16:9':[1152,640],'9:16':[640,1152],'4:5':[640,800],'1:1':[640,640]}};
 const DRAFT_WIDTHS=Object.values(sizePresets['360p']).map(v=>v[0]);
@@ -812,7 +829,7 @@ antiJellyBox.addEventListener('change', syncAntiJelly);
 antiJellySparseBox.addEventListener('change', syncAntiJelly);
 checkAntiJelly();
 $('open-35b-lab').onclick=()=>{window.location.href='/banana35b';};
-api('banana35b/capability',{cache:'no-store'}).then(c=>{$('open-35b-lab').hidden=c.local5070!==true;}).catch(()=>{});
+api('/banana35b/capability',{cache:'no-store'}).then(c=>{$('open-35b-lab').hidden=c.local5070!==true;$('director35-engine-row').hidden=c.local5070!==true;$('director-engine').options[1].disabled=c.installed!==true;$('director35-availability').textContent=c.installed===true?'35B 已安裝・可選用':'請先安裝 BANANA35B V2';syncRewriterOptions();}).catch(()=>{});
 
 function h3Sampling(fast, resolution) {
   return {sampling_steps: fast ? 6 : resolution === '360p' ? 4 : Number($('sampling-steps').value)};
