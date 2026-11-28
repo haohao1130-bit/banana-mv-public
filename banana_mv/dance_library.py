@@ -545,13 +545,13 @@ def audio_context(segment):
     return ('CURRENT CLIP MUSIC EVIDENCE — estimates only, not heard audio or mandatory cut times:\n' + '\n'.join(rows)
             + '\nUse the author\'s timing and actual available evidence; preserve the original song.') if rows else ''
 
-def dance_prompt(segment):
+def dance_prompt(segment, include_music=True):
     sections = [
         'DANCE KNOWLEDGE ' + VERSION + ': Choose the genre and physical vocabulary from the actual shared setup, current event, music evidence, performers, space and incoming state. All categories are references, not a playlist, required items or a closed vocabulary. Compose compatible phrases, preserve a signature motif when music calls for reprise, and vary expression, formation and camera rather than forcing new steps. A prop or partner technique applies only when the corresponding prop or partner is established. Use the existing beat, weight and momentum to choose transitions. Deepen physical description without overloading the time.',
     ]
     for category, items in DANCE_CATEGORIES.items():
         sections.append(category + '\n' + '\n'.join(name + ': ' + desc for name, desc in items))
-    music = audio_context(segment)
+    music = audio_context(segment) if include_music else ''
     if music:
         sections.append(music)
     memory = segment.get('dance_memory') or {}
