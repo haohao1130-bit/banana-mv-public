@@ -211,7 +211,7 @@ def _safe_vocals(blocks, slots, fixed):
 
 def _free_commission(req, segment, event, pictures, wardrobe, cues,
                      continuity=False, scene_schedule=(), direction_policy='', body_form=None,
-                     fixed=''):
+                     fixed='', creative35=False):
     body_form = body_form or {}
     duration = float(segment['seconds'])
     lines = []
@@ -271,7 +271,8 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'DEVELOP AND FILM THIS CURRENT CLIP EVENT:',
         event,
         '',
-        '=== 3. 9B DIRECTING — YOU CHOOSE SHOT COUNT, CAMERA AND PERFORMANCE ===',
+        ('=== 3. 35B CREATIVE DIRECTING — EXPAND THE EVENT, THEN CHOOSE CAMERA AND PERFORMANCE ==='
+         if creative35 else '=== 3. 9B DIRECTING — YOU CHOOSE SHOT COUNT, CAMERA AND PERFORMANCE ==='),
         'Design local acting, body movement, expression changes, visual responses, '
         'camera coverage and dramatic timing around the assigned beat.',
         'Choose an unbroken emotional take or several distinct views as the events demand. '
@@ -289,6 +290,13 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'Use [Shot 1] at 0.000s; later camera cuts use [Shot N] At mm:ss.mmm. '
         'Choose freely up to 12 meaningful shots, including a valid one-shot.',
         'Camera energy: ' + str(req.get('intensity', 'high')) + '.',
+    ]
+    if creative35:
+        lines.extend(('', 'DELIVERY: Expand the assigned event into complete cinematic shot prose. '
+                      'Use the six native H3 section headers and local shot times. '
+                      'The separate system reference example teaches descriptive depth, not this clip\'s events.'))
+    else:
+        lines.extend([
         '',
         '=== NATIVE SIX-SECTION DELIVERY EXAMPLE (ONE-SHOT SHAPE) ===',
         'subject_definitions:\nReference the specified cast and current outfits.',
@@ -299,7 +307,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'with deliberate composition, physical action and character interaction.',
         'overall_soundscape:\nThe supplied source song remains unchanged.',
         'non_diegetic_music:\nThe supplied original song.',
-    ]
+        ])
     if direction_policy:
         lines.extend(('', '=== 4. ADAPTATION / PERFORMANCE / EDITING AUTHORITY ===',
                       direction_policy))
@@ -322,11 +330,12 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
         segment['scene_wardrobe_schedule'] = schedule
     else:
         segment.pop('scene_wardrobe_schedule', None)
+    creative35 = cfg.get('director35') is not None
     task = _free_commission(req, segment, shoot_event if shoot_event is not None else event,
                             pictures, wardrobe, cues,
                             continuity=len(refs) > 2, scene_schedule=schedule,
                             direction_policy=direction_policy, body_form=body_form,
-                            fixed=fixed)
+                            fixed=fixed, creative35=creative35)
     calls = 0
     retry_limit = rewrite_retry_count(req)
     draft_temperature = float(cfg['rewriter'].get('temperature', .7))
