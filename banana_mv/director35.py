@@ -16,6 +16,46 @@ from urllib.parse import urlparse
 
 ROOT = Path(r'F:\BANANA35B')
 
+ISSUE_LOCK = threading.Lock()
+
+
+def record_issue(source, error, **context):
+    """Log one failure under runs/issues and append it to runs/issues.jsonl.
+
+    Only on the 5070 machine (F:\\BANANA35B exists). Never raises: logging must
+    not turn a recoverable failure into a crash.
+    """
+    try:
+        runs = ROOT / 'runs'
+        if not ROOT.is_dir():
+            return None
+        folder = runs / 'issues'
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime('%Y%m%d_%H%M%S')
+        record = {'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'source': source,
+                  'error_type': type(error).__name__, 'error': str(error)[:4000],
+                  **{key: value for key, value in context.items() if value not in (None, '')}}
+        slug = re.sub(r'[^A-Za-z0-9_-]+', '_', source)[:40]
+        path = folder / f'{stamp}_{slug}_{secrets.token_hex(2)}.json'
+        text = json.dumps(record, ensure_ascii=False, indent=2, default=str)
+        with ISSUE_LOCK:
+            path.write_text(text, encoding='utf-8')
+            with (runs / 'issues.jsonl').open('a', encoding='utf-8') as index:
+                index.write(json.dumps({**record, 'file': path.name}, ensure_ascii=False, default=str) + '\n')
+        return path
+    except Exception:
+        return None
+
+
+def newest(folder, pattern):
+    """Most recent matching file name, for issue context; None when absent."""
+    try:
+        found = max(Path(folder).glob(pattern), key=lambda item: item.stat().st_mtime_ns)
+        return found.name
+    except (OSError, ValueError):
+        return None
+
+
 # Read-only telemetry for the existing 8193 dashboard; no GPU work or polling here.
 _STATS_LOCK = threading.Lock()
 _STATS = {}
@@ -357,6 +397,10 @@ def _rewrite(cfg,system,parts,job_id,stopped):
             raise ValueError('35B 正式稿空白（保底重試後仍失敗）。')
     except Exception as e:
         (run/'error.txt').write_text(str(e),encoding='utf-8')
+        if not stopped.is_set():
+            record_issue('director35', e, run=run.name, call=job_id,
+                         guard=(run/'guard_error.txt').read_text(encoding='utf-8')
+                         if (run/'guard_error.txt').is_file() else None)
         if stopped.is_set():raise InterruptedError('已停止35B。') from e
         raise RuntimeError('35B 導演失敗（未切回9B）：'+str(e)+'；紀錄 '+str(run)) from e
     finally:

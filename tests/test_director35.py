@@ -116,3 +116,28 @@ class Director35Tests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class IssueLogTests(unittest.TestCase):
+    def test_record_issue_writes_file_and_index_only_on_the_5070_root(self):
+        import json as _json
+        import tempfile
+        from pathlib import Path as _Path
+        from unittest import mock as _mock
+        from banana_mv import director35
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = _Path(tmp) / 'absent'
+            with _mock.patch.object(director35, 'ROOT', missing):
+                self.assertIsNone(director35.record_issue('mv_worker', ValueError('x')))
+            self.assertFalse(missing.exists())
+            root = _Path(tmp)
+            with _mock.patch.object(director35, 'ROOT', root):
+                path = director35.record_issue('mv_worker', ValueError('第 2 槽起點無效'),
+                                               job='abc123', stage='planning_story', segment=None)
+            record = _json.loads(path.read_text(encoding='utf-8'))
+            self.assertEqual(path.parent, root / 'runs' / 'issues')
+            self.assertEqual(record['error'], '第 2 槽起點無效')
+            self.assertEqual(record['error_type'], 'ValueError')
+            self.assertNotIn('segment', record)
+            line = _json.loads((root / 'runs' / 'issues.jsonl').read_text(encoding='utf-8'))
+            self.assertEqual((line['job'], line['file']), ('abc123', path.name))
