@@ -710,6 +710,9 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
             context['first_frame']='<Picture 1> is the actual previous last frame, not another actor.'
     guide=Path(cfg['guides']['ref']).read_text(encoding='utf-8')
     system=NATIVE_ENHANCER_SYSTEM+guide
+    if cfg.get('director35') is not None:
+        from banana_mv.director35 import creative_system
+        system = creative_system(system)
     continuation_note = (
         'CHAIN5 CONTINUATION: H3 receives a five-frame overlap preceding this clip. '
         'Continue its established action and physical consequences; advance the current '
@@ -998,6 +1001,9 @@ def _write_lean_prompt(cfg, req, segment, originals, tail, rewrite, progress,
     refs = ([tail] if tail else []) + list(originals)
     text = lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictures, connected)
     system = NATIVE_ENHANCER_SYSTEM + Path(cfg['guides']['ref']).read_text(encoding='utf-8')
+    if cfg.get('director35') is not None:
+        from banana_mv.director35 import creative_system
+        system = creative_system(system)
     motion = motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []
     segment['motion_frames_to_9b'] = sum(1 for kind, _ in motion if kind == 'image')
     # 沒入鏡的角色：圖片不給 9B 看，只留一行文字，其他人的 <Picture N> 編號不變。
