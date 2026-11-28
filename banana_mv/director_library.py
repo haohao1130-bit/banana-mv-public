@@ -6,7 +6,7 @@ No inference call, vector store, H3 trigger mutation, or acceptance gate.
 from banana_mv.director import MODES, RECIPES, _mentions
 from banana_mv.core import normalize_action_loras
 
-VERSION = 'banana-director-library-v1'
+VERSION = 'banana-director-library-v2'
 MODE_LIBRARY = {
     "dance": [
         ["Waacking","Rhythmic arm pathways circle around the head and shoulders; grounded weight shifts and sharp accents finish each arc.","waacking arm 手臂"],
@@ -226,5 +226,10 @@ def build_library(req, segment):
 def creative_prompt(system, req, segment):
     """Used only by 35B's creative drafting routes; no new call or validation."""
     block, info = build_library(req, segment)
+    from banana_mv.director_examples import VERSION as EXAMPLE_VERSION, example_prompt
+    example = example_prompt(info['mode'])
+    info['example_version'] = EXAMPLE_VERSION
+    info['example_mode'] = info['mode'] if example else None
+    info['example_words'] = len(example.split())
     segment['director_library'] = info
-    return system + '\n\n' + block
+    return system + '\n\n' + block + ('\n\n' + example if example else '')
