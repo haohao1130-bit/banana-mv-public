@@ -67,6 +67,53 @@ def messages(system, parts):
         content = '\n'.join(x['text'] for x in content)
     return [{'role':'system','content':system},{'role':'user','content':content}]
 
+def stream_call(lab, msg, o, run, attempt, sampling):
+    """Keep the original caller's sampling/repair settings, save raw SSE and formal output."""
+    from urllib.request import Request
+    thinking = o['thinking'] and attempt == 0
+    kwargs = {'enable_thinking':thinking}
+    if not o['vision']:
+        rendered = lab.local_json('/apply-template',{'messages':msg,'chat_template_kwargs':kwargs,'add_generation_prompt':True})
+        prompt = rendered.get('prompt')
+        if not isinstance(prompt,str):raise RuntimeError('無法取得完整文字模板。')
+        tokens = lab.local_json('/tokenize',{'content':prompt,'add_special':False,'parse_special':True}).get('tokens')
+        if not isinstance(tokens,list):raise RuntimeError('無法取得 prompt tokens。')
+        if len(tokens)+o['max_tokens']+64>o['ctx']:
+            raise RuntimeError(f"Context 不足：{len(tokens)} + {o['max_tokens']} + 64 > {o['ctx']}。請增加 context 或減少生成上限。")
+    payload={'model':'banana35b','messages':msg,'stream':True,'stream_options':{'include_usage':True},
+             'max_tokens':o['max_tokens'],'temperature':float(sampling.get('temperature',.7)),
+             'top_p':float(sampling.get('top_p',.8)),'top_k':int(sampling.get('top_k',20)),
+             'seed':o['seed'],'chat_template_kwargs':kwargs,'cache_prompt':False}
+    if 'presence_penalty' in sampling:payload['presence_penalty']=float(sampling['presence_penalty'])
+    started=time.monotonic();first=None;out='';reason='';metrics={};finish=None;done=False
+    request=Request(lab.BASE+'/v1/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
+    with (run/f'attempt{attempt+1}_raw.sse').open('wb') as raw, lab.OPENER.open(request,timeout=600) as response:
+        for line in response:
+            raw.write(line);raw.flush()
+            if lab.STOP.is_set():raise InterruptedError('35B 已停止。')
+            if not line.startswith(b'data:'):continue
+            data=line[5:].strip()
+            if data==b'[DONE]':done=True;break
+            event=json.loads(data)
+            if event.get('error'):raise RuntimeError(str(event['error']))
+            for key in ('usage','timings'):
+                if event.get(key):metrics[key]=event[key]
+            for c in event.get('choices',[]):
+                d=c.get('delta',{});r=d.get('reasoning_content') or d.get('reasoning') or '';t=d.get('content') or ''
+                if (r or t) and first is None:first=time.monotonic()-started
+                reason+=r;out+=t;finish=c.get('finish_reason') or finish
+    if '</think>' in out:
+        prefix,out=out.rsplit('</think>',1);reason+=prefix
+    elif '<think>' in out:
+        reason+=out;out=''
+    metrics.update(ttft_s=first,wall_s=time.monotonic()-started,finish_reason=finish,sse_done=done,thinking=thinking)
+    (run/f'attempt{attempt+1}_thinking.txt').write_text(reason,encoding='utf-8')
+    (run/f'attempt{attempt+1}_formal.txt').write_text(out,encoding='utf-8')
+    lab.save(run/f'attempt{attempt+1}_metrics.json',metrics)
+    if finish!='stop' and not (finish=='length' and thinking and not out.strip()):
+        raise RuntimeError('35B 未完整交稿：'+str(finish)+'；請調高生成上限或 context。')
+    return out.strip(),metrics
+
 def rewrite(cfg,system,parts,job_id,stopped):
     from banana_mv import services as backend
     lab = load()
@@ -141,7 +188,7 @@ def rewrite(cfg,system,parts,job_id,stopped):
             else:raise TimeoutError('35B 載入逾時。')
             for attempt in range(2):
                 if stopped.is_set() or lab.STOP.is_set():raise InterruptedError('已停止35B。')
-                out,metrics=lab.stream_call(msg,o,run,0,attempt)
+                out,metrics=stream_call(lab,msg,o,run,attempt,cfg['rewriter'])
                 if stopped.is_set() or lab.STOP.is_set():raise InterruptedError('已停止35B。')
                 if out:
                     (run/'formal.txt').write_text(out,encoding='utf-8')
