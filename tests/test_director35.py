@@ -39,5 +39,27 @@ class Director35Tests(unittest.TestCase):
         msg=director35.messages('system',[('text','first'),('text','second')])
         self.assertEqual(msg[1]['content'],'first\nsecond')
 
+    def test_dashboard_uses_actual_stream_counters(self):
+        with director35._STATS_LOCK:
+            director35._STATS.clear()
+        try:
+            director35._stream_stats({'prompt_progress':{'total':1000,'processed':600,'cache':200,'time_ms':4000}},'prefill')
+            state=director35.snapshot()
+            self.assertEqual(state['prompt_processed'],600)
+            self.assertEqual(state['prefill_tps'],100)
+            self.assertNotIn('decode_tps',state)
+            director35._stream_stats({'timings':{'prompt_n':800,'prompt_ms':8000,'prompt_per_second':100,
+                'predicted_n':60,'predicted_ms':1000,'predicted_per_second':60,'draft_n':50,'draft_n_accepted':40}},'writing',8)
+            state=director35.snapshot()
+            self.assertEqual(state['decode_tps'],60)
+            self.assertEqual(state['output_tokens'],60)
+            self.assertEqual(state['mtp_accept_pct'],80)
+            self.assertEqual(state['ttft_s'],8)
+            director35._stream_stats({'timings':{'predicted_per_second':float('inf'),'predicted_ms':1000}},'writing')
+            self.assertEqual(director35.snapshot()['decode_tps'],60)
+        finally:
+            with director35._STATS_LOCK:
+                director35._STATS.clear()
+
 if __name__=='__main__':
     unittest.main()
