@@ -63,18 +63,22 @@ def options(request):
         raise ValueError('未知導演引擎。')
     if engine == '9b':
         return None
-    o = {'ctx': request.get('director35_context', 16384),
+    thinking = request.get('rewriter_thinking') is True
+    o = {'ctx': request.get('director35_context', 32768 if thinking else 16384),
          'moe': request.get('director35_cpu_moe', 36),
          'kv': request.get('director35_kv', 'q8_0'),
          'mtp': request.get('director35_mtp', True),
-         'max_tokens': request.get('director35_output', 4096)}
+         'max_tokens': request.get('director35_output', 16384 if thinking else 4096),
+         'reasoning_budget': request.get('director35_reasoning_budget', -1)}
     if (type(o['ctx']) is not int or o['ctx'] not in (8192,16384,32768)
             or type(o['moe']) is not int or not 24 <= o['moe'] <= 40
             or o['kv'] not in ('q8_0','q4_0','f16')
             or type(o['mtp']) is not bool
             or type(o['max_tokens']) is not int or not 512 <= o['max_tokens'] <= 16384
-            or o['max_tokens'] + 64 >= o['ctx']):
-        raise ValueError('35B context / CPU experts / KV / MTP / output 設定無效。')
+            or o['max_tokens'] + 64 >= o['ctx']
+            or type(o['reasoning_budget']) is not int or o['reasoning_budget'] not in (-1,4096,8192,12288)
+            or (thinking and o['reasoning_budget'] != -1 and o['reasoning_budget'] + 4096 > o['max_tokens'])):
+        raise ValueError('35B 設定無效：Context 須大於總生成額度；有限思考額度須至少保留 4096 Tokens 給正式稿。')
     return o
 
 def load():
@@ -114,7 +118,8 @@ def stream_call(lab, msg, o, run, attempt, sampling):
     from urllib.request import Request
     thinking = o['thinking'] and attempt == 0
     kwargs = {'enable_thinking':thinking}
-    _stats(stage='prefill',attempt=attempt+1,thinking=thinking,prompt_total=None,prompt_processed=None,prompt_cache=None,prompt_evaluated=None,prefill_tps=None,decode_tps=None,output_tokens=0,draft_n=None,draft_accepted=None,mtp_accept_pct=None,ttft_s=None)
+    reasoning_budget = o.get('reasoning_budget', -1) if thinking else 0
+    _stats(stage='prefill',attempt=attempt+1,thinking=thinking,reasoning_budget=reasoning_budget,prompt_total=None,prompt_processed=None,prompt_cache=None,prompt_evaluated=None,prefill_tps=None,decode_tps=None,output_tokens=0,draft_n=None,draft_accepted=None,mtp_accept_pct=None,ttft_s=None)
     if not o['vision']:
         rendered = lab.local_json('/apply-template',{'messages':msg,'chat_template_kwargs':kwargs,'add_generation_prompt':True})
         prompt = rendered.get('prompt')
@@ -127,7 +132,8 @@ def stream_call(lab, msg, o, run, attempt, sampling):
     payload={'model':'banana35b','messages':msg,'stream':True,'stream_options':{'include_usage':True},'timings_per_token':True,'return_progress':True,
              'max_tokens':o['max_tokens'],'temperature':float(sampling.get('temperature',.7)),
              'top_p':float(sampling.get('top_p',.8)),'top_k':int(sampling.get('top_k',20)),
-             'seed':o['seed'],'chat_template_kwargs':kwargs,'cache_prompt':False}
+             'seed':o['seed'],'chat_template_kwargs':kwargs,'cache_prompt':False,
+             'reasoning_budget_tokens':reasoning_budget}
     if 'presence_penalty' in sampling:payload['presence_penalty']=float(sampling['presence_penalty'])
     started=time.monotonic();first=None;out='';reason='';metrics={};finish=None;done=False
     request=Request(lab.BASE+'/v1/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
@@ -158,7 +164,10 @@ def stream_call(lab, msg, o, run, attempt, sampling):
     (run/f'attempt{attempt+1}_thinking.txt').write_text(reason,encoding='utf-8')
     (run/f'attempt{attempt+1}_formal.txt').write_text(out,encoding='utf-8')
     lab.save(run/f'attempt{attempt+1}_metrics.json',metrics)
-    if finish!='stop' and not (finish=='length' and thinking and not out.strip()):
+    # Preserve partial draft for diagnostics, never return it as completed work.
+    if finish == 'length' and thinking:
+        return '',metrics
+    if finish != 'stop':
         raise RuntimeError('35B 未完整交稿：'+str(finish)+'；請調高生成上限或 context。')
     return out.strip(),metrics
 
@@ -166,7 +175,7 @@ def rewrite(cfg,system,parts,job_id,stopped):
     started=time.monotonic()
     with _STATS_LOCK:
         _STATS.clear()
-        _STATS.update(active=True,stage='loading',started=started,mtp=cfg['director35']['mtp'],thinking=bool(cfg['rewriter']['thinking']),context=cfg['director35']['ctx'],cpu_moe=cfg['director35']['moe'],budget=cfg['director35']['max_tokens'],attempt=1)
+        _STATS.update(active=True,stage='loading',started=started,mtp=cfg['director35']['mtp'],thinking=bool(cfg['rewriter']['thinking']),context=cfg['director35']['ctx'],cpu_moe=cfg['director35']['moe'],budget=cfg['director35']['max_tokens'],reasoning_budget=cfg['director35'].get('reasoning_budget',-1),attempt=1)
     outcome='done'
     try:
         return _rewrite(cfg,system,parts,job_id,stopped)
@@ -256,8 +265,11 @@ def _rewrite(cfg,system,parts,job_id,stopped):
                 if out:
                     (run/'formal.txt').write_text(out,encoding='utf-8')
                     return out
-                if not o['thinking']:break
-            raise ValueError('35B 正式稿空白（思考關閉重試後仍失敗）。')
+                if not o['thinking'] or attempt:break
+                reason='思考後交稿遭截斷' if metrics.get('finish_reason')=='length' else '思考後正式稿空白'
+                _stats(retry_reason=reason+'；關閉思考重試一次')
+                (run/'retry_reason.txt').write_text(reason+'；關閉思考重試一次',encoding='utf-8')
+            raise ValueError('35B 正式稿空白（保底重試後仍失敗）。')
     except Exception as e:
         (run/'error.txt').write_text(str(e),encoding='utf-8')
         if stopped.is_set():raise InterruptedError('已停止35B。') from e
