@@ -81,8 +81,10 @@ class WholeSongTests(TestCase):
                    director_schema=whole_song.VERSION, director='auto',
                    action_lora_scope='segment', project_scope='full',
                    shared_setup='@圖片1 = 西索 = S1。和 @圖片2 = 庫洛洛 搭檔。',
-                   lyrics='前段歌詞', srt_cues=[
+                   prompt='ACT 01｜00:09.000–00:13.000\n兩位舞者交換位置。',
+                   ending_policy_version=2, lyrics='前段歌詞', srt_cues=[
                        {'start': 0.5, 'end': 1.5, 'text': '[S1] 前段歌詞'},
+                       {'start': 9.5, 'end': 11.2, 'text': '[S2] 跨段歌詞'},
                        {'start': 80.25, 'end': 82.2, 'text': '[S1] 最後一句'},
                    ], lyrics_reference_version=2)
         self.cfg['director35'] = director35.options(req)
@@ -100,7 +102,7 @@ class WholeSongTests(TestCase):
         ]
         analysis = {'pulse': None}
         evidence = {'transient_candidates_s': [1.25], 'relative_energy': 'high',
-                    'music_structure': {'bpm': 120, 'sections': [
+                    'music_structure': {'bpm': 120, 'downbeats_s': [0, 2.56], 'sections': [
                         {'start_s': 0, 'end_s': 2, 'predicted_label': 'chorus'}]}}
         with mock.patch.object(server, 'load_analysis', return_value=analysis), mock.patch.object(
             server, 'segment_evidence', return_value=evidence
@@ -113,6 +115,25 @@ class WholeSongTests(TestCase):
         self.assertEqual(task['srt'][-1]['start'], 80.25)
         self.assertEqual(len(task['clip_windows']), 9)
         self.assertEqual(task['clip_windows'][-1]['end'], total)
+        self.assertEqual(task['clip_windows'][1]['source_notes'][0]['start'], 9.0)
+        self.assertEqual(task['clip_windows'][1]['source_notes'][0]['end'], 13.0)
+        self.assertIn(11.25, task['music']['transient_candidates_s'])
+
+        first_batch = json.loads(calls[1].args[2][0][1])
+        first, second, _ = first_batch['clip_windows']
+        self.assertEqual(first['srt'][-1]['clip_end'], 10.0)
+        self.assertEqual(second['srt'], [
+            {'clip_start': 0.0, 'clip_end': 1.2, 'text': '[S2] 跨段歌詞'},
+        ])
+        self.assertEqual(second['transient_candidates_s'], [1.25])
+        self.assertEqual(second['predicted_downbeats_s'], [0, 2.56])
+        self.assertEqual(second['source_notes'][0]['title'], 'ACT 01')
+        self.assertEqual(second['source_notes'][0]['start_s'], 0.0)
+        self.assertEqual(second['source_notes'][0]['end_s'], 3.0)
+        self.assertNotIn('start', second)
+        self.assertNotIn('end', second)
+        self.assertNotIn('ending', first_batch)
+        self.assertNotIn('end_time', second['ending'])
         self.assertEqual(task['music']['predicted_bpm'], 120)
         self.assertEqual(task['clip_windows'][0]['sections'][0]['predicted_label'], 'chorus')
         system = calls[-1].args[1]
@@ -121,6 +142,10 @@ class WholeSongTests(TestCase):
         self.assertEqual([window['index'] for window in batch['clip_windows']], [7, 8, 9])
         self.assertEqual(batch['incoming_handoff'], 'Position after slot 6.')
         self.assertEqual(batch['clip_windows'][-1]['srt'][0]['clip_start'], 0.25)
+        self.assertEqual(batch['clip_windows'][-1]['predicted_downbeats_s'], [0])
+        self.assertAlmostEqual(batch['clip_windows'][-2]['ending']['settle_by'],
+                               task['ending']['settle_by'] - 70, places=6)
+        self.assertEqual(batch['clip_windows'][-1]['ending']['end_time'], 2.56)
         self.assertNotIn('shot number 1', json.dumps(batch))
         self.assertEqual(self.job['whole_song_progress']['completed'], 9)
 
@@ -169,14 +194,16 @@ class WholeSongTests(TestCase):
     def test_35b_restarts_at_first_invalid_slot_and_keeps_the_outline(self):
         self.job['request'].update(whole_song_director=True, director_engine='35b',
                                   director_schema=whole_song.VERSION)
-        self.job['segments'] = segments(9, 4)
+        self.job['segments'] = segments(39, 15)
         for seg in self.job['segments']:
-            seg.update(song_seconds=9, segment_count=3)
+            seg.update(song_seconds=39, segment_count=3)
         clips = [{'index': i, 'handoff': f'Position {i}',
                   'shots': [{'at': 0, 'mode': 'story', 'visual': f'Shot {i}.'}]}
                  for i in range(1, 4)]
-        invalid = dict(clips[1], shots=clips[1]['shots'] +
-                       [{'at': 4, 'mode': 'story', 'visual': 'Out of bounds.'}])
+        invalid = dict(clips[1], shots=[
+            {'at': at, 'mode': 'story', 'visual': 'Absolute song time.'}
+            for at in (15, 18, 21, 24, 27)
+        ])
         self.model.side_effect = [
             {'beats': [{'index': i, 'event': f'Beat {i}'} for i in range(1, 4)]},
             {'clips': [clips[0], invalid, clips[2]]},
@@ -189,7 +216,7 @@ class WholeSongTests(TestCase):
             self.lock.acquire()
             server.worker(*worker_args)
             self.assertEqual(self.job['status'], 'error')
-            self.assertIn('第 2 槽第 2 鏡起點無效', self.job['error'])
+            self.assertIn('第 2 槽第 1 鏡起點無效', self.job['error'])
             self.assertEqual(self.job['whole_song_progress']['completed'], 1)
             self.assertFalse((self.work/'director_plan.json').exists())
             self.queue.assert_not_called()

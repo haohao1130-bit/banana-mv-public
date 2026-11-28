@@ -10,10 +10,10 @@ from banana_mv.core import FPS, map_image_mentions, normalize_mv_prompt
 from banana_mv.director import INTENSITY, MODES, ORIGINAL_CUT_GUIDANCE
 from banana_mv.direction_contract import H3_SECTIONS, validate_h3_sections
 from banana_mv.lyrics_reference import clean_lyric_output, excerpt, vocal_timeline, OUTPUT_POLICY
-from banana_mv.mv_scope import ending_contract
+from banana_mv.mv_scope import clip_ending, ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, parse_object
 from banana_mv.shoot_plan import _apply_source_performance, _pictures
-from banana_mv.timed_slots import parse_timed_source
+from banana_mv.timed_slots import TIME_SPAN, parse_timed_source
 
 VERSION = 7
 DIRECT_SCRIPT = 8
@@ -71,8 +71,9 @@ strictly below each window's duration; place no new shot at the endpoint.
 Python computes shot ends, overlap, media numbering and H3 fields.
 Continue ongoing action from incoming_handoff. For each slot, handoff captures
 final positions, current appearance, props and ongoing motion for the next slot
-in one or two sentences. Window start/end and source SRT times are song-relative;
-window music offsets and SRT clip_start/clip_end are clip-relative.
+in one or two sentences. All structured time values in each window are seconds
+from its own start. Start the clock at 0 for every slot, regardless of its index.
+Treat music cues as action or editing options; a beat does not require a cut.
 Assign mode by actual on-screen activity. Honor authored events, roles,
 chronology and ending. Develop recurring visual motifs.
 Write finished English H3 camera prose with usable framing, camera motion,
@@ -265,6 +266,38 @@ def _recover_batch(work, label, previous_error):
     return None
 
 
+def _shot_window(req, segment, window, ending):
+    """Project authored windows onto the same clock as music cues and shot starts."""
+    start = window['start']
+    end = window['end']
+    duration = window['duration']
+    local = {key: value for key, value in window.items() if key not in ('start', 'end', 'source_notes')}
+    local['source_notes'] = [
+        {'title': TIME_SPAN.sub('', chapter['title']).strip(' ｜|:：'),
+         'start_s': round(max(chapter['start'], start) - start, 6),
+         'end_s': round(min(chapter['end'], end) - start, 6),
+         'actions': chapter['actions'], 'constraints': chapter['constraints']}
+        for chapter in window['source_notes']
+    ]
+    local_segment = {**segment, 'seconds': duration, 'direction_ending_contract': ending}
+    local['srt'] = [
+        {key: cue[key] for key in ('clip_start', 'clip_end', 'text')}
+        for cue in excerpt(req, local_segment)
+    ]
+    for key in ('transient_candidates_s', 'predicted_downbeats_s'):
+        local[key] = [at for at in local[key] if 0 <= at < duration]
+
+    policy = clip_ending(req, local_segment)
+    local['ending'] = {key: policy[key] for key in ('finish_work', 'phase', 'instruction') if key in policy}
+    # Carry only deadlines this slot can act on. A passed deadline maps to the opening.
+    local['ending'].update({
+        key: round(max(0, policy[key] - start), 6)
+        for key in ('resolve_start_by', 'settle_by', 'end_time')
+        if key in policy and policy[key] <= end + 1e-6
+    })
+    return local
+
+
 def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint, progress, cancelled):
     count = len(originals)
     work = Path(work)
@@ -331,10 +364,9 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
             'intensity': task['intensity'],
             'editing': task['editing'],
             'incoming_handoff': accepted[-1]['handoff'] if accepted else '',
-            'clip_windows': [dict(window, srt=excerpt(req, seg)) for window, seg in
+            'clip_windows': [_shot_window(req, seg, window, task['ending']) for window, seg in
                              zip(task['clip_windows'][start:stop], segments[start:stop])],
             'predicted_bpm': task['music']['predicted_bpm'],
-            'ending': task['ending'] if stop == len(segments) else 'Continue the assigned story beats.',
         }
         if state['last_error']:
             local_task['previous_validation_error'] = state['last_error']
@@ -444,7 +476,8 @@ def ensure_whole_song_plan(cfg, req, segments, originals, work, rewrite, *, prog
                 (structure['bpm'] for window in task['clip_windows']
                  if 'bpm' in (structure := window['music'].get('music_structure', {}))), None)
             director_task['music']['time_basis'] = (
-                'Window music offsets are clip-relative. Global transients and downbeats are song-relative.')
+                'Window boundaries, source notes, SRT, and global music cues are song-relative. '
+                'Music offsets within each window are clip-relative.')
             setup, shots = _batch_shots(cfg, req, segments, originals, work, rewrite, director_task,
                                         fingerprint, progress, cancelled)
         else:
