@@ -52,6 +52,18 @@ class Director35Tests(unittest.TestCase):
         self.assertEqual(parts[2]['text'],'<Picture 2>:')
         self.assertTrue(parts[1]['image_url']['url'].startswith('data:image/jpeg;base64,'))
         self.assertEqual(parts[-1]['text'],'current commission')
+    def test_creative_benchmark_preserves_existing_system_contract(self):
+        original = 'Existing H3 native contract and cast constraints'
+        system = director35.creative_system(original)
+        self.assertTrue(system.startswith(original + '\n\n'))
+        self.assertIn('DANGEROUS CONTRACT V2', system)
+        self.assertIn('120–160', system)
+        self.assertIn('never a hard', system)
+        self.assertIn('Quiet drama', system)
+        self.assertIn('repair scope', system)
+        # Transport does not attach the creative guide to unrelated calls.
+        self.assertEqual(director35.messages(original, [('text','repair')])[0]['content'], original)
+
     def test_text_only(self):
         msg=director35.messages('system',[('text','first'),('text','second')])
         self.assertEqual(msg[1]['content'],'first\nsecond')
