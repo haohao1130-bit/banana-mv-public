@@ -1386,6 +1386,9 @@ class Handler(WebHandler):
             return self.send_json({'available': bool(launcher('film', backend.PORT)),
                                    'busy': GPU_LOCK.locked()})
         url = urllib.parse.urlparse(self.path)
+        if url.path == '/banana35b' or url.path.startswith('/banana35b/'):
+            from banana_mv import lab35_bridge
+            return lab35_bridge.get(self, url.path, backend)
         if url.path in ('/','/mv'):
             return self.send_file(WEB/'index.html')
         if url.path=='/clip_review.js':
@@ -1510,6 +1513,9 @@ class Handler(WebHandler):
             from banana_mv.room_switch import switch
             return switch(self, 'film', backend, GPU_LOCK)
         path=urllib.parse.urlparse(self.path).path
+        if path.startswith('/banana35b/'):
+            from banana_mv import lab35_bridge
+            return lab35_bridge.post(self, path, backend, GPU_LOCK, RESTART_LOCK, RESTART_REQUEST)
         try:
             if path=='/api/mv/restart':
                 result = request_desktop_restart(self, self.body_json())
