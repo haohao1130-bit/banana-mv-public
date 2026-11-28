@@ -1403,6 +1403,11 @@ class Handler(WebHandler):
                                    'version':SERVER_BUILD})
         if url.path=='/api/mv/face-refine-capability':
             return self.send_json({'local5070':backend.PORT==8193})
+        if url.path=='/api/mv/director35-progress':
+            if backend.PORT != 8193:
+                return self.send_json({'local5070':False})
+            from banana_mv import director35
+            return self.send_json(dict(director35.snapshot(),local5070=True))
         if url.path=='/api/mv/dan-fire':
             if FIRE_MONITOR is None:
                 return self.send_json({'local5070': False, 'available': False})
