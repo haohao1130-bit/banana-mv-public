@@ -3,10 +3,11 @@
 Text knowledge, not motion-capture assets or a required camera recipe.
 No inference call, vector store, H3 trigger mutation, or acceptance gate.
 """
-from banana_mv.director import MODES, RECIPES, _mentions
+from banana_mv.director import MODES, RECIPES
+from banana_mv.activity_router import route_activity
 from banana_mv.core import normalize_action_loras
 
-VERSION = 'banana-director-library-v3'
+VERSION = 'banana-director-library-v3.1'
 MODE_LIBRARY = {
     "dance": [
         ["Waacking","Rhythmic arm pathways circle around the head and shoulders; grounded weight shifts and sharp accents finish each arc.","waacking arm 手臂"],
@@ -155,17 +156,10 @@ LORA_HINTS = {
 
 
 def select_mode(req, segment):
-    """Honor explicit genre selection; Auto follows the existing isolated plan."""
-    requested = req.get('director', 'auto')
+    """Re-evaluate local activity, including previously saved auto plans."""
     row = segment.get('director_plan') or {}
-    planned = row.get('mode') or segment.get('director_mode')
-    event = row.get('event', '')
-    positive, excluded = _mentions(event)
-    if requested in MODES and requested not in excluded:
-        return requested
-    if planned in MODES and planned not in excluded:
-        return planned
-    return next((mode for mode in MODES if mode in positive), 'story')
+    planned = row.get('mode') or segment.get('director_mode') or 'story'
+    return route_activity(row.get('event', ''), req.get('director', 'auto'), planned)
 
 
 def _rank(entries, mode, event, index, limit, tagged=False):
@@ -197,8 +191,8 @@ def build_library(req, segment):
     if isinstance(raw, dict):
         loras = normalize_action_loras(raw)
         active = [key for key in LORA_HINTS if loras.get(key, {}).get('enabled')]
-    from banana_mv.dance_library import VERSION as DANCE_VERSION, DANCE_CATEGORIES, dance_prompt
-    movement = (dance_prompt(segment) if mode == 'dance' else
+    from banana_mv.dance_library import VERSION as DANCE_VERSION, DANCE_CATEGORIES, dance_prompt, audio_context
+    movement = (dance_prompt(segment, include_music=False) if mode == 'dance' else
                 _format('MOVEMENT / STAGING INGREDIENTS', _rank(MODE_LIBRARY[mode], mode, event, index, 7)))
     sections = [
         'BANANA DIRECTOR LIBRARY ' + VERSION + ' | selected specialty: ' + mode,
@@ -211,6 +205,9 @@ def build_library(req, segment):
         _format('PERFORMANCE INGREDIENTS', _rank(ACTING_LIBRARY, mode, event, index, 3, True)),
         _format('VISUAL INGREDIENTS', _rank(VISUAL_LIBRARY, mode, event, index, 2, True)),
     ]
+    music = audio_context(segment) if req.get('audio_analysis', True) else ''
+    if music:
+        sections.append(music)
     if active:
         sections.append('ACTIVE DOWNSTREAM ADAPTERS (capability hints, not verified trigger words):\n' +
                         '\n'.join('- ' + LORA_HINTS[key] for key in active) +
@@ -223,6 +220,7 @@ def build_library(req, segment):
         sections.append('Short interval: prioritize a clear ongoing beat and its consequence; ingredients are alternatives, not a checklist.')
     text = '\n\n'.join(sections)
     info = {'version': VERSION, 'mode': mode, 'active_loras': active,
+            'music_evidence': bool(music),
             'words': len(text.split())}
     if mode == 'dance':
         info.update(dance_version=DANCE_VERSION,
