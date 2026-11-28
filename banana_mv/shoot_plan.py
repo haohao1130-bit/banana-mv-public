@@ -824,7 +824,7 @@ Return only the native filming prompt, no analysis, JSON or management instructi
     if generic35:
         text = lean_commission(req, segment, tail, row, shoot_event, context,
                                vocals, pictures, connected, creative35=True, end_state=False)
-        parts = _pictures(refs) + [('text', text)]
+        parts = _pictures(refs) + (motion_frame_parts(segment.get('motion_frames')) if tail and req.get('mode') == 'chain5' else []) + [('text', text)]
     else:
         parts=[('text',text)]+_pictures(refs)
     attempts=parts;segment['director_mode']=row['mode']
@@ -901,7 +901,11 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
     fixed = context.get('fixed_reference_settings')
     if fixed:
         parts.append('FIXED REFERENCE SETTINGS (explicit authored bindings):\n' + fixed if creative35 else fixed_settings_block(fixed))
-        parts.append(REFERENCE_IDENTITY)
+        parts.append(
+            'Preserve the authored reference identity, species and current outfit. '
+            'Do not infer a new identity or costume from a reference image; '
+            'original supporting actors retain their own authored design.'
+            if creative35 else REFERENCE_IDENTITY)
     cast = cast_note(row.get('event', ''), fixed or '')
     if cast:
         parts.append(cast)
@@ -930,18 +934,25 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
         def performer(role):
             picture = pictures.get(role)
             if not picture:
-                return 'an unbound performer'
+                return role + ' (use only its authored identity, no guessed picture)' if creative35 else 'an unbound performer'
             number = int(re.search(r'\d+', picture)[0])
-            return picture + (f' ({names[number]})' if number in names else '')
+            label = picture + (f' ({names[number]})' if number in names else '')
+            return role + ' = ' + label if creative35 else label
         rows = []
         for cue in vocals:
             named = ' + '.join(performer(role) for role in cue.get('subjects', []))
-            rows.append(f"{cue['clip_start']:.2f}-{cue['clip_end']:.2f}s: {named or 'unassigned'}")
+            rows.append(f"{cue['clip_start']:.2f}-{cue['clip_end']:.2f}s: {named or (cue.get('voice', 'unassigned') if creative35 else 'unassigned')}")
         parts.append('SRT SINGERS (show these performers when covering lip-sync):\n' + '\n'.join(rows))
-    parts.append('<Audio 1> is the supplied song, kept unchanged (fully_copy); you have not heard it. '
-                 'Add no new speech, lyrics or replacement music. Only the assigned vocalist may lip-sync; '
-                 'everyone else keeps their mouth silent. If you use the guide\'s (Sx) speaker tags, only the singing '
-                 'performer gets one; never tag a silent actor, and do not write lyrics as <d> lines.')
+    if creative35:
+        parts.append('<Audio 1> is the unchanged original song. SRT tags, if available, guide visible '
+                     'lip-sync; follow the current event when no role is tagged. Multiple tagged roles '
+                     'may sing together when assigned. Do not guess voice identity from appearance. '
+                     'Add no independent dialogue, quoted lyrics, replacement music or generated vocals.')
+    else:
+        parts.append('<Audio 1> is the supplied song, kept unchanged (fully_copy); you have not heard it. '
+                     'Add no new speech, lyrics or replacement music. Only the assigned vocalist may lip-sync; '
+                     'everyone else keeps their mouth silent. If you use the guide\'s (Sx) speaker tags, only the singing '
+                     'performer gets one; never tag a silent actor, and do not write lyrics as <d> lines.')
     ending_info = context.get('ending') or {}
     ending = ending_info.get('instruction')
     if creative35:
@@ -971,7 +982,7 @@ def lean_commission(req, segment, tail, row, shoot_event, context, vocals, pictu
         parts.append(current_event)
         parts.append(DELIVERY)
         if end_state:
-            parts.append(END_STATE_REQUEST.replace('After the six sections', 'After the shot paragraphs'))
+            parts.append(END_STATE_REQUEST.replace('After the six sections', 'After the shot paragraphs') + '\nUse stable authored character names in END_STATE, not clip-local subject numbers.')
         return '\n\n'.join(parts)
     parts.append('PYTHON FILLS IN LATER (do not deliberate): overall_soundscape and non_diegetic_music are replaced '
                  'with the unchanged source song after you finish, so write each as one short line. Props and set '
