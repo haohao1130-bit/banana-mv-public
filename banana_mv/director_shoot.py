@@ -66,7 +66,8 @@ Use the selected specialty and demonstration to develop concrete visible
 details at the quality of Dangerous Contract V2, not generic movement names.
 Its substantive shots often use around 120–160 English words; this illustrates
 depth, not a quota, a ceiling or a reason to pad. A brief insert may be brief.
-Choose any suitable shot count, including an expressive continuous take.
+Choose shot count freely within the existing 12-shot interface, including an
+expressive continuous take. Existing shot clocks allow at least 0.250s per shot.
 For high-energy scenes, make bold, precise choices in moving coverage, proximity,
 perspective and motivated cuts; quiet scenes deserve equally precise restraint.
 Carry unfinished action and changing positions through the edit and clip handoff.
@@ -333,8 +334,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'DEVELOP AND FILM THIS CURRENT CLIP EVENT:',
         event,
         '',
-        ('=== 3. 35B CREATIVE DIRECTING — EXPAND THE EVENT, THEN CHOOSE CAMERA AND PERFORMANCE ==='
-         if creative35 else '=== 3. 9B DIRECTING — YOU CHOOSE SHOT COUNT, CAMERA AND PERFORMANCE ==='),
+        '=== 3. 9B DIRECTING — YOU CHOOSE SHOT COUNT, CAMERA AND PERFORMANCE ===',
         'Design local acting, body movement, expression changes, visual responses, '
         'camera coverage and dramatic timing around the assigned beat.',
         'Choose an unbroken emotional take or several distinct views as the events demand. '
@@ -353,12 +353,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'Choose freely up to 12 meaningful shots, including a valid one-shot.',
         'Camera energy: ' + str(req.get('intensity', 'high')) + '.',
     ]
-    if creative35:
-        lines.extend(('', 'DELIVERY: Expand the assigned event into complete cinematic shot prose. '
-                      'Use the six native H3 section headers and local shot times. '
-                      'The separate system reference example teaches descriptive depth, not this clip\'s events.'))
-    else:
-        lines.extend([
+    lines.extend([
         '',
         '=== NATIVE SIX-SECTION DELIVERY EXAMPLE (ONE-SHOT SHAPE) ===',
         'subject_definitions:\nReference the specified cast and current outfits.',
@@ -369,7 +364,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
         'with deliberate composition, physical action and character interaction.',
         'overall_soundscape:\nThe supplied source song remains unchanged.',
         'non_diegetic_music:\nThe supplied original song.',
-        ])
+    ])
     if direction_policy:
         lines.extend(('', '=== 4. ADAPTATION / PERFORMANCE / EDITING AUTHORITY ===',
                       direction_policy))
