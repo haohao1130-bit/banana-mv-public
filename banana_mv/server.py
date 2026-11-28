@@ -753,6 +753,33 @@ def worker(job, cfg, original, song, drive):
                     seg['motion_frames']=[str(path) for path in tail_frames[1:]]
                 else:
                     seg.pop('motion_frames',None)
+            # Only 35B's creative dance path receives earlier completed prompt
+            # vocabulary. Never expose future chapters or unadopted takes.
+            if (cfg.get('director35') is not None and
+                    job['request'].get('director_schema') in (5, 6) and
+                    job['request'].get('rewrite', True)):
+                from banana_mv.director_library import select_mode
+                if select_mode(job['request'], seg) == 'dance':
+                    from banana_mv.dance_library import dance_memory
+                    history = []
+                    for earlier in job['segments'][:i]:
+                        if earlier.get('status') != 'done' or earlier.get('director_mode') != 'dance':
+                            continue
+                        chosen = earlier.get('selected_take', 'original')
+                        try:
+                            file = takes.existing_file(job, earlier['index'], chosen, 'prompt.txt')
+                            if file.is_file():
+                                prior = file.read_text(encoding='utf-8')
+                            elif chosen == 'original':
+                                prior = earlier.get('prompt', '')
+                            else:
+                                continue
+                        except (OSError, ValueError, UnicodeError):
+                            continue
+                        history.append((earlier['index'], prior))
+                    seg['dance_memory'] = dance_memory(history, i)
+                else:
+                    seg.pop('dance_memory', None)
             if job['request'].get('prompt_source_job'):
                 # 定稿重拍：沿用草稿那份已確認的提示詞，不再叫 9B 重寫。
                 prompt=draft_prompt(job['request']['prompt_source_job'],i,len(original)+int(bool(tail)))
