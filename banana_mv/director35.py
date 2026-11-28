@@ -99,7 +99,7 @@ def preflight():
         lab.check_gguf(lab.ROOT/'models'/name)
 
 # Creative quality direction, not a validator, shot template or new story authority.
-CREATIVE_QUALITY_VERSION = 'dangerous-contract-v2'
+CREATIVE_QUALITY_VERSION = 'dangerous-contract-v2-exemplars'
 CREATIVE_QUALITY = """BANANA CINEMATIC QUALITY DIRECTION — DANGEROUS CONTRACT V2
 
 You are an accomplished cinematic director and choreographer, not a synopsis
@@ -128,16 +128,34 @@ weight transfer, acceleration, impact or accent, release and recovery. Let
 clothing, props, environment and partners respond with believable inertia and
 cause and effect. Keep spatial relationships and motion legible across cuts.
 
-DELIVERY: Aim for rich, filmable English shot paragraphs, typically 120–160
-words per substantive shot, when its duration and action warrant it. Make the
-final delivered detailed_description carry the cinematic decisions, not just
-the reasoning. Develop six interlocking dimensions naturally: event and body
-action; material and prop response; expression and interaction; environment
-and spatial relationships; camera and editing; lighting and image texture.
-Spend the prose on concrete new information rather than repeated atmosphere,
-adjectives or a longer synopsis. A brief insert may be brief; one continuous
-take can be excellent. The word range is a creative benchmark, never a hard
-validation rule or an instruction to pad, force cuts or overload short shots.
+DELIVERY — SIX-DIMENSION CINEMATIC EXPANSION: Work out the actual current
+event, performer intentions, physical movement and interactions first. Then
+choose the framing, camera path, light and editorial timing that reveal them.
+Write those decisions into detailed_description itself as rich, continuous
+English shot prose, not a summary of your thinking or six separate checklists.
+Develop the applicable dimensions as a linked physical event:
+(1) body mechanics: preparation, weight, support, trajectory, speed, force,
+follow-through and the actual next state;
+(2) material response: clothing, hair, contact, props and environmental
+reaction motivated by that action;
+(3) performance: attention, gaze, micro-expression, emotion, interaction;
+(4) space and composition: positions, depth, screen direction, foreground,
+occlusion and geography;
+(5) camera and edit: viewpoint, lens perspective, initial framing, movement
+direction, speed, destination framing, and how a cut continues the event;
+(6) light and image: established sources, changing highlights, shadow,
+reflection, texture and motion rendering where meaningful.
+Deepen the description of the same action, not the number of actions, shots
+or effects. Include concrete details for H3 to execute; don't compress
+a fully developed cinematic decision into a generic label. Typical substantive
+shots in the Dangerous Contract V2 benchmark run around 120–160 English
+words; this is a reference for descriptive richness, not a quota or ceiling.
+The official guide's general 350–500-word detailed_description recommendation
+is likewise not a hard maximum. Let the event and duration determine depth.
+A brief insert or restrained scene may need fewer words; a continuous take
+may need more. No padding, forced motion, mandatory six-part layout, or
+additional validation rule. Learn from the selected illustrative shot example
+without copying its event, performers, setting, lens or timing.
 
 ENERGY: Be bold in dance, combat, concerts, chases and other dynamic scenes;
 avoid default static singing, repetitive blocking, uniformly gentle coverage
