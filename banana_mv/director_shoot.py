@@ -248,9 +248,39 @@ def _safe_vocals(blocks, slots, fixed):
     return _repair_vocals(blocks, slots, fixed)
 
 
+def _clip_phase_note(ending):
+    """Expose only local boundary semantics, never the future ending plan."""
+    if not ending:
+        return ''
+    phase = ('excerpt' if ending.get('project_scope') == 'excerpt'
+             else ending.get('phase'))
+    notes = {
+        'continuing': (
+            'This is an ongoing part of the MV. The technical clip boundary '
+            'is not a story ending. Carry the current performance and physical '
+            'momentum naturally into the next clip. A motivated local pause or '
+            'completed movement is fine; do not manufacture a closing pose or finale.'),
+        'resolving': (
+            'Film the decisive events and consequences actually assigned to '
+            'this interval. Respect the commissioned timing and outcome; '
+            'do not invent a final pose, fade, or extra hold.'),
+        'terminal_hold': (
+            'Carry the achieved result, present conditions, reactions or '
+            'ongoing performance through this residual interval. Do not replay '
+            'the climax. An explicitly assigned local final event takes priority.'),
+        'excerpt': (
+            'This is an excerpt of a larger MV, not the whole-work ending. '
+            'Complete the assigned local event and leave the larger story open; '
+            'do not manufacture a finale.'),
+    }
+    if phase not in notes:
+        return ''
+    return 'CLIP PHASE: ' + phase.upper() + '\n' + notes[phase]
+
+
 def _free_commission(req, segment, event, pictures, wardrobe, cues,
                      continuity=False, scene_schedule=(), direction_policy='', body_form=None,
-                     fixed='', creative35=False):
+                     fixed='', creative35=False, ending=None):
     body_form = body_form or {}
     duration = float(segment['seconds'])
     lines = []
@@ -300,6 +330,8 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
                 f'REQUIRED REAL SCENE CUT at {row["start"]:.3f}s: '
                 'place a [Shot N] boundary here to keep location/outfit continuity. '
                 'This is a physical scene change, not an SRT singer cut.')
+    if phase_note := _clip_phase_note(ending):
+        lines.extend(('', phase_note))
     if creative35:
         # The original production facts stay intact. Put the actual current
         # commission last, after policy/reference material, not before it.
@@ -376,7 +408,7 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
 
 def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                                 wardrobe, refs, images, rewrite, progress=None, direction_policy='',
-                                body_form=None, shoot_event=None):
+                                body_form=None, shoot_event=None, ending=None):
     """Actual 5070 two-singer path: independent SRT windows + 9B camera."""
     body_form = body_form if body_form is not None else declared_body_forms(fixed)
     if body_form:
@@ -392,7 +424,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
                             pictures, wardrobe, cues,
                             continuity=len(refs) > 2, scene_schedule=schedule,
                             direction_policy=direction_policy, body_form=body_form,
-                            fixed=fixed, creative35=creative35)
+                            fixed=fixed, creative35=creative35, ending=ending)
     calls = 0
     retry_limit = rewrite_retry_count(req)
     draft_temperature = float(cfg['rewriter'].get('temperature', .7))
