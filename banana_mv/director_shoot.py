@@ -343,7 +343,11 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
         if progress:
             progress({'stage': 'rewriting', 'clip_index': segment['index'],
                       'attempt': calls, 'max_attempts': max_calls})
-        return rewrite(_cfg(cfg, temperature), system, parts, uuid.uuid4().hex[:8])
+        call_cfg = _cfg(cfg, temperature)
+        # Existing 9B path stays non-thinking; selected 35B may think on the first draft only.
+        if cfg.get('director35') is not None and calls == 1:
+            call_cfg['rewriter']['thinking'] = bool(cfg['rewriter'].get('thinking', False))
+        return rewrite(call_cfg, system, parts, uuid.uuid4().hex[:8])
 
     for restart in range(retry_limit+1):
         blocks = None
