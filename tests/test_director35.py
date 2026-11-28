@@ -1,6 +1,10 @@
 """CPU-only contract checks for the optional 35B transport."""
 import unittest
 import io
+import json
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 from banana_mv import director35
 
 class ImageStub:
@@ -51,6 +55,30 @@ class Director35Tests(unittest.TestCase):
     def test_text_only(self):
         msg=director35.messages('system',[('text','first'),('text','second')])
         self.assertEqual(msg[1]['content'],'first\nsecond')
+
+    def test_truncated_thinking_draft_is_saved_but_not_accepted(self):
+        requests=[]
+        def open_request(req,timeout):
+            requests.append(json.loads(req.data))
+            event={'choices':[{'delta':{'reasoning_content':'analysis','content':'partial draft'},
+                              'finish_reason':'length'}]}
+            return io.BytesIO(('data: '+json.dumps(event)+'\n\ndata: [DONE]\n').encode())
+        lab=SimpleNamespace(BASE='http://127.0.0.1:8091',
+                            OPENER=SimpleNamespace(open=open_request),
+                            STOP=SimpleNamespace(is_set=lambda:False),
+                            save=lambda p,v:p.write_text(json.dumps(v),encoding='utf-8'))
+        opts={'thinking':True,'vision':True,'max_tokens':16384,'reasoning_budget':12288,'seed':42}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            out,metrics=director35.stream_call(lab,[],opts,path,0,{})
+            self.assertEqual(out,'')
+            self.assertEqual(metrics['finish_reason'],'length')
+            self.assertEqual((path/'attempt1_formal.txt').read_text(encoding='utf-8'),'partial draft')
+            self.assertEqual(requests[0]['reasoning_budget_tokens'],12288)
+            with self.assertRaisesRegex(RuntimeError,'未完整交稿'):
+                director35.stream_call(lab,[],opts,path,1,{})
+            self.assertEqual(requests[1]['reasoning_budget_tokens'],0)
+            self.assertFalse(requests[1]['chat_template_kwargs']['enable_thinking'])
 
     def test_dashboard_uses_actual_stream_counters(self):
         with director35._STATS_LOCK:
