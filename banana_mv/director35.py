@@ -3,6 +3,7 @@ import base64
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import secrets
@@ -14,6 +15,47 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(r'F:\BANANA35B')
+
+# Read-only telemetry for the existing 8193 dashboard; no GPU work or polling here.
+_STATS_LOCK = threading.Lock()
+_STATS = {}
+
+def _stats(**values):
+    with _STATS_LOCK:
+        _STATS.update(values)
+
+def snapshot():
+    with _STATS_LOCK:
+        state = dict(_STATS)
+    if state.get('active'):
+        state['elapsed_s'] = round(time.monotonic()-state['started'],1)
+    state.pop('started',None)
+    return state
+
+def _number(value):
+    return value if type(value) in (int,float) and math.isfinite(value) and value >= 0 else None
+
+def _stream_stats(event, stage, first=None):
+    values = {'stage':stage}
+    p = event.get('prompt_progress')
+    if isinstance(p,dict):
+        total,processed,cache,ms = (_number(p.get(k)) for k in ('total','processed','cache','time_ms'))
+        values.update(prompt_total=total,prompt_processed=processed,prompt_cache=cache)
+        if ms and processed is not None and cache is not None and processed >= cache:
+            values['prefill_tps'] = (processed-cache)*1000/ms
+    t = event.get('timings')
+    if isinstance(t,dict):
+        for src,dst in (('prompt_n','prompt_evaluated'),('predicted_n','output_tokens'),('draft_n','draft_n'),('draft_n_accepted','draft_accepted')):
+            v = _number(t.get(src))
+            if v is not None:values[dst]=v
+        for src,dst,mskey in (('prompt_per_second','prefill_tps','prompt_ms'),('predicted_per_second','decode_tps','predicted_ms')):
+            v = _number(t.get(src))
+            if v is not None and (_number(t.get(mskey)) or 0)>0:values[dst]=v
+        if values.get('draft_n'):
+            accepted=values.get('draft_accepted')
+            if accepted is not None:values['mtp_accept_pct']=100*accepted/values['draft_n']
+    if first is not None:values['ttft_s']=first
+    _stats(**values)
 
 def options(request):
     engine = request.get('director_engine', '9b')
@@ -72,15 +114,17 @@ def stream_call(lab, msg, o, run, attempt, sampling):
     from urllib.request import Request
     thinking = o['thinking'] and attempt == 0
     kwargs = {'enable_thinking':thinking}
+    _stats(stage='prefill',attempt=attempt+1,thinking=thinking,prompt_total=None,prompt_processed=None,prompt_cache=None,prompt_evaluated=None,prefill_tps=None,decode_tps=None,output_tokens=0,draft_n=None,draft_accepted=None,mtp_accept_pct=None,ttft_s=None)
     if not o['vision']:
         rendered = lab.local_json('/apply-template',{'messages':msg,'chat_template_kwargs':kwargs,'add_generation_prompt':True})
         prompt = rendered.get('prompt')
         if not isinstance(prompt,str):raise RuntimeError('無法取得完整文字模板。')
         tokens = lab.local_json('/tokenize',{'content':prompt,'add_special':False,'parse_special':True}).get('tokens')
         if not isinstance(tokens,list):raise RuntimeError('無法取得 prompt tokens。')
+        _stats(prompt_total=len(tokens))
         if len(tokens)+o['max_tokens']+64>o['ctx']:
             raise RuntimeError(f"Context 不足：{len(tokens)} + {o['max_tokens']} + 64 > {o['ctx']}。請增加 context 或減少生成上限。")
-    payload={'model':'banana35b','messages':msg,'stream':True,'stream_options':{'include_usage':True},
+    payload={'model':'banana35b','messages':msg,'stream':True,'stream_options':{'include_usage':True},'timings_per_token':True,'return_progress':True,
              'max_tokens':o['max_tokens'],'temperature':float(sampling.get('temperature',.7)),
              'top_p':float(sampling.get('top_p',.8)),'top_k':int(sampling.get('top_k',20)),
              'seed':o['seed'],'chat_template_kwargs':kwargs,'cache_prompt':False}
@@ -102,6 +146,10 @@ def stream_call(lab, msg, o, run, attempt, sampling):
                 d=c.get('delta',{});r=d.get('reasoning_content') or d.get('reasoning') or '';t=d.get('content') or ''
                 if (r or t) and first is None:first=time.monotonic()-started
                 reason+=r;out+=t;finish=c.get('finish_reason') or finish
+            stage = 'prefill'
+            if first is not None:
+                stage = 'thinking' if thinking and (not out or ('<think>' in out and '</think>' not in out)) else 'writing'
+            _stream_stats(event,stage,first)
     if '</think>' in out:
         prefix,out=out.rsplit('</think>',1);reason+=prefix
     elif '<think>' in out:
@@ -115,11 +163,26 @@ def stream_call(lab, msg, o, run, attempt, sampling):
     return out.strip(),metrics
 
 def rewrite(cfg,system,parts,job_id,stopped):
+    started=time.monotonic()
+    with _STATS_LOCK:
+        _STATS.clear()
+        _STATS.update(active=True,stage='loading',started=started,mtp=cfg['director35']['mtp'],thinking=bool(cfg['rewriter']['thinking']),context=cfg['director35']['ctx'],cpu_moe=cfg['director35']['moe'],budget=cfg['director35']['max_tokens'],attempt=1)
+    outcome='done'
+    try:
+        return _rewrite(cfg,system,parts,job_id,stopped)
+    except Exception:
+        outcome='cancelled' if stopped.is_set() else 'error'
+        raise
+    finally:
+        _stats(active=False,stage=outcome,elapsed_s=round(time.monotonic()-started,1))
+
+def _rewrite(cfg,system,parts,job_id,stopped):
     from banana_mv import services as backend
     lab = load()
     o = dict(cfg['director35'])
     msg = messages(system,parts)
     vision = isinstance(msg[1]['content'],list)
+    _stats(vision=vision)
     o.update(vision=vision, thinking=bool(cfg['rewriter']['thinking']), seed=secrets.randbelow(2**31))
     # Use the existing verified runtime. V2 lab args_for disallows MTP+vision,
     # so construct the combined experimental command explicitly. No fallback.
@@ -200,6 +263,7 @@ def rewrite(cfg,system,parts,job_id,stopped):
         if stopped.is_set():raise InterruptedError('已停止35B。') from e
         raise RuntimeError('35B 導演失敗（未切回9B）：'+str(e)+'；紀錄 '+str(run)) from e
     finally:
+        _stats(stage='unloading')
         monitor_stop.set()
         if monitor:monitor.join(20)
         lab.stop_process()
