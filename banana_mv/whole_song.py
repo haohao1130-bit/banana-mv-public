@@ -51,7 +51,13 @@ No notes for a downstream writer, no commentary, no extra JSON fields required."
 BATCH_SIZE = 3
 OUTLINE_SYSTEM = """Plan the entire MV before any shots are written. Return one JSON object:
 {"setup":"additional stable creative design or missing cast bindings",
- "beats":[{"index":<slot index>,"event":"one or two sentences on the story or performance beat and its outcome"}]}
+ "beats":[{"index":<slot index>,"event":"one or two sentences on the story or performance beat and its outcome",
+ "activity":"main on-screen activity, one supported activity",
+ "style":"a few movement or genre keywords, e.g. vogue, waacking, wing chun",
+ "formation":"cast positions and facing at the slot start",
+ "end_state":"positions, pose and ongoing motion at the slot end"}]}
+activity, style, formation and end_state are short index keys for the later
+shot-writing passes; leave style empty when no specific vocabulary applies.
 Fill every fixed clip window in order. Preserve authored events, roles, chronology
 and the ending. Use the original reference numbers and treat author_setup as
 authoritative. Do not repeat it. For a rough cue, develop a causal arc and put
@@ -74,6 +80,8 @@ final positions, current appearance, props and ongoing motion for the next slot
 in one or two sentences. All structured time values in each window are seconds
 from its own start. Start the clock at 0 for every slot, regardless of its index.
 Treat music cues as action or editing options; a beat does not require a cut.
+A window's planned keys are the outline's intended activity, style, formation
+and end state. Follow them unless the window's source notes say otherwise.
 Assign mode by actual on-screen activity. Honor authored events, roles,
 chronology and ending. Develop recurring visual motifs.
 Write finished English H3 camera prose with usable framing, camera motion,
@@ -277,6 +285,37 @@ def _recover_batch(work, label, previous_error):
     return None
 
 
+# Shot-level timing arrays are for the shot-writing passes only. The outline
+# leaves timing to them, so it receives coarse sections and energy instead.
+_OUTLINE_DROP = ('transient_candidates_s', 'predicted_downbeats_s')
+_KEY_LIMIT = 400
+
+
+def _outline_task(task):
+    """The outline's view of the commission, without per-beat timing arrays."""
+    music = {key: value for key, value in task['music'].items() if key not in _OUTLINE_DROP}
+    music['time_basis'] = ('Window boundaries, source notes, SRT, and global music cues are song-relative. '
+                           'Section times within each window are clip-relative.')
+    return {**task, 'music': music,
+            'clip_windows': [{key: value for key, value in window.items() if key not in _OUTLINE_DROP}
+                             for window in task['clip_windows']]}
+
+
+def _beat_keys(beat, req, count):
+    """Optional outline index keys. A malformed key is dropped, never fatal."""
+    keys = {}
+    activity = beat.get('activity')
+    if isinstance(activity, str) and activity.strip().lower() in MODES:
+        keys['activity'] = activity.strip().lower()
+    for name in ('style', 'formation', 'end_state'):
+        value = beat.get(name)
+        if isinstance(value, str) and value.strip():
+            value = _visual(value, name, req, count, False).strip()
+            if value:
+                keys[name] = value[:_KEY_LIMIT]
+    return keys
+
+
 def _shot_window(req, segment, window, ending):
     """Project authored windows onto the same clock as music cues and shot starts."""
     start = window['start']
@@ -320,7 +359,9 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
                 or stored.get('content_sha256') != digest(state)):
             raise SceneStateError('保存的 35B 分批稿與本次專案資料不一致。')
     else:
-        state = {'setup': '', 'beats': [], 'accepted': [], 'last_error': ''}
+        state = {'setup': '', 'beats': [], 'beat_keys': [], 'accepted': [], 'last_error': ''}
+    # Checkpoints written before outline index keys simply have none.
+    state.setdefault('beat_keys', [])
     accepted = state['accepted']
     pictures = _pictures(originals)
 
@@ -349,7 +390,8 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
     if progress:
         progress(len(accepted), len(segments), bool(state['beats']))
     if not state['beats']:
-        outline = direct(OUTLINE_SYSTEM, task, 'outline')
+        outline = direct(OUTLINE_SYSTEM + '\nSupported activities: ' + ', '.join(MODES),
+                         _outline_task(task), 'outline')
         beats = outline.get('beats')
         if not isinstance(beats, list) or len(beats) != len(segments):
             raise SceneStateError(f'全曲大綱須完整填寫 {len(segments)} 個段落槽。')
@@ -362,6 +404,7 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
             if role in authored_roles and authored_roles[role] != picture:
                 raise SceneStateError(f'全曲大綱改動了共同設定的 {role} 圖片綁定。')
         state['beats'] = [_visual(beat.get('event'), 'event', req, count) for beat in beats]
+        state['beat_keys'] = [_beat_keys(beat, req, count) for beat in beats]
         state['setup'] = '\n\n'.join(filter(None, (task['author_setup'], setup)))
         save()
 
@@ -379,6 +422,10 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
                              zip(task['clip_windows'][start:stop], segments[start:stop])],
             'predicted_bpm': task['music']['predicted_bpm'],
         }
+        for offset, window in enumerate(local_task['clip_windows']):
+            keys = state['beat_keys'][start + offset] if start + offset < len(state['beat_keys']) else {}
+            if keys:
+                window['planned'] = keys
         if state['last_error']:
             local_task['previous_validation_error'] = state['last_error']
         try:

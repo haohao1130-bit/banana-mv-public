@@ -97,7 +97,11 @@ class WholeSongTests(TestCase):
                  for i in range(9)]
         self.model.side_effect = [
             {'setup': 'Evening backlight follows the cast.',
-             'beats': [{'index': i + 1, 'event': f'Performance beat {i + 1}.'} for i in range(9)]},
+             'beats': [{'index': i + 1, 'event': f'Performance beat {i + 1}.',
+                        **({'activity': 'Dance', 'style': 'vogue, waacking',
+                            'formation': '<Picture 1> left, <Picture 2> right, facing camera'}
+                           if i == 0 else {'activity': 'moonwalking'} if i == 1 else {})}
+                       for i in range(9)]},
             *({'clips': clips[i:i+3]} for i in range(0, 9, 3)),
         ]
         analysis = {'pulse': None}
@@ -117,7 +121,13 @@ class WholeSongTests(TestCase):
         self.assertEqual(task['clip_windows'][-1]['end'], total)
         self.assertEqual(task['clip_windows'][1]['source_notes'][0]['start'], 9.0)
         self.assertEqual(task['clip_windows'][1]['source_notes'][0]['end'], 13.0)
-        self.assertIn(11.25, task['music']['transient_candidates_s'])
+        # The outline leaves shot timing to later passes: no per-beat arrays.
+        self.assertNotIn('transient_candidates_s', task['music'])
+        self.assertNotIn('predicted_downbeats_s', task['music'])
+        self.assertNotIn('transient_candidates_s', task['clip_windows'][1])
+        self.assertNotIn('predicted_downbeats_s', task['clip_windows'][1])
+        self.assertEqual(task['clip_windows'][1]['energy'], 'high')
+        self.assertIn('Supported activities: ', calls[0].args[1])
 
         first_batch = json.loads(calls[1].args[2][0][1])
         first, second, _ = first_batch['clip_windows']
@@ -127,6 +137,10 @@ class WholeSongTests(TestCase):
         ])
         self.assertEqual(second['transient_candidates_s'], [1.25])
         self.assertEqual(second['predicted_downbeats_s'], [0, 2.56])
+        self.assertEqual(first['planned'], {
+            'activity': 'dance', 'style': 'vogue, waacking',
+            'formation': '<Picture 1> left, <Picture 2> right, facing camera'})
+        self.assertNotIn('planned', second)  # unsupported activity is dropped, not fatal
         self.assertEqual(second['source_notes'][0]['title'], 'ACT 01')
         self.assertEqual(second['source_notes'][0]['start_s'], 0.0)
         self.assertEqual(second['source_notes'][0]['end_s'], 3.0)
