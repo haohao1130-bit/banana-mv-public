@@ -151,6 +151,18 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
   <div><span>藥材庫 RAM</span><strong id="dan-fire-ram">—</strong></div>
  </div>
  <p id="dan-fire-note" class="muted" role="status">每三秒觀測一次天機。不干涉煉丹。</p>
+</section><section id="director35-meter" class="dan-fire" aria-labelledby="director35-meter-title" hidden>
+ <div class="dan-fire-head"><div><h3 id="director35-meter-title">🧠 蕉宗導演神識鑑測儀</h3><p id="director35-meter-config" class="muted">35B MoE</p></div><strong id="director35-meter-stage">候命</strong></div>
+ <div class="dan-fire-grid">
+  <div><span>閱覽丹方｜Prefill</span><strong id="director35-prefill">—</strong></div>
+  <div><span>神識輸出｜Decode</span><strong id="director35-decode">—</strong></div>
+  <div><span>已讀 Token</span><strong id="director35-input">—</strong></div>
+  <div><span>生成 Token（含思考）</span><strong id="director35-generated">—</strong></div>
+  <div><span>天機預判｜MTP 命中率</span><strong id="director35-accept">—</strong></div>
+  <div><span>本次導演耗時</span><strong id="director35-elapsed">—</strong></div>
+ </div>
+ <progress id="director35-meter-bar" style="width:100%" aria-label="35B 讀取或生成預算進度"></progress>
+ <p id="director35-meter-note" class="muted" role="status"></p>
 </section><section class="alchemy-hero" aria-labelledby="alchemy-title">
   <div class="alchemy-copy">
     <div class="hero-eyebrow"><span></span> 大乘蕉宗 · 公開煉丹房</div>
@@ -288,7 +300,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #f4
 </dialog>
 
 <nav class="mobile-furnace-bar" aria-label="煉丹快捷操作">
-<button type="button" class="secondary mobile-furnace-link" id="mobile-furnace-open"><span id="mobile-furnace-open-title">煉丹爐</span><span class="mobile-furnace-label" id="mobile-furnace-label">尚未開始</span><span class="mobile-furnace-label" id="mobile-comfy-progress" hidden></span></button>
+<button type="button" class="secondary mobile-furnace-link" id="mobile-furnace-open"><span id="mobile-furnace-open-title">煉丹爐</span><span class="mobile-furnace-label" id="mobile-furnace-label">尚未開始</span><span class="mobile-furnace-label" id="mobile-comfy-progress" hidden></span><span class="mobile-furnace-label" id="mobile-director35-progress" hidden></span></button>
 <button type="button" id="mobile-furnace-start">直接煉丹</button>
 </nav>
 <script>
@@ -614,6 +626,46 @@ async function refreshDanFire(){
 }
 void refreshDanFire();
 setInterval(refreshDanFire,3000);
+
+let director35MeterPending=false,director35MeterSupported=true;
+function renderDirector35Meter(info){
+ const panel=$('director35-meter'),mobile=$('mobile-director35-progress');
+ if(info?.local5070===false){panel.hidden=mobile.hidden=true;director35MeterSupported=false;return;}
+ if(info?.local5070!==true)return;
+ if(!info.stage){panel.hidden=mobile.hidden=true;return;}
+ panel.hidden=false;
+ const stages={loading:'載入導演',prefill:'閱覽丹方',thinking:'閉目參悟｜思考中',writing:'揮毫寫稿',unloading:'卸載導演',done:'上次交稿完成',error:'上次交稿失敗',cancelled:'上次已取消'};
+ const stage=stages[info.stage]||'候命';
+ const fmt=(n,suffix='',digits=0)=>Number.isFinite(n)?n.toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits})+suffix:'—';
+ const tps=n=>fmt(n,' t/s',1);
+ const hasInput=Number.isFinite(info.prompt_total);
+ const input=Number.isFinite(info.prompt_processed)?info.prompt_processed:info.prompt_evaluated;
+ $('director35-meter-stage').textContent=stage;
+ $('director35-meter-config').textContent=['35B MoE',Number.isFinite(info.cpu_moe)?'CPU '+info.cpu_moe+' 層':'',info.context?info.context/1024+'K Context':'',info.vision?'看圖':'純文字',info.mtp?'MTP ON':'MTP OFF',info.thinking?'思考 ON':'思考 OFF'].filter(Boolean).join('｜');
+ $('director35-prefill').textContent=tps(info.prefill_tps);
+ $('director35-decode').textContent=tps(info.decode_tps);
+ $('director35-input').textContent=fmt(input)+(hasInput?' / '+fmt(info.prompt_total):'');
+ $('director35-generated').textContent=fmt(info.output_tokens)+(info.budget?' / '+fmt(info.budget):'');
+ $('director35-accept').textContent=info.mtp?fmt(info.mtp_accept_pct,'%',1):'未開啟';
+ $('director35-elapsed').textContent=fmt(info.elapsed_s,' 秒',1);
+ const bar=$('director35-meter-bar');
+ if(info.stage==='prefill'&&hasInput&&info.prompt_total>0&&Number.isFinite(input)){bar.max=info.prompt_total;bar.value=Math.min(input,bar.max);}
+ else if(['thinking','writing','unloading','done','error','cancelled'].includes(info.stage)&&info.budget&&Number.isFinite(info.output_tokens)){bar.max=info.budget;bar.value=Math.min(info.output_tokens,bar.max);}
+ else{bar.removeAttribute('value');}
+ const notes=[info.attempt?'本次模型呼叫第 '+info.attempt+' 次嘗試':'',Number.isFinite(info.ttft_s)?'首字 '+fmt(info.ttft_s,'s',1):'',Number.isFinite(info.draft_n)&&info.draft_n>0?'MTP '+fmt(info.draft_accepted)+' / '+fmt(info.draft_n):'',Number.isFinite(info.prompt_cache)&&info.prompt_cache>0?'快取 '+fmt(info.prompt_cache)+' tokens':''];
+ $('director35-meter-note').textContent=notes.filter(Boolean).join('｜')+'。生成條為 Token 預算使用量，非完稿百分比；數據由 llama.cpp 即時回傳。';
+ mobile.hidden=!info.active;
+ mobile.textContent='35B '+stage+(Number.isFinite(info.decode_tps)?'｜'+tps(info.decode_tps):Number.isFinite(info.prefill_tps)?'｜'+tps(info.prefill_tps):'');
+}
+async function refreshDirector35Meter(){
+ if(!director35MeterSupported||director35MeterPending)return;
+ director35MeterPending=true;
+ try{renderDirector35Meter(await api('/api/mv/director35-progress',{cache:'no-store'}));}
+ catch(_){$('mobile-director35-progress').hidden=true;if(!$('director35-meter').hidden)$('director35-meter-stage').textContent='暫時斷訊';}
+ finally{director35MeterPending=false;}
+}
+void refreshDirector35Meter();
+setInterval(refreshDirector35Meter,1500);
 
 function renderComfyProgress(info){
  const panel=$('comfy-progress'), mobile=$('mobile-comfy-progress');
