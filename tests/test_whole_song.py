@@ -72,7 +72,7 @@ class WholeSongTests(TestCase):
         self.assertIn('Continue this shot already in progress.', prompts[2])
         self.assertIn('夕陽下揮手', prompts[2])
 
-    def test_35b_once_for_nine_segments_then_approval_reuses_it(self):
+    def test_35b_batches_nine_segments_then_approval_reuses_them(self):
         from banana_mv import director35
 
         total = 82.560
@@ -89,13 +89,15 @@ class WholeSongTests(TestCase):
         self.job.update(duration=total, segments=segments(total, 10))
         for seg in self.job['segments']:
             seg.update(song_seconds=total, segment_count=9)
-        self.model.return_value = {
-            'setup': 'Evening backlight follows the cast.',
-            'clips': [{'index': i + 1, 'shots': [
-                {'at': 0, 'mode': 'dance' if i == 0 else 'story',
-                 'visual': f'Wide handheld shot number {i + 1}, tracking <Picture 1>.'}]}
-                      for i in range(9)],
-        }
+        clips = [{'index': i + 1, 'handoff': f'Position after slot {i + 1}.', 'shots': [
+            {'at': 0, 'mode': 'dance' if i == 0 else 'story',
+             'visual': f'Wide handheld shot number {i + 1}, tracking <Picture 1>.'}]}
+                 for i in range(9)]
+        self.model.side_effect = [
+            {'setup': 'Evening backlight follows the cast.',
+             'beats': [{'index': i + 1, 'event': f'Performance beat {i + 1}.'} for i in range(9)]},
+            *({'clips': clips[i:i+3]} for i in range(0, 9, 3)),
+        ]
         analysis = {'pulse': None}
         evidence = {'transient_candidates_s': [1.25], 'relative_energy': 'high',
                     'music_structure': {'bpm': 120, 'sections': [
@@ -104,16 +106,23 @@ class WholeSongTests(TestCase):
             server, 'segment_evidence', return_value=evidence
         ):
             self.plan()
-        self.model.assert_called_once()
-        _, system, parts, _ = self.model.call_args.args
-        task = json.loads(parts[0][1])
-        self.assertIn('finished English H3 camera prose', system)
+        self.assertEqual(self.model.call_count, 4)
+        calls = self.model.call_args_list
+        task = json.loads(calls[0].args[2][0][1])
         self.assertIn('<Picture 1> = 西索', task['author_setup'])
         self.assertEqual(task['srt'][-1]['start'], 80.25)
         self.assertEqual(len(task['clip_windows']), 9)
         self.assertEqual(task['clip_windows'][-1]['end'], total)
         self.assertEqual(task['music']['predicted_bpm'], 120)
         self.assertEqual(task['clip_windows'][0]['sections'][0]['predicted_label'], 'chorus')
+        system = calls[-1].args[1]
+        batch = json.loads(calls[-1].args[2][0][1])
+        self.assertIn('finished English H3 camera prose', system)
+        self.assertEqual([window['index'] for window in batch['clip_windows']], [7, 8, 9])
+        self.assertEqual(batch['incoming_handoff'], 'Position after slot 6.')
+        self.assertEqual(batch['clip_windows'][-1]['srt'][0]['clip_start'], 0.25)
+        self.assertNotIn('shot number 1', json.dumps(batch))
+        self.assertEqual(self.job['whole_song_progress']['completed'], 9)
 
         last = self.job['segments'][-1]
         last['handoff_overlap_frames'] = 5
@@ -143,7 +152,7 @@ class WholeSongTests(TestCase):
                 stack.enter_context(mock.patch.object(obj, name, value))
             server.worker(approved, self.cfg, self.images, self.root/'song.wav', self.root/'song.wav')
         self.assertEqual(approved['status'], 'done', approved.get('error'))
-        self.model.assert_called_once()
+        self.assertEqual(self.model.call_count, 4)
         self.assertEqual(self.queue.call_count, 9)
         self.assertEqual(server.graph_options(req, 10, self.job['segments'][0])['director_mode'], 'dance')
 
@@ -157,33 +166,54 @@ class WholeSongTests(TestCase):
                        'rewriter_thinking': True})
         self.assertEqual((cfg['ctx'], cfg['max_tokens'], cfg['reasoning_budget']), (32768, 16384, 4096))
 
-    def test_35b_fixed_slots_require_every_entry_before_rendering(self):
+    def test_35b_restarts_at_first_invalid_slot_and_keeps_the_outline(self):
         self.job['request'].update(whole_song_director=True, director_engine='35b',
                                   director_schema=whole_song.VERSION)
         self.job['segments'] = segments(9, 4)
         for seg in self.job['segments']:
             seg.update(song_seconds=9, segment_count=3)
-        model_clip = {'index': 1, 'shots': [{'at': 0, 'mode': 'story', 'visual': 'Wide shot.'}]}
-        self.model.return_value = {'clips': [model_clip]}
-        self.lock.acquire()
+        clips = [{'index': i, 'handoff': f'Position {i}',
+                  'shots': [{'at': 0, 'mode': 'story', 'visual': f'Shot {i}.'}]}
+                 for i in range(1, 4)]
+        invalid = dict(clips[1], shots=clips[1]['shots'] +
+                       [{'at': 4, 'mode': 'story', 'visual': 'Out of bounds.'}])
+        self.model.side_effect = [
+            {'beats': [{'index': i, 'event': f'Beat {i}'} for i in range(1, 4)]},
+            {'clips': [clips[0], invalid, clips[2]]},
+            {'clips': clips[1:]},
+        ]
+        worker_args = (self.job, self.cfg, self.images, self.root/'song.wav', self.root/'song.wav')
         with mock.patch.object(server, 'load_analysis', return_value={'pulse': None}), mock.patch.object(
             server, 'segment_evidence', return_value={}
         ):
-            server.worker(self.job, self.cfg, self.images, self.root/'song.wav', self.root/'song.wav')
-        self.assertEqual(self.job['status'], 'error')
-        self.assertIn('完整填寫 3 個段落槽', self.job['error'])
-        self.assertFalse((self.work/'director_plan.json').exists())
+            self.lock.acquire()
+            server.worker(*worker_args)
+            self.assertEqual(self.job['status'], 'error')
+            self.assertIn('第 2 槽第 2 鏡起點無效', self.job['error'])
+            self.assertEqual(self.job['whole_song_progress']['completed'], 1)
+            self.assertFalse((self.work/'director_plan.json').exists())
+            self.queue.assert_not_called()
+
+            self.job = server.read_state(self.job['id'])
+            self.job.update(status='running', resuming=True)
+            self.job.pop('error', None)
+            self.lock.acquire()
+            server.worker(self.job, *worker_args[1:])
+
+        self.assertEqual(self.job['status'], 'plan_ready', self.job.get('error'))
+        self.assertEqual(self.model.call_count, 3)
+        retry = json.loads(self.model.call_args.args[2][0][1])
+        self.assertEqual([window['index'] for window in retry['clip_windows']], [2, 3])
+        self.assertEqual(retry['incoming_handoff'], 'Position 1')
+        self.assertIn('起點無效', retry['previous_validation_error'])
+        self.assertIn('Shot 1.', self.job['segments'][0]['director_plan']['event'])
+        self.assertTrue((self.work/'director_plan.json').is_file())
         self.queue.assert_not_called()
-        self.model.assert_called_once()
 
     def test_fixed_slot_rejects_cut_at_real_song_end(self):
-        total = 82.560
-        slots = segments(total, 10)
-        clips = [{'index': i + 1, 'shots': [{'at': 0, 'mode': 'story', 'visual': 'Follow the actor.'}]}
-                 for i in range(9)]
-        clips[-1]['shots'].append({'at': 2.560, 'mode': 'story', 'visual': 'Hold on the pier.'})
+        shots = [{'at': at, 'mode': 'story', 'visual': 'Follow the actor.'} for at in (0, 2.560)]
         with self.assertRaisesRegex(ValueError, '第 9 槽第 2 鏡起點無效'):
-            whole_song._validated_slots({'clips': clips}, {}, 1, total, slots)
+            whole_song._shot_rows(shots, {}, 1, 2.560, '第 9 槽')
 
     def test_manual_bracketed_common_settings_apply_to_each_workflow_once(self):
         req = self.job['request']

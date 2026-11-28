@@ -614,10 +614,10 @@ def worker(job, cfg, original, song, drive):
             raise ValueError('已確認丹方與保存內容不一致，停止開爐，請重新檢查專案。')
         # Old projects keep their saved prompt behavior. New projects opt in by
         # a persisted request field. Structure inference is CPU-only in an isolated process.
-        single_pass = job['request'].get('director_schema') == whole_song.VERSION
+        whole_song_plan = job['request'].get('director_schema') == whole_song.VERSION
         saved_full_plan = job['request'].get('whole_song_director') and all(
             s.get('director_plan', {}).get('shots') for s in job['segments'])
-        needs_analysis = not approved_review and not saved_full_plan and (single_pass or job['request'].get('audio_analysis', False)) and any(
+        needs_analysis = not approved_review and not saved_full_plan and (whole_song_plan or job['request'].get('audio_analysis', False)) and any(
             not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
             and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
@@ -651,8 +651,16 @@ def worker(job, cfg, original, song, drive):
             if job['id'] in CANCEL:
                 job['status']='cancelled'; write_state(job); return
             job['status']='planning_story'; write_state(job)
-            if single_pass:
-                plan = whole_song.ensure_whole_song_plan(cfg, job['request'], job['segments'], original, work, backend.rewrite_local)
+            if whole_song_plan:
+                def report_drafts(completed, total, outline_ready):
+                    job['whole_song_progress'] = {'completed': completed, 'total': total,
+                                                  'outline_ready': outline_ready}
+                    write_state(job)
+
+                plan = whole_song.ensure_whole_song_plan(
+                    cfg, job['request'], job['segments'], original, work, backend.rewrite_local,
+                    progress=report_drafts, cancelled=lambda: job['id'] in CANCEL,
+                )
                 if job['id'] in CANCEL:
                     job['status']='cancelled'; write_state(job); return
             elif direct_script or job['request'].get('director_schema')==6:
@@ -790,7 +798,7 @@ def worker(job, cfg, original, song, drive):
             if job['request'].get('prompt_source_job'):
                 # 定稿重拍：沿用草稿那份已確認的提示詞，不再叫 9B 重寫。
                 prompt=draft_prompt(job['request']['prompt_source_job'],i,len(original)+int(bool(tail)))
-            elif single_pass or direct_script:
+            elif whole_song_plan or direct_script:
                 prompt=local_prompt(cfg,job['request'],seg,original,tail)
             elif ledger is not None and record is not None and job.get('resuming'):
                 prompt=record['clip_prompt'];seg['scene_state_debug']=record
