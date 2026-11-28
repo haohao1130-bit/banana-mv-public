@@ -195,5 +195,44 @@ class DirectorLibraryTests(unittest.TestCase):
                 self.assertNotIn('draft_contract', seg['prompt_profile'])
 
 
+    def test_clip_phase_uses_existing_source_ending_policy(self):
+        from banana_mv.mv_scope import clip_ending, ending_contract
+        from banana_mv.director_shoot import _clip_phase_note, _free_commission
+        req = {'project_scope': 'full', 'ending_policy_version': 2, 'segment_seconds': 15}
+        segments = [{'index': 0, 'start': 0, 'seconds': 15},
+                    {'index': 1, 'start': 15, 'seconds': 15},
+                    {'index': 2, 'start': 30, 'seconds': 2}]
+        contract = ending_contract(req, 32, segments)
+        for i, phase in enumerate(('CONTINUING', 'RESOLVING', 'TERMINAL_HOLD')):
+            seg = dict(segments[i], song_seconds=32, segment_count=3,
+                       direction_ending_contract=contract)
+            info = clip_ending(req, seg)
+            # Never dump the ending plan or its resolution into the commission.
+            info['resolution'] = 'FUTURE_PLOT_SECRET'
+            note = _clip_phase_note(info)
+            self.assertIn('CLIP PHASE: ' + phase, note)
+            self.assertNotIn('FUTURE_PLOT_SECRET', note)
+            if i == 0:
+                self.assertIn('not a story ending', note)
+                self.assertIn('motivated local pause', note)
+            for creative35 in (True, False):
+                task = _free_commission(req, seg, 'CURRENT_EVENT_SENTINEL',
+                    {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [],
+                    creative35=creative35, ending=info)
+                self.assertEqual(task.count('CLIP PHASE:'), 1)
+                self.assertIn(note, task)
+                self.assertLess(task.index(note), task.index('CURRENT_EVENT_SENTINEL'))
+                self.assertNotIn('FUTURE_PLOT_SECRET', task)
+
+    def test_excerpt_last_clip_not_a_finale(self):
+        from banana_mv.mv_scope import clip_ending
+        from banana_mv.director_shoot import _clip_phase_note
+        req = {'project_scope': 'excerpt', 'ending_policy_version': 2}
+        seg = {'index': 1, 'start': 15, 'seconds': 15,
+               'song_seconds': 30, 'segment_count': 2}
+        self.assertIn('CLIP PHASE: EXCERPT', _clip_phase_note(clip_ending(req, seg)))
+        self.assertEqual(_clip_phase_note(None), '')
+
+
 if __name__ == '__main__':
     unittest.main()
