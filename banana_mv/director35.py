@@ -74,8 +74,6 @@ def rewrite(cfg,system,parts,job_id,stopped):
     msg = messages(system,parts)
     vision = isinstance(msg[1]['content'],list)
     o.update(vision=vision, thinking=bool(cfg['rewriter']['thinking']), seed=secrets.randbelow(2**31))
-    if o['thinking']:
-        o['max_tokens'] = min(cfg['rewriter']['max_length'], o['ctx']-1024)
     # Use the existing verified runtime. V2 lab args_for disallows MTP+vision,
     # so construct the combined experimental command explicitly. No fallback.
     p = lab.executable()
