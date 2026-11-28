@@ -3,7 +3,7 @@ const clipView={job:null,rows:new Map(),jobData:null,locked:false,handled:null};
 function clipIdle(){return !clipView.locked&&clipView.jobData?.clip_upscale?.status!=='running'
   &&['done','error','cancelled','interrupted'].includes(clipView.jobData?.status);}
 function continuous5070(job=clipView.jobData){
-  return job?.request?.director_schema===6&&['chain','chain5'].includes(job?.request?.mode);
+  return (job?.request?.director_schema===6||job?.request?.whole_song_director===true)&&['chain','chain5'].includes(job?.request?.mode);
 }
 function adoptAndContinue(index){
   const job=clipView.jobData;
@@ -32,12 +32,17 @@ function previousTakeForClip(index){
 }
 function updateClipActions(){
   const continuous=continuous5070();
+  const frozen=clipView.jobData?.request?.whole_song_director===true;
   let count=0;
   $('clip-legacy-toolbar').hidden=continuous;
-  $('clip-review-help').textContent=continuous
+  $('clip-review-help').textContent=frozen
+    ?'可直接修改這段 H3 稿回爐。接續模式從新版尾幀沿用全曲已定稿的後續鏡位。'
+    :continuous
     ?'停爐後改稿回爐：拍好會自動正式採用，9B 從新版尾幀寫下一段，寫完直接交給 H3 開拍。也可從版本選單改選舊版再按「確定使用此丹續拍」。'
     :'每段可重配 9B 丹方或貼完整 H3 提示詞回爐。獨立與舊模式可批次選丹、確認凝丹。';
-  $('clip-chain-note').textContent=continuous
+  $('clip-chain-note').textContent=frozen&&continuous
+    ?'採用新版後，後續段落會沿用全曲稿，從新版尾幀重新拍攝。'
+    :continuous
     ?'同一條時間線：選用新版後，必須從下一段重寫 9B 並接拍；不支援只換一段保留後續。'
     :'末幀接續：若保留舊後續，請檢查相鄰畫面是否一致。';
   for(const row of clipView.rows.values()){
@@ -45,6 +50,7 @@ function updateClipActions(){
     row.checkLabel.hidden=continuous;
     row.correctionLabel.hidden=continuous;
     row.branchHint.hidden=!continuous||obsolete;
+    if(frozen)row.branchHint.textContent='本段採用新版後，後續鏡位沿用全曲稿並從新版尾幀續拍。';
     row.check.disabled=continuous||clipView.locked;
     if(row.check.checked&&!continuous)count++;
     const official=continuous?row.segment.selected_take:
@@ -81,9 +87,10 @@ function updateClipActions(){
     row.branchCascade.hidden=!cascadeReady||obsolete||!chain||(!continuous&&!hasNext);
     row.branchCascade.disabled=!clipIdle()||!cascadeReady||obsolete||!chain||(!continuous&&!hasNext);
     row.branchCascade.textContent=continuous
-      ?(hasNext?`從本段尾幀續拍第 ${row.index+2} 段（9B 重寫）`:'合成正式新版全片')
+      ?(hasNext?`從本段尾幀續拍第 ${row.index+2} 段${frozen?'（沿用全曲稿）':'（9B 重寫）'}`:'合成正式新版全片')
       :'從新版尾幀重拍後續（9B 重寫）';
-    row.rewriteButton.disabled=!clipIdle()||obsolete||!row.segment.director_plan
+    row.rewriteButton.hidden=frozen;
+    row.rewriteButton.disabled=frozen||!clipIdle()||obsolete||!row.segment.director_plan
       ||row.segment.prompt_rewrite?.status==='running';
     const firstRender=row.segment.status!=='done'&&!(row.segment.takes||[]).length;
     const autoResume=firstRender&&['error','cancelled','interrupted'].includes(clipView.jobData?.status);
@@ -218,6 +225,7 @@ function renderClipPreviews(job){
       draft.status==='running'?'9B 正在重配這一段丹方；目前文字與舊影片仍保留。':
       draft.status==='ready'?`9B 新丹方 V${draft.version} 已完成${draft.previous_take?' · 上段來源 Take：'+draft.previous_take:''}；可手動修改，再按「依此提示詞回爐」。`:
       draft.status==='error'?`9B 重配失敗：${draft.error}。可直接貼稿，不影響舊片。`:
+      job.request?.whole_song_director?'這段使用全曲已定稿的鏡位。可貼入修改後的 H3 提示詞，再按回爐。':
       '可用 9B 重寫，或直接貼入你自己的 H3 提示詞；按回爐才會生新片。';
     if(row.promptInfo.textContent!==promptInfo)row.promptInfo.textContent=promptInfo;
     const ready=(segment.takes||[]).filter(t=>t.status==='ready');
@@ -255,13 +263,16 @@ function renderClipPreviews(job){
     &&row.select.value!=='original'&&row.segment.status==='done'
     &&['chain','chain5'].includes(job.request?.mode)
     &&row.index+1<job.segments.length);
-  $('clip-review-status').textContent=continuous&&restart&&clipIdle()?
+  const frozen=job.request?.whole_song_director===true;
+  $('clip-review-status').textContent=frozen&&restart&&clipIdle()?
+    `第 ${restart.index+1} 段已正式採用，從新版尾幀依全曲稿續拍後續段落。`:
+    continuous&&restart&&clipIdle()?
     `第 ${restart.index+1} 段新版已正式採用；後面全部是舊時間線。按本段「從本段尾幀續拍第 ${restart.from_index+1} 段」，9B 會重新寫下一段丹方。`:
     restart&&clipIdle()?
     `已正式採用第 ${restart.index+1} 段新版；按本段「從新版尾幀重拍後續」，或上方「繼續跑」，就會從第 ${restart.from_index+1} 段重新寫 9B 丹方並續拍。`:
     adoptedSource&&clipIdle()&&['error','cancelled','interrupted'].includes(job.status)?
     `第 ${adoptedSource.index+1} 段已選用正式新版；按本段「從新版尾幀重拍後續」，從第 ${adoptedSource.index+2} 段重新交給 9B 寫咒接拍。`:
-    batch?.branch&&batch.status==='running'?(batch.branch.mode==='cascade'?'新版尾幀分支：後續重新拍攝與 9B 當段重寫中。':'單段替換分支：保留現有後續。'):
+    batch?.branch&&batch.status==='running'?(batch.branch.mode==='cascade'?(frozen?'新版尾幀分支：依全曲稿重新拍攝後續段落。':'新版尾幀分支：後續重新拍攝與 9B 當段重寫中。'):'單段替換分支：保留現有後續。'):
     batch?.branch&&batch.status==='done'?(job.status==='running'?'新版已採用，正在接著生成未完成段落。':'分支續跑完成；原版影片仍在版本紀錄中。'):
     batch?.adopt_continue_status==='error'&&clipIdle()?`本段已回爐完成，但自動採用續拍沒有啟動：${batch.adopt_continue_error} 可從版本選單選新版，按「確定使用此丹續拍」。`:
     batch?.adopt_continue&&job.status==='retaking'?`回爐中：拍好會自動正式採用，並從新版尾幀續拍後段。`:

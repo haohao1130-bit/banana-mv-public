@@ -21,7 +21,7 @@ TERMINAL=('done','error','cancelled','interrupted')
 def continuous_5070(job):
     """RTX 5070 Python+9B chain: a changed Take invalidates all later shots."""
     req=job.get('request',{})
-    return req.get('director_schema')==6 and app.is_continuation(req.get('mode'))
+    return (req.get('director_schema')==6 or req.get('whole_song_director') is True) and app.is_continuation(req.get('mode'))
 
 
 
@@ -230,7 +230,11 @@ def retake(job_id,indices,instructions=None,prompts=None,auto_resume=False,rebui
     if not isinstance(rebuild_prompt,bool):raise ValueError('重配提示詞參數必須為布林值。')
     if not app.GPU_LOCK.acquire(blocking=False):raise ValueError('已有 MV 工作執行中，請先等它完成。')
     try:
-        job=app.read_state(job_id);cfg=app.backend.project_config(job['request']);require_idle(job,cfg)
+        job=app.read_state(job_id)
+        req=job['request']
+        if req.get('whole_song_director'):
+            req=dict(req, whole_song_director=False, **({'director_engine':'9b'} if not instructions else {}))
+        cfg=app.backend.project_config(req);require_idle(job,cfg)
         for i in indices:segment(job,i)
         indices=sorted(set(indices))
         if continuous_5070(job):
@@ -485,7 +489,8 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
     handed_off=False
     try:
         job=app.read_state(job_id)
-        cfg=app.backend.project_config(job['request'])
+        req = job['request']
+        cfg=app.backend.project_config(dict(req, director_engine='9b') if req.get('whole_song_director') else req)
         require_idle(job,cfg)
         if rewrite_retries is not None:
             job['request']['rewrite_retries']=rewrite_retries
@@ -518,15 +523,14 @@ def continue_from_take(job_id, index, take_id, mode, rewrite_retries=None):
         done_after=[i for i in range(index+1,len(job['segments']))
                     if job['segments'][i].get('status')=='done']
         if mode=='cascade' and done_after:
-            # This branch is intentionally limited to the Python-owned
-            # director; the whole-song plan stays frozen.
-            if job['request'].get('director_schema')!=6 or not job['request'].get('rewrite',True):
-                raise ValueError('後續逐段重寫需要啟用 5070 本機 Python 通告單與 9B。')
+            if not req.get('whole_song_director') and (req.get('director_schema')!=6 or not req.get('rewrite',True)):
+                raise ValueError('後續逐段重寫需要啟用 5070 本機導演。')
             if done_after!=list(range(index+1,index+1+len(done_after))):
                 raise ValueError('後續已完成段落不連續，請先整理狀態再分支接拍。')
-            app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader',
-                                          'inputs':{'clip_name':cfg['rewriter']['model']}},
-                               'generate':{'class_type':'TextGenerate','inputs':{}}})
+            if not req.get('whole_song_director'):
+                app.preflight(cfg,{'encoder':{'class_type':'CLIPLoader',
+                                              'inputs':{'clip_name':cfg['rewriter']['model']}},
+                                   'generate':{'class_type':'TextGenerate','inputs':{}}})
         originals,song,drive=app.project_inputs(job,cfg)
         from banana_mv.python_slots import refresh_stale_timed_plan
         refresh_stale_timed_plan(job,originals,app.job_dir(job_id))
@@ -709,9 +713,12 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
                     seg['status']='rewriting'
                 app.write_state(job)
                 candidate=copy.deepcopy(seg)
+                frozen=job['request'].get('whole_song_director')
+                if frozen:
+                    candidate['handoff_overlap_frames']=overlap
                 prompt=app.local_prompt(cfg,job['request'],candidate,originals,
-                                        frame if first else None)
-                take['prompt_source']='fresh_9b_from_current_commission'
+                                        (anchor if frozen else frame) if first else None)
+                take['prompt_source']='saved_whole_song_plan' if frozen else 'fresh_9b_from_current_commission'
                 take['prompt_profile']=candidate.get('prompt_profile',{})
             (output('prompt.txt')).write_text(prompt,encoding='utf-8')
             take['status']='generating'

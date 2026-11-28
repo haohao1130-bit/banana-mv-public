@@ -87,6 +87,8 @@ def select_mode(req, segment):
     segment = segment or {}
     row = segment.get('director_plan') or {}
     planned = row.get('mode') or segment.get('director_mode') or 'story'
+    if req.get('whole_song_director') and req.get('director', 'auto') == 'auto' and row.get('shots'):
+        return planned
     if req.get('action_lora_scope') == 'segment' and planned in ('action', 'dance'):
         # A previously saved specialty alone is insufficient evidence to mount a LoRA.
         planned = 'story'

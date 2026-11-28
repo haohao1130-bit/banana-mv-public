@@ -1,17 +1,18 @@
-"""One 9B delivery of timed shots, sliced deterministically for H3."""
+"""One delivery of timed shots, sliced deterministically for H3."""
 import json
 import math
 import re
 import uuid
 from pathlib import Path
 
+from banana_mv.commission_guard import role_pictures
 from banana_mv.core import FPS, map_image_mentions, normalize_mv_prompt
 from banana_mv.director import INTENSITY, MODES, ORIGINAL_CUT_GUIDANCE
 from banana_mv.direction_contract import H3_SECTIONS, validate_h3_sections
-from banana_mv.lyrics_reference import clean_lyric_output, OUTPUT_POLICY
+from banana_mv.lyrics_reference import clean_lyric_output, excerpt, vocal_timeline, OUTPUT_POLICY
 from banana_mv.mv_scope import ending_contract
 from banana_mv.scene_state import SceneStateError, atomic_json, digest, parse_object
-from banana_mv.shoot_plan import _pictures
+from banana_mv.shoot_plan import _apply_source_performance, _pictures
 
 VERSION = 7
 DIRECT_SCRIPT = 8
@@ -46,39 +47,81 @@ Write concrete framing, blocking, action, reaction and outcome, ready to film.
 No notes for a downstream writer, no commentary, no extra JSON fields required."""
 
 
-def _validated(raw, req, count, duration):
-    data = parse_object(raw)
+SLOT_SYSTEM = """Direct the entire MV in a single response. Return one JSON object:
+{"setup":"additional shared design or missing cast bindings",
+ "clips":[{"index":1,"shots":[{"at":0,"mode":"story",
+ "picture_bindings":"identity or current appearance unique to this shot",
+ "visual":"finished English H3 camera prose"}]}]}
+The author_setup is authoritative and applies to all clips. Only add stable facts
+in setup. Do not repeat shared setup in each shot. Use original picture numbers.
+The clip_windows are fixed, one-based render slots. Fill every slot in order,
+including the final residual interval. Each slot needs at least one shot starting
+at 0. at is relative to that slot, strictly increasing and below its duration.
+Python computes shot ends, overlap, media numbering and H3 fields.
+An ongoing action resumes where it left off in the next slot. Assign mode by the
+actual on-screen activity. Develop a causal story from a rough cue. Honor authored
+events, roles, chronology and ending. Develop recurring visual motifs.
+Write finished English H3 camera prose with usable framing, camera motion,
+blocking, physical action and reaction. Give each viewpoint a new detail to
+reveal. Vary shot count by action, preserving deliberate long takes.
+Use measured or predicted music features as clues. Honor explicit SRT times and
+roles. Do not copy lyrics, recite them, or add subtitles. Untagged time does not
+imply silence. Do not invent heard sounds or new picture references.
+End at the supplied audio boundary and deliver all slots in one JSON object."""
 
-    def visual(value, label, required=True):
-        if not isinstance(value, str) or required and not value.strip():
-            raise SceneStateError(f'全曲拍攝稿缺少有效的 {label}。')
-        value, _ = clean_lyric_output(value, req)
-        if not value.strip() and not required:
-            return ''
-        return normalize_mv_prompt(map_image_mentions(value, count), count)
 
-    setup = visual(data.get('setup', ''), 'setup', required=False)
-    shots = data.get('shots')
+def _visual(value, label, req, count, required=True):
+    if not isinstance(value, str) or required and not value.strip():
+        raise SceneStateError(f'全曲拍攝稿缺少有效的 {label}。')
+    value, _ = clean_lyric_output(value, req)
+    if not value.strip() and not required:
+        return ''
+    return normalize_mv_prompt(map_image_mentions(value, count), count)
+
+
+def _shot_rows(shots, req, count, duration, label):
     if not isinstance(shots, list) or not shots:
-        raise SceneStateError('全曲拍攝稿缺少 shots。')
+        raise SceneStateError(f'{label}拍攝稿缺少 shots。')
     result = []
     previous = -1
     for index, row in enumerate(shots):
         at = row.get('at') if isinstance(row, dict) else None
         if type(at) not in (int, float) or not math.isfinite(at) or not 0 <= at < duration:
-            raise SceneStateError(f'全曲第 {index + 1} 鏡起點無效（{at!r}；歌曲範圍為 0 至 {duration:g} 秒，終點不含）。')
+            raise SceneStateError(f'{label}第 {index + 1} 鏡起點無效（{at!r}；範圍為 0 至 {duration:g} 秒，終點不含）。')
         frame = math.floor(at * FPS + 1e-7)
         if frame <= previous or index == 0 and at != 0:
-            raise SceneStateError('全曲鏡頭須從 0 秒開始，且每鏡至少相隔一影格。')
+            raise SceneStateError(f'{label}鏡頭須從 0 秒開始，且每鏡至少相隔一影格。')
         mode = row.get('mode')
         if not isinstance(mode, str) or mode not in MODES:
-            raise SceneStateError(f'全曲第 {index + 1} 鏡的拍攝模式無效。')
+            raise SceneStateError(f'{label}第 {index + 1} 鏡的拍攝模式無效。')
         result.append({'frame': frame, 'mode': mode,
-                       'bindings': visual(row.get('picture_bindings', ''), 'picture_bindings', False),
-                       'visual': visual(row.get('visual'), 'visual'),
-                       'continuation': visual(row.get('continuation', ''), 'continuation', False)})
+                       'bindings': _visual(row.get('picture_bindings', ''), 'picture_bindings', req, count, False),
+                       'visual': _visual(row.get('visual'), 'visual', req, count),
+                       'continuation': _visual(row.get('continuation', ''), 'continuation', req, count, False)})
         previous = frame
-    return setup, result
+    return result
+
+
+def _validated(raw, req, count, duration):
+    data = parse_object(raw)
+    setup = _visual(data.get('setup', ''), 'setup', req, count, False)
+    return setup, _shot_rows(data.get('shots'), req, count, duration, '全曲')
+
+
+def _validated_slots(raw, req, count, duration, segments):
+    data = parse_object(raw)
+    setup = _visual(data.get('setup', ''), 'setup', req, count, False)
+    clips = data.get('clips')
+    if not isinstance(clips, list) or len(clips) != len(segments):
+        raise SceneStateError(f'全曲拍攝稿須完整填寫 {len(segments)} 個段落槽。')
+    shots = []
+    for number, (clip, seg) in enumerate(zip(clips, segments), 1):
+        if not isinstance(clip, dict) or type(clip.get('index')) is not int or clip['index'] != number:
+            raise SceneStateError(f'全曲拍攝稿第 {number} 槽的編號缺漏、重複或順序錯誤。')
+        seconds = round(min(seg['seconds'], duration - seg['start']), 9)
+        local = _shot_rows(clip.get('shots'), req, count, seconds, f'第 {number} 槽')
+        shots.extend(dict(shot, frame=shot['frame'] + seg['start_frame']) for shot in local)
+    return setup, shots
 
 
 def slice_shots(shots, segments):
@@ -169,9 +212,20 @@ def h3_prompt(req, segment, picture_count, tail):
               body, audio + ' ' + OUTPUT_POLICY,
               'Use only the music in <Audio 1>.']
     prompt = '\n\n'.join(f'{key}:\n{value}' for key, value in zip(H3_SECTIONS, values))
+    if req.get('whole_song_director'):
+        vocals = vocal_timeline(excerpt(req, segment))
+        if vocals:
+            for cue in vocals:
+                cue['clip_start'] += overlap / FPS
+                cue['clip_end'] += overlap / FPS
+            prompt = _apply_source_performance(prompt, vocals, setup)
     if tail:
         prompt = re.sub(r'<Picture (\d+)>', lambda m: f'<Picture {int(m[1])+1}>', prompt)
-        prompt += '\n<Picture 1> is the supplied opening continuity frame.'
+        if req.get('whole_song_director'):
+            prompt = prompt.replace('subject_definitions:\n', 'subject_definitions:\n'
+                                    '<Picture 1> is the supplied opening continuity frame.\n', 1)
+        else:
+            prompt += '\n<Picture 1> is the supplied opening continuity frame.'
     validate_h3_sections(prompt)
     return normalize_mv_prompt(prompt, picture_count + int(bool(tail)))
 
@@ -194,6 +248,12 @@ def ensure_whole_song_plan(cfg, req, segments, originals, work, rewrite):
         'clip_windows': [{'start': seg['start'], 'end': min(duration, seg['start'] + seg['seconds']),
                           'music': seg.get('audio_evidence', {})} for seg in segments],
     }
+    fixed_slots = req.get('whole_song_director') is True
+    if fixed_slots:
+        author_setup = map_image_mentions(req.get('shared_setup', ''), count)
+        task['author_setup'] = normalize_mv_prompt(author_setup, count) if author_setup else ''
+        task['director'] = req.get('director_engine', '9b')
+        task['delivery'] = 'fixed_slots'
     fingerprint = digest(task)
     path = Path(work) / 'director_plan.json'
     if path.is_file():
@@ -218,16 +278,44 @@ def ensure_whole_song_plan(cfg, req, segments, originals, work, rewrite):
         'pulse_estimate': next((seg['audio_evidence']['pulse_estimate'] for seg in segments
                                 if seg.get('audio_evidence', {}).get('pulse_estimate')), None),
     }
-    parts = [('text', json.dumps(director_task, ensure_ascii=False))] + _pictures(originals)
-    raw = rewrite(cfg, SYSTEM + '\nSupported modes: ' + ', '.join(MODES), parts, uuid.uuid4().hex[:8])
+    system = SYSTEM
+    if fixed_slots:
+        director_task['ending'] = contract
+        director_task['clip_windows'] = [
+            {'index': seg['index'] + 1, 'start': window['start'], 'end': window['end'],
+             'energy': window['music'].get('relative_energy'),
+             'quiet_intervals': window['music'].get('quiet_intervals_s', []),
+             'sections': window['music'].get('music_structure', {}).get('sections', [])}
+            for seg, window in zip(segments, task['clip_windows'])]
+        director_task['music']['predicted_bpm'] = next(
+            (structure['bpm'] for window in task['clip_windows']
+             if 'bpm' in (structure := window['music'].get('music_structure', {}))), None)
+        director_task['music']['time_basis'] = (
+            'Window music offsets are clip-relative. Transients and downbeats are song-relative.')
+        system = SLOT_SYSTEM
+        if cfg.get('director35') is None:
+            cfg = dict(cfg, whole_song_once=True, rewriter=dict(
+                cfg['rewriter'], max_length=max(16384, cfg['rewriter'].get('max_length', 0))))
+    parts = [('text', json.dumps(director_task, ensure_ascii=False, separators=(',', ':')))] + _pictures(originals)
+    raw = rewrite(cfg, system + '\nSupported modes: ' + ', '.join(MODES), parts, uuid.uuid4().hex[:8])
     (Path(work) / 'whole_song_director_raw.txt').write_text(str(raw), encoding='utf-8')
     try:
-        setup, shots = _validated(raw, req, count, duration)
+        if fixed_slots:
+            setup, shots = _validated_slots(raw, req, count, duration, segments)
+            authored_roles = role_pictures(task['author_setup'])
+            for role, picture in role_pictures(setup).items():
+                if role in authored_roles and authored_roles[role] != picture:
+                    raise SceneStateError(f'全曲拍攝稿改動了共同設定的 {role} 圖片綁定。')
+            setup = '\n\n'.join(filter(None, (task['author_setup'], setup)))
+        else:
+            setup, shots = _validated(raw, req, count, duration)
         rows = slice_shots(shots, segments)
         for row in rows:
-            h3_prompt(req, {'director_plan': row, 'fixed_reference_settings': setup}, count, None)
+            h3_prompt(req, {**segments[row['index']], 'director_plan': row,
+                            'fixed_reference_settings': setup}, count, None)
     except ValueError as error:
-        raise SceneStateError('9B 全曲拍攝稿交稿失敗：' + str(error)) from error
+        engine = req.get('director_engine', '9b').upper() if fixed_slots else '9B'
+        raise SceneStateError(f'{engine} 全曲拍攝稿交稿失敗：' + str(error)) from error
     plan = {'version': VERSION, 'shared_setup': setup, 'shots': shots,
             'segments': rows, 'ending_contract': contract}
     plan['content_sha256'] = digest(plan)

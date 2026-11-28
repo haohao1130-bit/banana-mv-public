@@ -72,6 +72,123 @@ class WholeSongTests(TestCase):
         self.assertIn('Continue this shot already in progress.', prompts[2])
         self.assertIn('夕陽下揮手', prompts[2])
 
+    def test_35b_once_for_nine_segments_then_approval_reuses_it(self):
+        from banana_mv import director35
+
+        total = 82.560
+        req = self.job['request']
+        req.update(whole_song_director=True, director_engine='35b',
+                   director_schema=whole_song.VERSION, director='auto',
+                   action_lora_scope='segment', project_scope='full',
+                   shared_setup='@圖片1 = 西索 = S1。和 @圖片2 = 庫洛洛 搭檔。',
+                   lyrics='前段歌詞', srt_cues=[
+                       {'start': 0.5, 'end': 1.5, 'text': '[S1] 前段歌詞'},
+                       {'start': 80.25, 'end': 82.2, 'text': '[S1] 最後一句'},
+                   ], lyrics_reference_version=2)
+        self.cfg['director35'] = director35.options(req)
+        self.job.update(duration=total, segments=segments(total, 10))
+        for seg in self.job['segments']:
+            seg.update(song_seconds=total, segment_count=9)
+        self.model.return_value = {
+            'setup': 'Evening backlight follows the cast.',
+            'clips': [{'index': i + 1, 'shots': [
+                {'at': 0, 'mode': 'dance' if i == 0 else 'story',
+                 'visual': f'Wide handheld shot number {i + 1}, tracking <Picture 1>.'}]}
+                      for i in range(9)],
+        }
+        analysis = {'pulse': None}
+        evidence = {'transient_candidates_s': [1.25], 'relative_energy': 'high',
+                    'music_structure': {'bpm': 120, 'sections': [
+                        {'start_s': 0, 'end_s': 2, 'predicted_label': 'chorus'}]}}
+        with mock.patch.object(server, 'load_analysis', return_value=analysis), mock.patch.object(
+            server, 'segment_evidence', return_value=evidence
+        ):
+            self.plan()
+        self.model.assert_called_once()
+        _, system, parts, _ = self.model.call_args.args
+        task = json.loads(parts[0][1])
+        self.assertIn('finished English H3 camera prose', system)
+        self.assertIn('<Picture 1> = 西索', task['author_setup'])
+        self.assertEqual(task['srt'][-1]['start'], 80.25)
+        self.assertEqual(len(task['clip_windows']), 9)
+        self.assertEqual(task['clip_windows'][-1]['end'], total)
+        self.assertEqual(task['music']['predicted_bpm'], 120)
+        self.assertEqual(task['clip_windows'][0]['sections'][0]['predicted_label'], 'chorus')
+
+        last = self.job['segments'][-1]
+        last['handoff_overlap_frames'] = 5
+        packed = server.local_prompt(self.cfg, req, last, self.images, True)
+        self.assertIn('At 00:00.208,', packed)
+        self.assertIn('0.458–2.408s: <Picture 2>', packed)
+        self.assertIn('tracking <Picture 2>', packed)
+        self.assertNotIn('最後一句', packed)
+        self.assertNotIn('shot number 1,', packed)
+        del last['handoff_overlap_frames']
+
+        with mock.patch.object(server.threading, 'Thread'), mock.patch(
+            'banana_mv.director35.preflight', side_effect=AssertionError('shot phase needs no 35B')
+        ):
+            approved = server.open_furnace(self.job['id'], self.job['plan_revision'])
+        with ExitStack() as stack:
+            for obj, name, value in [
+                (server, 'valid_part', lambda p, *_: p.is_file()),
+                (server, 'audio_window', lambda src, dest, *_: dest.write_bytes(b'audio')),
+                (server, 'wait_generation', mock.Mock(return_value={})),
+                (server, 'video_info', mock.Mock(return_value={})),
+                (server.backend, 'comfy_download', lambda c, i, d: d.write_bytes(b'raw')),
+                (server, 'trim_video', lambda s, d, *_, **kw: d.write_bytes(b'part')),
+                (server, 'assemble', lambda p, s, d, *_: d.write_bytes(b'final')),
+                (server, 'export_finished_video', mock.Mock()),
+            ]:
+                stack.enter_context(mock.patch.object(obj, name, value))
+            server.worker(approved, self.cfg, self.images, self.root/'song.wav', self.root/'song.wav')
+        self.assertEqual(approved['status'], 'done', approved.get('error'))
+        self.model.assert_called_once()
+        self.assertEqual(self.queue.call_count, 9)
+        self.assertEqual(server.graph_options(req, 10, self.job['segments'][0])['director_mode'], 'dance')
+
+    def test_full_director_requires_rewrite_and_reserves_long_35b_output(self):
+        from banana_mv.director35 import options
+
+        with self.assertRaisesRegex(ValueError, '自動導演'):
+            server.start({'whole_song_director': True, 'director_engine': '35b', 'direct_script': True})
+        cfg = options({'whole_song_director': True, 'director_engine': '35b',
+                       'director35_context': 8192, 'director35_output': 2048,
+                       'rewriter_thinking': True})
+        self.assertEqual((cfg['ctx'], cfg['max_tokens'], cfg['reasoning_budget']), (32768, 16384, 4096))
+
+    def test_9b_fixed_slots_require_every_entry_before_rendering(self):
+        self.cfg['rewriter'] = {'max_length': 8192}
+        self.job['request'].update(whole_song_director=True, director_engine='9b',
+                                  director_schema=whole_song.VERSION)
+        self.job['segments'] = segments(9, 4)
+        for seg in self.job['segments']:
+            seg.update(song_seconds=9, segment_count=3)
+        model_clip = {'index': 1, 'shots': [{'at': 0, 'mode': 'story', 'visual': 'Wide shot.'}]}
+        self.model.return_value = {'clips': [model_clip]}
+        self.lock.acquire()
+        with mock.patch.object(server, 'load_analysis', return_value={'pulse': None}), mock.patch.object(
+            server, 'segment_evidence', return_value={}
+        ):
+            server.worker(self.job, self.cfg, self.images, self.root/'song.wav', self.root/'song.wav')
+        self.assertEqual(self.job['status'], 'error')
+        self.assertIn('完整填寫 3 個段落槽', self.job['error'])
+        self.assertFalse((self.work/'director_plan.json').exists())
+        self.queue.assert_not_called()
+        self.model.assert_called_once()
+        model_cfg = self.model.call_args.args[0]
+        self.assertGreaterEqual(model_cfg['rewriter']['max_length'], 16384)
+        self.assertTrue(model_cfg['whole_song_once'])
+
+    def test_fixed_slot_rejects_cut_at_real_song_end(self):
+        total = 82.560
+        slots = segments(total, 10)
+        clips = [{'index': i + 1, 'shots': [{'at': 0, 'mode': 'story', 'visual': 'Follow the actor.'}]}
+                 for i in range(9)]
+        clips[-1]['shots'].append({'at': 2.560, 'mode': 'story', 'visual': 'Hold on the pier.'})
+        with self.assertRaisesRegex(ValueError, '第 9 槽第 2 鏡起點無效'):
+            whole_song._validated_slots({'clips': clips}, {}, 1, total, slots)
+
     def test_manual_bracketed_common_settings_apply_to_each_workflow_once(self):
         req = self.job['request']
         req.update(

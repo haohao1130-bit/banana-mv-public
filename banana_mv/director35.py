@@ -70,6 +70,10 @@ def options(request):
          'mtp': request.get('director35_mtp', True),
          'max_tokens': request.get('director35_output', 16384 if thinking else 4096),
          'reasoning_budget': request.get('director35_reasoning_budget', -1)}
+    if request.get('whole_song_director') is True:
+        o.update(ctx=32768, max_tokens=16384, whole_song=True)
+        if thinking and o['reasoning_budget'] == -1:
+            o['reasoning_budget'] = 4096
     if (type(o['ctx']) is not int or o['ctx'] not in (8192,16384,32768)
             or type(o['moe']) is not int or not 24 <= o['moe'] <= 40
             or o['kv'] not in ('q8_0','q4_0','f16')
@@ -337,13 +341,15 @@ def _rewrite(cfg,system,parts,job_id,stopped):
                 except Exception:pass
                 time.sleep(.5)
             else:raise TimeoutError('35B 載入逾時。')
-            for attempt in range(2):
+            for attempt in range(1 if o.get('whole_song') else 2):
                 if stopped.is_set() or lab.STOP.is_set():raise InterruptedError('已停止35B。')
                 out,metrics=stream_call(lab,msg,o,run,attempt,cfg['rewriter'])
                 if stopped.is_set() or lab.STOP.is_set():raise InterruptedError('已停止35B。')
                 if out:
                     (run/'formal.txt').write_text(out,encoding='utf-8')
                     return out
+                if o.get('whole_song'):
+                    raise ValueError('35B 全曲拍攝稿空白或截斷；可關閉思考後手動重新規劃。')
                 if not o['thinking'] or attempt:break
                 reason='思考後交稿遭截斷' if metrics.get('finish_reason')=='length' else '思考後正式稿空白'
                 _stats(retry_reason=reason+'；關閉思考重試一次')

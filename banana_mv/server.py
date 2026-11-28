@@ -280,7 +280,8 @@ def local_prompt(cfg, req, segment, original, tail, *, scene_input=None, event_c
         return whole_song.direct_script_prompt(req, segment, len(original) if isinstance(original, list) else 1, tail)
     if req.get('director_schema') == whole_song.VERSION:
         segment['director_mode'] = segment['director_plan']['mode']
-        segment['prompt_profile'] = {'source':'whole_song_director', 'writer_calls':0, 'contract_check_calls':0}
+        source = 'whole_song_slots' if req.get('whole_song_director') else 'whole_song_director'
+        segment['prompt_profile'] = {'source':source, 'writer_calls':0, 'contract_check_calls':0}
         return whole_song.h3_prompt(req, segment, len(original) if isinstance(original, list) else 1, tail)
     if req.get('director_schema') in (5,6) and req.get('rewrite',True):
         from banana_mv.shoot_plan import write_shoot_prompt
@@ -614,7 +615,9 @@ def worker(job, cfg, original, song, drive):
         # Old projects keep their saved prompt behavior. New projects opt in by
         # a persisted request field. Structure inference is CPU-only in an isolated process.
         single_pass = job['request'].get('director_schema') == whole_song.VERSION
-        needs_analysis = not approved_review and (single_pass or job['request'].get('audio_analysis', False)) and any(
+        saved_full_plan = job['request'].get('whole_song_director') and all(
+            s.get('director_plan', {}).get('shots') for s in job['segments'])
+        needs_analysis = not approved_review and not saved_full_plan and (single_pass or job['request'].get('audio_analysis', False)) and any(
             not (seg.get('status') == 'done' and valid_part(adopted_part(job,seg), seg, job['size']))
             and not (job.get('resuming') and ((work/f'{seg["index"]:02d}_prompt_v1.txt').is_file() or (work/f'{seg["index"]:02d}_prompt.txt').is_file())
                      and not seg.get('refresh_prompt')) for seg in job['segments'])
@@ -637,7 +640,7 @@ def worker(job, cfg, original, song, drive):
                                                    'segments':structure['segments']} if structure else None}
             job['status'] = 'running'; write_state(job)
         direct_script = job['request'].get('director_schema') == whole_song.DIRECT_SCRIPT
-        needs_plan = (not approved_review and job['request'].get('director_version', 1) >= 2
+        needs_plan = (not approved_review and not saved_full_plan and job['request'].get('director_version', 1) >= 2
                       and (job['request'].get('story_plan', True) or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION,whole_song.DIRECT_SCRIPT))
                       and (direct_script or job['request'].get('rewrite', True))
                       and (len(job['segments']) > 1 or job['request'].get('director_schema') in (3,4,5,6,whole_song.VERSION,whole_song.DIRECT_SCRIPT))
@@ -986,8 +989,14 @@ def promote_draft(source_id,steps=8):
 
 
 def start(req):
-    cfg = backend.project_config(req)
     req = dict(req)
+    full_director = req.get('whole_song_director', False)
+    if not isinstance(full_director, bool):
+        raise ValueError('全曲導演設定必須為布林值。')
+    if full_director and (not req.get('rewrite', True) or req.get('direct_script')):
+        raise ValueError('全曲導演需要開啟自動導演。')
+    source_plan = full_director and req.get('prompt_source_job')
+    cfg = backend.project_config(dict(req, director_engine='9b') if source_plan else req)
     if 'action_loras' in req:
         scope = req.setdefault('action_lora_scope', 'segment')
         if scope not in ('segment', 'project'):
@@ -1019,7 +1028,8 @@ def start(req):
     req=dict(req,lean_commission=req.get('lean_commission', True),
              sampling_steps=req.get('sampling_steps',8),audio_analysis=req.get('audio_analysis', True),
              director_version=2,optimizer_version=1,story_plan=req.get('story_plan', True),
-             director_schema=whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else 6,
+             director_schema=whole_song.VERSION if full_director else (
+                 whole_song.DIRECT_SCRIPT if req.get('direct_script') is True else 6),
              story_scope_version=1,ending_policy_version=2,prompt_compiler_version=0,project_scope=req.get('project_scope','full'),
              director_authority=bool(req.get('story_plan',True) and req.get('rewrite',True)),
              kitchen_attention=req.get('kitchen_attention',req.get('acceleration',True)),
@@ -1078,6 +1088,15 @@ def start(req):
         source=read_state(req['prompt_source_job'])
         if len(source['segments'])!=len(plan) or source['request'].get('mode')!=req.get('mode'):
             raise ValueError('草稿與正式版的分段或接續模式不同，無法沿用提示詞。')
+        if source_plan:
+            if (not source['request'].get('whole_song_director') or req.get('plan_review') or
+                    any(not old.get('director_plan', {}).get('shots') or
+                        (old['start'], old['frames']) != (new['start'], new['frames'])
+                        for old, new in zip(source['segments'], plan))):
+                raise ValueError('草稿全曲拍攝稿與正式版的時間軸不一致。')
+            for old, new in zip(source['segments'], plan):
+                for key in ('director_plan', 'fixed_reference_settings', 'direction_ending_contract'):
+                    new[key] = old[key]
     if vocal and abs(source_audio_duration(drive)-seconds)>1/FPS:
         raise ValueError('人聲與原曲長度不一致；請輸出同起點、保留前後靜音的人聲。')
     aspect = req.get('aspect','16:9')
@@ -1110,7 +1129,7 @@ def start(req):
     if options.get('anti_jelly') and req['plan_review'] and req.get('rewrite', True):
         graph.update(build_workflow(images_comfy, 'preflight.wav', *size, plan[0]['model_frames'], '', seed, **options))
     preflight(cfg, graph)
-    if req['director_schema'] == whole_song.VERSION and not req['plan_review']:
+    if req['director_schema'] == whole_song.VERSION and cfg.get('director35') is None and not req['plan_review'] and not source_plan:
         preflight(cfg, {'encoder':{'class_type':'CLIPLoader','inputs':{'clip_name':cfg['rewriter']['model']}},
                         'generate':{'class_type':'TextGenerate','inputs':{}}})
     preflight_five_frame(cfg, req, images_comfy, size, plan[0], seed)
@@ -1130,6 +1149,9 @@ def start(req):
              'settings_version':2,
              'image_comfy':images_comfy[0], 'images_comfy':images_comfy,
              'note':'尚未完成 Colab GPU 實測；末幀接續不攜帶前段動作 latent；末五幀使用五幀引導與重疊裁切。'}
+        if source_plan:
+            job['director_plan'] = source['director_plan']
+            job['plan_preview_setup'] = plan[0]['fixed_reference_settings']
         save_sources(job,original,song,drive)
         if effects:
             src=backend.LIBRARY/effects['file']
@@ -1175,7 +1197,8 @@ def open_furnace(job_id,revision):
             raise ValueError('丹方已有更新或內容不符，請重新開啟專案檢查。')
         if any(s.get('prompt_id') or s.get('prompt') or s.get('status')=='done' for s in job['segments']):
             raise ValueError('此專案已有開拍內容，不能重複確認丹方。')
-        cfg=backend.project_config(job['request'])
+        req = job['request']
+        cfg=backend.project_config(dict(req, director_engine='9b') if req.get('whole_song_director') else req)
         q=backend.comfy(cfg,'/queue')
         if q.get('queue_running') or q.get('queue_pending'):
             raise ValueError('ComfyUI 還有工作，請稍後開爐。')
@@ -1340,8 +1363,8 @@ def resume(job_id,rewrite_retries=None):
     # ordinary legacy resumer that skips done clips and can reuse old prompts.
     prior=read_state(job_id)
     stopped=prior.get('status') in ('error','cancelled','interrupted')
-    local_chain=(is_continuation(prior['request']['mode'])
-                 and prior['request'].get('director_schema')==6)
+    from banana_mv.takes import continuous_5070
+    local_chain=continuous_5070(prior)
     restart=prior.get('continuation_restart')
     # Interrupted during a NEW continuation? Resume after the last genuinely
     # regenerated clip, never mistake an old archived downstream Take for a
@@ -1381,7 +1404,10 @@ def resume(job_id,rewrite_retries=None):
         if retries is not None:job['request']['rewrite_retries']=retries
         if job['status'] not in ('error','cancelled','interrupted'):
             raise ValueError('這個專案沒有待續跑的失敗或中斷工作。')
-        cfg=backend.project_config(job['request'])
+        req = job['request']
+        saved_full_plan = req.get('whole_song_director') and all(
+            s.get('director_plan', {}).get('shots') for s in job['segments'])
+        cfg=backend.project_config(dict(req, director_engine='9b') if saved_full_plan else req)
         queue=backend.comfy(cfg,'/queue')
         if queue.get('queue_running') or queue.get('queue_pending'):
             raise ValueError('ComfyUI 仍在執行工作，請等佇列清空再續跑。')
