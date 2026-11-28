@@ -697,7 +697,7 @@ def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
         native = write_director_shoot_prompt(
             cfg, req, segment, event, fixed_setup, pictures, wardrobe, refs,
             _pictures(refs), rewrite, progress, direction_policy=direction_policy,
-            body_form=body_form, shoot_event=shoot_event)
+            body_form=body_form, shoot_event=shoot_event, ending=context['ending'])
         native, removed = clean_lyric_output(
             native, dict(req, lyrics_reference_version=2))
         segment['lyric_reference_cleanup'] = {'removed_spans': removed}
