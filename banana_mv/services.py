@@ -49,6 +49,13 @@ def load_config():
 def project_config(request):
     """Apply a project's 9B options to this invocation's local config."""
     cfg = load_config()
+    if request.get('director_engine', '9b') != '9b' and request.get('rewrite',True) and not request.get('direct_script'):
+        from banana_mv import director35
+        opts = director35.options(request)
+        if PORT != 8193 or os.name != 'nt':
+            raise ValueError('35B 僅支援 Windows 5070 本機版。')
+        director35.preflight()
+        cfg['director35'] = opts
     if 'rewriter_thinking' not in request and 'rewriter_budget' not in request:
         return cfg
     thinking = request.get('rewriter_thinking', False)
@@ -267,6 +274,9 @@ def rewrite_local(cfg, system, parts, job_id):
     with _REWRITE_PROMPT_LOCK:
         _REWRITE_STOP = stopped
     try:
+        if cfg.get('director35') is not None:
+            from banana_mv import director35
+            return director35.rewrite(cfg, system, parts, job_id, stopped)
         try:
             return _rewrite_once(cfg, system, parts, job_id, stopped)
         except _EmptyRewrite as error:
