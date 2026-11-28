@@ -700,7 +700,7 @@ function validateImages(){if(!selectedImages[0])throw Error('請在圖片1欄位
 function renderImages(){closeImageMentions();selectedImages.forEach((item,i)=>{const n=i+1,preview=$('image-preview-'+n);preview.replaceChildren();if(item){const img=document.createElement('img');img.src=item.url;img.alt=`圖片${n}：${(item.file?.name??item.name)}`;preview.append(img);}$('image-name-'+n).textContent=item?(item.file?.name??item.name):(n>imageLimit()?'接續版預留給前段畫面':'尚未選圖');$('remove-image-'+n).hidden=!item;$(i===0?'image':'image-'+n).disabled=n>imageLimit();});$('reference-help').textContent=`已選 ${activeImages().length} / ${imageLimit()} 張。獨立版最多9張；接續版最多8張。請從圖片1起依序填入，末尾不用的欄位可留空。`;}
 for(let i=0;i<9;i++){const n=i+1,input=$(i===0?'image':'image-'+n);input.onchange=()=>{const file=input.files[0];if(!file)return;if(selectedImages[i])URL.revokeObjectURL(selectedImages[i].url);selectedImages[i]={file,url:URL.createObjectURL(file)};renderImages();};$('remove-image-'+n).onclick=()=>{if(selectedImages[i])URL.revokeObjectURL(selectedImages[i].url);selectedImages[i]=null;input.value='';renderImages();};}
 $('mode').addEventListener('change',renderImages);renderImages();
-let rewriterOptionsChanged=false;
+let rewriterOptionsChanged=false,directorEngineChanged=false;
 function rewriterOptions(){
  const engine=$('director-engine').value==='35b'?'35b':'9b';
  const options={rewriter_thinking:$('rewrite').checked&&$('rewriter_thinking').checked,
@@ -708,7 +708,7 @@ function rewriterOptions(){
  if(engine==='35b')Object.assign(options,{director_engine:engine,director35_mtp:$('director35-mtp').checked,
  director35_context:Number($('director35-context').value),director35_cpu_moe:Number($('director35-cpu-moe').value),
  director35_kv:$('director35-kv').value,director35_output:Number($('director35-output').value)});
- else options.director_engine='9b';
+ else if(directorEngineChanged)options.director_engine='9b';
  return options;
 }
 function restoreRewriterOptions(request){
@@ -721,7 +721,7 @@ function restoreRewriterOptions(request){
  $('director35-kv').value=request.director35_kv??'q8_0';
  $('director35-output').value=String(request.director35_output??4096);
  if($('lean_commission'))$('lean_commission').checked=request.lean_commission!==false;
- rewriterOptionsChanged=false;syncRewriterOptions();
+ rewriterOptionsChanged=false;directorEngineChanged=false;syncRewriterOptions();
 }
 function syncRewriterOptions(){
  $('rewriter-options').hidden=!$('rewrite').checked;
@@ -734,7 +734,7 @@ function syncRewriterOptions(){
 $('rewrite').addEventListener('change',syncRewriterOptions);
 $('rewriter_thinking').addEventListener('change',()=>{rewriterOptionsChanged=true;syncRewriterOptions();});
 $('rewriter_budget').addEventListener('change',()=>{rewriterOptionsChanged=true;});
-for(const id of ['director-engine','director35-mtp','director35-context','director35-cpu-moe','director35-kv','director35-output'])$(id).addEventListener('change',()=>{rewriterOptionsChanged=true;syncRewriterOptions();});
+for(const id of ['director-engine','director35-mtp','director35-context','director35-cpu-moe','director35-kv','director35-output'])$(id).addEventListener('change',()=>{rewriterOptionsChanged=true;if(id==='director-engine')directorEngineChanged=true;syncRewriterOptions();});
 syncRewriterOptions();
 const sizePresets={'720p':{'16:9':[1280,720],'9:16':[720,1280],'4:5':[720,900],'1:1':[720,720]},'480p':{'16:9':[854,480],'9:16':[480,854],'4:5':[480,600],'1:1':[480,480]},'360p':{'16:9':[640,360],'9:16':[360,640],'4:5':[360,450],'1:1':[360,360]},'576p':{'16:9':[1024,576],'9:16':[576,1024],'4:5':[576,720],'1:1':[576,576]},'640p':{'16:9':[1152,640],'9:16':[640,1152],'4:5':[640,800],'1:1':[640,640]}};
 const DRAFT_WIDTHS=Object.values(sizePresets['360p']).map(v=>v[0]);
