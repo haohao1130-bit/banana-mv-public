@@ -169,6 +169,11 @@ def clear_progress(job_id):
 
 
 def preflight(cfg, graph):
+    # Only remove the 9B-specific preflight pair, never H3 CLIPLoader nodes.
+    if cfg.get('director35') is not None and graph.get('encoder',{}).get('class_type') == 'CLIPLoader' and graph.get('generate',{}).get('class_type') == 'TextGenerate':
+        graph = {key: node for key,node in graph.items() if key not in ('encoder','generate')}
+        if not graph:
+            return
     info = backend.comfy(cfg, '/object_info')
     if 'tlu_repair' in graph:
         anti_jelly.require_capability(info)
