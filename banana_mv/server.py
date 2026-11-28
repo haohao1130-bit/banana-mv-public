@@ -1559,7 +1559,7 @@ class Handler(WebHandler):
             if path=='/api/mv/rewrite-clip':
                 from banana_mv.manual_prompt import rewrite_clip
                 body=self.body_json()
-                overrides={key:body[key] for key in ('rewriter_thinking','rewriter_budget') if key in body}
+                overrides={key:body[key] for key in ('rewriter_thinking','rewriter_budget','director_engine','director35_mtp','director35_context','director35_cpu_moe','director35_kv','director35_output') if key in body}
                 return self.send_json(rewrite_clip(body['id'],body.get('index'),body.get('previous_take'),
                                                    rewriter_options=overrides),202)
             if path=='/api/mv/retake':
