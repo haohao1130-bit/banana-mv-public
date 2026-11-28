@@ -92,6 +92,49 @@ roles. Do not copy lyrics, recite them, or add subtitles. Untagged time does not
 imply silence. Do not invent heard sounds or new picture references.
 Deliver only this batch. Reserve the ending for its assigned slot."""
 
+# Distilled from validated BANANAMV renders (Dangerous Contract, Little Boxing
+# King, Max Power, Banana Sect Abbot). Craft guidance, not an acceptance gate.
+SHOT_CRAFT = """SHOT CRAFT for each visual:
+- Open with the framing and camera position: shot size, height or angle, and a
+  lens when it matters (e.g. low 24mm, long-lens frontal, over-the-shoulder).
+- Give the camera a path, speed and destination: tracks backward along the
+  exchange line, trucks hard right with the escape, whips along a punch, pushes
+  in fast, arcs to a low angle. Moves are motivated by the action they reveal.
+- Write action as cause and effect: preparation, contact or accent, reaction or
+  recoil, and the resulting position. Name the supporting foot, the hand used,
+  the weight transfer and the direction of travel.
+- Let material respond: fabric, hair, beads, sweat, dust or leaves.
+- Direct performance: gaze, micro-expression, who sings and who stays silent.
+- Cut on an unfinished action and name the trigger ("cut as the fist begins its
+  wind-up"); the next shot continues it from a contrasting angle.
+- Energetic passages: several short shots per window that alternate wide
+  geography, inserts (feet, contact, faces) and close-ups. Quiet passages: fewer,
+  longer shots.
+- Keep the song's established movement vocabulary; vary angle, scale and
+  formation instead of switching dance or fighting styles every shot. Avoid
+  floor rolls, flips, lifts and spins unless the commission assigns them."""
+
+_MAX_EXAMPLES = 2
+
+
+def _slot_system(req, windows, setup):
+    """Shot-writing system with craft guidance and up to two validated examples."""
+    from banana_mv.director_examples import example_prompt, select_example
+    fallback = req.get('director', 'auto')
+    chosen, examples = set(), []
+    for window in windows:
+        planned = window.get('planned') or {}
+        mode = planned.get('activity') or (fallback if fallback in MODES else None)
+        if not mode:
+            continue
+        style = ' '.join(filter(None, (planned.get('style', ''), setup)))
+        item = select_example(mode, style)
+        if not item or item['source'] in chosen or len(examples) >= _MAX_EXAMPLES:
+            continue
+        chosen.add(item['source'])
+        examples.append(example_prompt(mode, style))
+    return '\n\n'.join([SLOT_SYSTEM + '\nSupported modes: ' + ', '.join(MODES), SHOT_CRAFT, *examples])
+
 
 def _visual(value, label, req, count, required=True):
     if not isinstance(value, str) or required and not value.strip():
@@ -434,7 +477,7 @@ def _batch_shots(cfg, req, segments, originals, work, rewrite, task, fingerprint
             label = f'slots_{start + 1:02d}_{stop:02d}'
             delivery = _recover_batch(work, label, state['last_error'])
             if delivery is None:
-                delivery = direct(SLOT_SYSTEM + '\nSupported modes: ' + ', '.join(MODES),
+                delivery = direct(_slot_system(req, local_task['clip_windows'], state['setup']),
                                   local_task, label, batch=True)
             clips = delivery.get('clips')
             if not isinstance(clips, list) or len(clips) > stop - start:

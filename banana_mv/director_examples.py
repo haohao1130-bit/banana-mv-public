@@ -1,10 +1,13 @@
 """Mode-specific examples of finished cinematic shot prose for the optional 35B.
 
 Dance is adapted from the original successful project input (not the rewritten
-H3 output). Other modes contain explicitly illustrative, unvalidated examples.
+H3 output). Action and the stage/boxing variants come from validated BANANAMV
+renders. Other modes contain explicitly illustrative, unvalidated examples.
 These examples teach detail and causal continuity, never assign current events.
 """
-VERSION = 'banana-director-examples-v2'
+import re
+
+VERSION = 'banana-director-examples-v3'
 EXAMPLES = {
     "dance": {
         "cue": "A leads a confident dance exchange, B answers, both advance toward the audience. Continue the same arm gesture across a camera cut.",
@@ -17,9 +20,10 @@ EXAMPLES = {
         "source": "New illustrative performance example; not a validated render."
     },
     "action": {
-        "cue": "Two opponents exchange initiative in a staged cinematic confrontation.",
-        "body": "[Shot 1] The lead performer shifts off the center line as the partner's broad theatrical attack travels through the foreground. Both faces remain readable in profile; the lead's weight settles into a bent supporting leg, with the free foot adjusting the distance. The partner follows through past the original target, jacket edges lagging behind the turning shoulders. The lead catches the change in spacing with a quick sideways glance and redirects the motion into a controlled stage-combat exchange. The partner visibly recoils and recovers balance rather than disappearing into an unrelated pose. A low oblique camera moves laterally with the pair, keeping their grounded feet and the changing space between their torsos in frame; the near shoulder passes the lens as the exchange reverses. Cut during the ongoing recovery to reveal the new positions from the opposite side.",
-        "source": "New illustrative staged-action example; not a validated render."
+        "cue": "A calm martial master deflects a furious challenger with economical push-hands technique, then a flying kick turns the duel into a comic escape.",
+        "body": "[Shot 1] Medium two-shot on a stone courtyard from a high slant angle behind Performer A's left shoulder, his robe and shawl filling the near foreground while Performer B stands mid-ground right, fists coiled. She launches a straight punch at his face; he snaps into a sideways hip turn, draws back his left forearm to glide under her fist and pushes it off with an open-palm deflection, chin tucked, eyes half-lidded and smirking as he sings. She recoils, jaw tightening, and switches to her right hand for a follow-up jab. The camera tracks backward rapidly along their exchange line, keeping both bodies and the sliding step connection in frame while sunlight glints off the contact point of sleeves and forearms.\n[Shot 2] At 00:01.760, low-angle wide shot from the side at ground level: Performer B steps forward with momentum and pushes a palm strike; Performer A crosses his left forearm in front of his chest to catch the palm, shoulders rolling together on impact, then slides laterally out of her range in a smooth sidestep. Her palm misses empty air; she plants her feet and turns to reorient toward his new position, arms snapping up. He lifts his gaze from her wrist to her eyes, grinning; she glares upward, teeth gritted. The camera trucks hard right to follow his escape vector, motion blur streaking the background pillars.\n[Shot 3] At 00:03.400, extreme low-angle close two-shot: he extends an open palm and their palms meet at the center of frame with a small recoil bounce; he rotates his waist, sweeping the pressed hands sideways while her forward inertia carries one more big step through the gap, fallen leaves skittering underfoot. Their palms drift apart as they pass at different depths; he holds eye contact, serene, while she narrows her eyes and steps closer. The camera pushes in fast on the clashing palms, then pops back out as they separate.",
+        "source": "Banana Sect Abbot (大乘蕉宗住持), clip 05 shots 1–3, validated BANANAMV render; names generalized.",
+        "keywords": "kung fu 功夫 wing chun 詠春 tai chi 太極 push hands 推手 palm 掌 deflect 化勁 monk 和尚 住持 martial arts 武術 courtyard"
     },
     "band": {
         "cue": "A guitarist plays an assigned phrase and catches the drummer's response.",
@@ -53,8 +57,48 @@ EXAMPLES = {
     }
 }
 
-def example_prompt(mode):
-    item = EXAMPLES.get(mode)
+# Additional validated renders, chosen over the mode default when the
+# current style keys or event mention their keywords.
+VARIANTS = [
+    {
+        "mode": "action",
+        "cue": "A cocky mascot boxer overwhelms a stunned champion, intercut with singers driving the chorus on a festival stage.",
+        "body": "[Shot 1] Inside the boxing arena, continuing from the previous frame: Performer A, the heavyweight champion, stumbles backward with his head thrown back, sweat glistening on his cheek, mouth open in shock as a red glove hovers near his jaw; he flails to raise his wrapped hands. The camera pulls back rapidly in front of him at high speed while Performer B charges into the foreground and closes in. Performer A is not singing; his mouth stays open in panic as he scrambles to re-guard.\n[Shot 2] At 00:02.300, ground-level push-in from Performer B's feet: he steps into Performer A's chest, right fist cocked at his waist, and the camera surges forward along his legs in a large, fast push-in. Cut as the fist begins its wind-up.\n[Shot 3] At 00:03.900, cut to the concert stage: the lead singer roars a line into the microphone, his free hand swinging a hard punch toward frame right. The camera whips right along the punch's path in a large, fast pan, cutting before the arm fully extends.\n[Shot 4] At 00:05.000, back in the arena: Performer B's right fist rockets into Performer A's midsection. The camera sits in an extreme close-up at A's side abdomen; the impact freezes into brief slow motion, torso folding, sweat flying, then snaps back to full speed as he doubles over, arms dropping.\n[Shot 5] At 00:06.400, Performer B lowers both hands, shrugs, shakes his head and grins smugly. The camera arcs quickly to a low angle in front of him, framing the satisfied smile as he looks down at the doubled-over champion.",
+        "source": "Little Boxing King (小小拳王), clip 06 shots 1–5, validated BANANAMV render; names generalized.",
+        "keywords": "boxing 拳擊 boxer 拳王 ring 擂台 jab uppercut hook punch 出拳 揮拳 knockout glove arena"
+    },
+    {
+        "mode": "performance",
+        "cue": "A cold rapper crosses a cabaret theater to take the microphone while his rival watches from the stage.",
+        "body": "[Shot 1] At 00:01.333, low-angle tracking shot following Performer B: he grips a closed book in his left hand, steps out of the sofa and advances along the central aisle with deliberate, heavy footsteps. The camera slides backward at his pace, keeping him mid-shot as velvet seats blur into dark bokeh; his jaw stays set, gaze forward and unblinking.\n[Shot 2] At 00:02.000, extreme low-angle insert on his knee-high boots: a heel strikes the polished floor, the mirror reflection doubling the impact while dust motes catch the light; a subtle shake carries the weight without exaggeration.\n[Shot 3] At 00:02.667, hard cut to a frontal long-lens medium shot as he walks straight toward the lens, the aisle compressing into a shallow corridor of red seats behind him.\n[Shot 4] At 00:04.500, reverse cut to Performer A on stage, leaning against the moved high-back chair, arms loosely crossed, watching him approach with a playful, scheming grin.\n[Shot 5] At 00:06.500, tight insert at the base of the stage stairs: his boot lands on the first step, then the next, each strike crisp; the camera tilts up slowly as he ascends, matching the percussion.\n[Shot 6] At 00:07.000, side medium shot from stage right as he takes the last two steps and turns toward the microphone stand, the motion flowing straight on from the previous landing.",
+        "source": "Max Power (最大功率), clip 06 shots 3–8, validated BANANAMV render; names generalized.",
+        "keywords": "rap 饒舌 hip hop cabaret 歌舞廳 theater 劇場 stage entrance 登台 microphone mic 麥克風 walk aisle"
+    },
+]
+
+
+def _hits(keywords, text):
+    count = 0
+    for word in keywords.lower().split():
+        # Latin keywords match whole words ("mic" must not match "dynamic").
+        pattern = r'\b' + re.escape(word) + r'\b' if word.isascii() else re.escape(word)
+        count += bool(re.search(pattern, text))
+    return count
+
+
+def select_example(mode, style=''):
+    """The mode default, or a validated variant whose keywords the style names."""
+    text = str(style or '').lower()
+    best, score = EXAMPLES.get(mode), 0
+    for item in [EXAMPLES.get(mode) or {}] + [v for v in VARIANTS if v['mode'] == mode]:
+        hits = _hits(item.get('keywords', ''), text)
+        if hits > score:
+            best, score = item, hits
+    return best
+
+
+def example_prompt(mode, style=''):
+    item = select_example(mode, style)
     if not item:
         return ''
     return (

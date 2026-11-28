@@ -222,7 +222,9 @@ def creative_prompt(system, req, segment):
     """Used only by 35B's creative drafting routes; no new call or validation."""
     block, info = build_library(req, segment)
     from banana_mv.director_examples import VERSION as EXAMPLE_VERSION, example_prompt
-    example = example_prompt(info['mode'])
+    # Event and shared setup pick the closest validated variant (boxing, push hands, stage entrance).
+    style = str((segment.get('director_plan') or {}).get('event') or '') + ' ' + str(req.get('shared_setup') or '')
+    example = example_prompt(info['mode'], style)
     info['example_version'] = EXAMPLE_VERSION
     info['example_mode'] = info['mode'] if example else None
     info['example_words'] = len(example.split())
