@@ -113,3 +113,16 @@ def example_prompt(mode, style=''):
         'belong only to the example; design your own for the current event and requested intensity. '
         'Do not copy example text into the answer or reproduce its scene.'
     )
+
+
+def reference_index():
+    """One line per validated reference: the keys the outline can name in style."""
+    rows = []
+    for mode, item in EXAMPLES.items():
+        if 'keywords' in item:
+            rows.append((mode, item))
+    rows += [(item['mode'], item) for item in VARIANTS]
+    if 'dance' in EXAMPLES:
+        rows.insert(0, ('dance', {'keywords': 'dance duet 雙人舞 vogue waacking popping jazz funk runway 伸展台',
+                                  'source': EXAMPLES['dance']['source']}))
+    return '\n'.join(f'- {mode}: {item["keywords"]}' for mode, item in rows)
