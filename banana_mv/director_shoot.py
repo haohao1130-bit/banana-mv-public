@@ -41,6 +41,44 @@ DIRECTOR_SYSTEM = (
     '[Shot N] At mm:ss.mmm, with a concrete visual action. One continuous take is valid. '
     'Python supplies the final fixed H3 identity and audio fields.'
 )
+SHOT_DRAFT_VERSION = '35b-director-first-v1'
+SHOT_DRAFT_SYSTEM = """You are the cinematic MV director for the current clip.
+Your job is the performance, choreography, photography and editing, not
+reference metadata or audio paperwork. Python supplies the authoritative cast,
+wardrobe, SRT windows, clip scope and final H3 packaging. Follow the current
+commission, including established starting state, required outcomes and explicit
+camera constraints. References establish identity, not a fixed pose. Use the
+assigned subject labels rather than guessing character names.
+
+CREATIVE APPROACH: Develop the current event into expressive physical action.
+Choose suitable movement phrases, character intentions and responses first;
+then choose camera viewpoints, trajectories and editorial timing to reveal them.
+Deepen the same action rather than piling on unrelated actions. For substantial
+shots, integrate these cinematic dimensions naturally in continuous prose:
+body mechanics (support, weight, direction, acceleration, follow-through);
+material and environmental response (fabric, hair, props, contact and inertia);
+performance (gaze, expression, intention and interaction);
+spatial composition (positions, depth, foreground, screen direction);
+camera and editing (lens perspective, height, starting and ending framing,
+travel, speed and action continuity across cuts);
+light and image (motivated sources, shadow, reflections and texture).
+Use the selected specialty and demonstration to develop concrete visible
+details at the quality of Dangerous Contract V2, not generic movement names.
+Its substantive shots often use around 120–160 English words; this illustrates
+depth, not a quota, a ceiling or a reason to pad. A brief insert may be brief.
+Choose any suitable shot count, including an expressive continuous take.
+For high-energy scenes, make bold, precise choices in moving coverage, proximity,
+perspective and motivated cuts; quiet scenes deserve equally precise restraint.
+Carry unfinished action and changing positions through the edit and clip handoff.
+Honor the assigned intensity, music evidence, cast and continuity; add no future
+events, independent vocals, dialogue, subtitles or replacement audio.
+
+DELIVERY: Write only detailed_description: followed by the finished English
+shot paragraphs. [Shot 1] starts at zero; subsequent shots begin
+[Shot N] At mm:ss.mmm, using clip-local cut times. No other H3 fields, outline,
+analysis, or explanation in the formal answer. Spend creative effort on the
+actual shot prose, not on drafting or reviewing fields that Python assembles.
+"""
 REPAIR_SYSTEM = (
     'You are editing ONE existing MiniMax H3 Ref2VA shot paragraph. '
     'Keep the camera cut time and framing, physical action, character identities '
@@ -261,6 +299,30 @@ def _free_commission(req, segment, event, pictures, wardrobe, cues,
                 f'REQUIRED REAL SCENE CUT at {row["start"]:.3f}s: '
                 'place a [Shot N] boundary here to keep location/outfit continuity. '
                 'This is a physical scene change, not an SRT singer cut.')
+    if creative35:
+        # The original production facts stay intact. Put the actual current
+        # commission last, after policy/reference material, not before it.
+        if direction_policy:
+            lines.extend(('', '=== FILMING AUTHORITY ===', direction_policy))
+        from banana_mv.core import action_lora_brief
+        if brief := action_lora_brief(req):
+            lines.extend(('', brief))
+        lines.extend((
+            '', '=== CURRENT EVENT — THE ONLY CLIP TO FILM ===',
+            ('OPENING CONTINUITY: the preceding frame shows the CURRENT physical '
+             'pose, prop positions, lighting and present clothes; advance naturally '
+             'from those established results.' if continuity else
+             'OPENING CONTINUITY: begin directly with the assigned current event.'),
+            event,
+            '',
+            'DELIVER THE FINISHED SHOTS: Write only detailed_description: and the '
+            'English [Shot N] paragraphs. Develop the assigned performance and '
+            'its physical and cinematic detail to the depth of the reference example. '
+            'Choose your own meaningful camera cuts using local times. '
+            'Python assembles the other five H3 fields. Do not draft them.',
+            'Camera energy: ' + str(req.get('intensity', 'high')) + '.',
+        ))
+        return '\n'.join(lines)
     lines += [
         '',
         '=== 2. CURRENT EVENT — DIRECT ITS PERFORMANCE ===',
@@ -358,14 +420,10 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
             if calls == 1:
                 call_cfg['rewriter']['thinking'] = bool(cfg['rewriter'].get('thinking', False))
             if system == DIRECTOR_SYSTEM:
-                # The native 9B is already trained on this guide. The general MoE
-                # director receives it explicitly; the current commission wins.
-                from pathlib import Path
-                guide = Path(cfg['guides']['ref']).read_text(encoding='utf-8')
-                system = guide + '\n\nCURRENT MV DIRECTOR CONTRACT (overrides guide examples):\n' + system
-                from banana_mv.director35 import creative_system
+                # Python already assembles all six fields on this route.
+                # Do not teach a second, conflicting six-field writing task.
                 from banana_mv.director_library import creative_prompt
-                system = creative_prompt(creative_system(system), req, segment)
+                system = creative_prompt(SHOT_DRAFT_SYSTEM, req, segment)
         return rewrite(call_cfg, system, parts, uuid.uuid4().hex[:8])
 
     for restart in range(retry_limit+1):
@@ -374,8 +432,9 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
         why = ''
         for attempt in range(3):
             prompt = (task if not why else task + '\nFORMAT REMINDER: ' + why
-                      + '\nReissue the SIX H3 sections. You choose the Shot count. '
-                      'All non-first shots require At mm:ss.mmm.')
+                      + ('\nReissue only detailed_description and the finished shots. '
+                         if creative35 else '\nReissue the SIX H3 sections. ')
+                      + 'You choose the Shot count. All non-first shots require At mm:ss.mmm.')
             try:
                 blocks, slots = parse_director_shots(
                     call(images + [('text', prompt)], draft_temperature if attempt == 0 else .15),
@@ -440,6 +499,7 @@ def write_director_shoot_prompt(cfg, req, segment, event, fixed, pictures,
         segment['vocal_auto_corrections'] = vocal_fixes
         segment['prompt_profile'] = {
             'source': 'python_srt_free_camera',
+            **({'draft_contract': SHOT_DRAFT_VERSION} if creative35 else {}),
             'writer_calls': calls,
             'contract_check_calls': 1 + attempt,
             'director_shot_count': len(slots),
