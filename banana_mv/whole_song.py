@@ -230,7 +230,7 @@ def h3_prompt(req, segment, picture_count, tail):
 
 
 def _repair_batch_json(raw):
-    """Remove surplus closing braces only at parser-confirmed clip boundaries."""
+    """Repair known wrapper mistakes at parser-confirmed clip boundaries."""
     source = re.sub(r'^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$', '', raw.strip(), flags=re.I)
     repairs = 0
     while True:
@@ -238,6 +238,17 @@ def _repair_batch_json(raw):
             parsed = json.loads(source)
         except json.JSONDecodeError as error:
             pos = error.pos
+            if error.msg == 'Extra data' and re.fullmatch(r'\]\s*\}', source[pos:]):
+                prefix = parse_object(source[:pos])
+                if set(prefix) == {'clips', 'index', 'handoff', 'shots'}:
+                    clips = prefix.pop('clips')
+                    if (isinstance(clips, list) and 0 < len(clips) < BATCH_SIZE
+                            and isinstance(clips[-1], dict)
+                            and type(clips[-1].get('index')) is int
+                            and type(prefix['index']) is int
+                            and prefix['index'] == clips[-1]['index'] + 1):
+                        return {'clips': [*clips, prefix]}
+                return None
             if (repairs >= BATCH_SIZE - 1 or error.msg != "Expecting ',' delimiter"
                     or not re.search(r'\]\s*\}\s*$', source[:pos])
                     or not re.match(r'\}\s*,\s*\{\s*"index"\s*:', source[pos:])):

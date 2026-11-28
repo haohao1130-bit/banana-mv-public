@@ -266,6 +266,19 @@ class WholeSongTests(TestCase):
         self.assertEqual([window['index'] for window in last['clip_windows']], [7, 8])
         self.assertEqual(last['incoming_handoff'], 'Position 6')
 
+    def test_35b_recovers_last_clip_written_outside_the_array(self):
+        clips = [{'index': i, 'handoff': f'Position {i}',
+                  'shots': [{'at': 0, 'mode': 'story', 'visual': f'Shot {i}.'}]}
+                 for i in (7, 8)]
+        broken = json.dumps({'clips': clips[:1], **clips[1]}) + ']}'
+        label = 'slots_07_08'
+        (self.work/f'whole_song_{label}_12345678_raw.txt').write_text(broken, encoding='utf-8')
+        with self.assertRaisesRegex(whole_song.SceneStateError, 'Extra data') as bad:
+            whole_song.parse_object(broken)
+        self.assertEqual(whole_song._recover_batch(self.work, label, str(bad.exception)), {'clips': clips})
+        self.assertIsNone(whole_song._repair_batch_json(broken + ' trailing prose'))
+        self.assertIsNone(whole_song._repair_batch_json(broken.replace('"index": 8', '"index": 9')))
+
     def test_fixed_slot_rejects_cut_at_real_song_end(self):
         shots = [{'at': at, 'mode': 'story', 'visual': 'Follow the actor.'} for at in (0, 2.560)]
         with self.assertRaisesRegex(ValueError, '第 9 槽第 2 鏡起點無效'):
