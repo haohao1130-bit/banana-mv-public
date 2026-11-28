@@ -53,6 +53,36 @@ class DirectorLibraryTests(unittest.TestCase):
         self.assertIn('disabled dynamic editing', system)
         self.assertEqual(seg['director_library']['version'], VERSION)
 
+    def test_v2_example_routes_and_source(self):
+        from banana_mv.director_examples import EXAMPLES, VERSION as EXAMPLE_VERSION
+        self.assertEqual(set(EXAMPLES), set(MODES))
+        for mode in MODES:
+            segment = {'index': 0, 'seconds': 15, 'director_plan': {'mode': mode, 'event': 'Current event'}}
+            prompt = creative_prompt('OFFICIAL', {'director': mode}, segment)
+            self.assertEqual(segment['director_library']['example_version'], EXAMPLE_VERSION)
+            self.assertEqual(segment['director_library']['example_mode'], mode)
+            self.assertIn('NOT THE CURRENT COMMISSION', prompt)
+            self.assertIn(EXAMPLES[mode]['body'], prompt)
+            self.assertLess(segment['director_library']['example_words'], 500)
+            if mode == 'dance':
+                self.assertIn('knee-height 24mm', prompt)
+                self.assertIn('completes the sweep', prompt)
+            else:
+                self.assertNotIn('knee-height 24mm', prompt)
+
+    def test_35b_removes_short_example_but_9b_keeps_it(self):
+        from banana_mv.director_shoot import _free_commission
+        from banana_mv.shoot_plan import _auto_filming, AUTO_FILMING
+        args = ({}, {'seconds': 15}, 'Current scene', {'S1': '<Picture 1>', 'S2': '<Picture 2>'}, {}, [])
+        legacy = _free_commission(*args)
+        creative = _free_commission(*args, creative35=True)
+        self.assertIn('ONE-SHOT SHAPE', legacy)
+        self.assertNotIn('ONE-SHOT SHAPE', creative)
+        self.assertIn('six native H3 section headers', creative)
+        self.assertEqual(_auto_filming({}), AUTO_FILMING)
+        self.assertNotIn('Use only the shot details', _auto_filming({'director35': {}}))
+        self.assertIn('fully developed creative decisions', _auto_filming({'director35': {}}))
+
 
 if __name__ == '__main__':
     unittest.main()
