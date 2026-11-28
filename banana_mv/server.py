@@ -946,6 +946,11 @@ def worker(job, cfg, original, song, drive):
                 atomic_json(work/f'{failed["index"]:02d}_scene_state_attempt.json',failed['scene_state_attempt'])
         job['error_stage']=stage
         job['status']='error'; job['error']=f'{type(e).__name__}: {e}'; write_state(job)
+        from banana_mv.director35 import record_issue, newest
+        record_issue('mv_worker', e, job=job['id'], title=job.get('title'), stage=stage,
+                     segment=job.get('current'), engine=job['request'].get('director_engine', '9b'),
+                     whole_song=bool(job['request'].get('whole_song_director')),
+                     project_dir=str(work), latest_raw=newest(work, 'whole_song_*_raw.txt'))
     finally:
         clear_progress(job['id'])
         CANCEL.discard(job['id'])

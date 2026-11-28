@@ -813,7 +813,12 @@ def retake_worker(job,cfg,song,drive,batch,old_status,originals=None):
             else:current.update(status='error',error=str(e))
         job['status']=old_status
         if cancelled:job['retake'].update(status='cancelled',error='使用者緊急停爐')
-        else:job['retake'].update(status='error',error=str(e))
+        else:
+            job['retake'].update(status='error',error=str(e))
+            from banana_mv.director35 import record_issue
+            record_issue('retake_worker', e, job=job['id'], title=job.get('title'),
+                         segment=(job['retake'].get('current') or 0)+1 if isinstance(job['retake'].get('current'),int) else None,
+                         operation=job['retake'].get('operation'), project_dir=str(work))
     finally:
         app.clear_progress(job['id'])
         for _,take in batch:

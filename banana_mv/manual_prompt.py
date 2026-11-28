@@ -94,6 +94,10 @@ def _worker(job,cfg,index,originals,version,previous_take=None):
             'error':'',
         }
     except Exception as error:
+        if not isinstance(error,InterruptedError):
+            from banana_mv.director35 import record_issue
+            record_issue('rewrite_clip', error, job=job.get('id'), title=job.get('title'),
+                         segment=seg.get('index',0)+1, version=version)
         previous=seg.get('prompt_rewrite') or {}
         seg['prompt_rewrite']={**previous,'status':'error','error':str(error),
                                'pending_version':version}
