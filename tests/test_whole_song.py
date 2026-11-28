@@ -157,9 +157,8 @@ class WholeSongTests(TestCase):
                        'rewriter_thinking': True})
         self.assertEqual((cfg['ctx'], cfg['max_tokens'], cfg['reasoning_budget']), (32768, 16384, 4096))
 
-    def test_9b_fixed_slots_require_every_entry_before_rendering(self):
-        self.cfg['rewriter'] = {'max_length': 8192}
-        self.job['request'].update(whole_song_director=True, director_engine='9b',
+    def test_35b_fixed_slots_require_every_entry_before_rendering(self):
+        self.job['request'].update(whole_song_director=True, director_engine='35b',
                                   director_schema=whole_song.VERSION)
         self.job['segments'] = segments(9, 4)
         for seg in self.job['segments']:
@@ -176,9 +175,6 @@ class WholeSongTests(TestCase):
         self.assertFalse((self.work/'director_plan.json').exists())
         self.queue.assert_not_called()
         self.model.assert_called_once()
-        model_cfg = self.model.call_args.args[0]
-        self.assertGreaterEqual(model_cfg['rewriter']['max_length'], 16384)
-        self.assertTrue(model_cfg['whole_song_once'])
 
     def test_fixed_slot_rejects_cut_at_real_song_end(self):
         total = 82.560

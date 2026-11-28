@@ -280,7 +280,7 @@ def rewrite_local(cfg, system, parts, job_id):
         try:
             return _rewrite_once(cfg, system, parts, job_id, stopped)
         except _EmptyRewrite as error:
-            if cfg.get('whole_song_once') or not error.thinking_only:
+            if not error.thinking_only:
                 raise
             if stopped.is_set():
                 raise InterruptedError('已停止 9B 改寫。')

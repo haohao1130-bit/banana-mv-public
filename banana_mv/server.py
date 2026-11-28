@@ -993,9 +993,11 @@ def start(req):
     full_director = req.get('whole_song_director', False)
     if not isinstance(full_director, bool):
         raise ValueError('全曲導演設定必須為布林值。')
+    source_plan = full_director and req.get('prompt_source_job')
+    if full_director and not source_plan and req.get('director_engine', '9b') == '9b':
+        full_director = req['whole_song_director'] = False
     if full_director and (not req.get('rewrite', True) or req.get('direct_script')):
         raise ValueError('全曲導演需要開啟自動導演。')
-    source_plan = full_director and req.get('prompt_source_job')
     cfg = backend.project_config(dict(req, director_engine='9b') if source_plan else req)
     if 'action_loras' in req:
         scope = req.setdefault('action_lora_scope', 'segment')
@@ -1413,6 +1415,9 @@ def resume(job_id,rewrite_retries=None):
             raise ValueError('ComfyUI 仍在執行工作，請等佇列清空再續跑。')
         originals,song,drive=project_inputs(job,cfg)
         repair_unstarted_timeline(job,song)
+        if (req.get('whole_song_director') and req.get('director_engine', '9b') == '9b'
+                and not saved_full_plan and not (job_dir(job_id) / 'director_plan.json').is_file()):
+            req.update(whole_song_director=False, director_schema=6)
         restore_render_settings(job)
         missing=False
         for seg in job['segments']:

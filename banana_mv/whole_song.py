@@ -263,6 +263,8 @@ def ensure_whole_song_plan(cfg, req, segments, originals, work, rewrite):
                                                        if k not in ('input_sha256', 'content_sha256')})):
             raise SceneStateError('保存的全曲拍攝稿與專案資料不一致。')
         return saved
+    if fixed_slots and req.get('director_engine', '9b') != '35b':
+        raise SceneStateError('新的全曲拍攝稿只使用 35B。')
     director_task = {key: value for key, value in task.items() if key not in ('clip_windows', 'ending')}
     director_task['ending'] = ending_contract({**req, 'segment_seconds': duration}, duration)
     peaks = set()
@@ -293,9 +295,6 @@ def ensure_whole_song_plan(cfg, req, segments, originals, work, rewrite):
         director_task['music']['time_basis'] = (
             'Window music offsets are clip-relative. Transients and downbeats are song-relative.')
         system = SLOT_SYSTEM
-        if cfg.get('director35') is None:
-            cfg = dict(cfg, whole_song_once=True, rewriter=dict(
-                cfg['rewriter'], max_length=max(16384, cfg['rewriter'].get('max_length', 0))))
     parts = [('text', json.dumps(director_task, ensure_ascii=False, separators=(',', ':')))] + _pictures(originals)
     raw = rewrite(cfg, system + '\nSupported modes: ' + ', '.join(MODES), parts, uuid.uuid4().hex[:8])
     (Path(work) / 'whole_song_director_raw.txt').write_text(str(raw), encoding='utf-8')

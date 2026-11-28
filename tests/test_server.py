@@ -159,6 +159,7 @@ class ServerIntegration(unittest.TestCase):
                              'kitchen_attention':True,'sparse_attention':mode=='chain'}
                         if mode=='chain' and legacy:
                             req['audio_analysis']=False
+                            req.update(director_engine='9b', whole_song_director=True)
                         if not legacy:
                             req.pop('image_id')
                             req['image_ids']=[image['id']]*count
@@ -171,6 +172,7 @@ class ServerIntegration(unittest.TestCase):
                         self.assertEqual(current['status'],'done',current.get('error'))
                         self.assertEqual(current['request']['scene_state_version'],0)
                         self.assertEqual(current['request']['director_schema'],6)
+                        self.assertFalse(current['request'].get('whole_song_director', False))
                         self.assertFalse((app.job_dir(job['id'])/'scene_state.json').exists())
                         self.assertEqual(current['request']['srt_reference'],req['srt_reference'])
                         self.assertEqual(current['request']['srt_cues'][0]['text'],'時間參考歌詞')
