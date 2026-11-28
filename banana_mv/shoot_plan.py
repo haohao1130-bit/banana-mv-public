@@ -637,6 +637,11 @@ def _filming_reference_settings(fixed_setup):
 def write_shoot_prompt(cfg,req,segment,originals,tail,rewrite,progress=None):
     """The first and only shot-writing stage; it cannot see the full story."""
     row=segment['director_plan'];offset=int(bool(tail))
+    if cfg.get('director35') is not None:
+        # Keep saved plan and authored event intact; correct the local
+        # filming specialty even when an older auto plan misclassified it.
+        from banana_mv.director_library import select_mode
+        row = dict(row, mode=select_mode(req, segment))
     if row.get('handoff_version')!=1:
         raise SceneStateError('舊大綱缺少獨立的當段拍攝委託；已保存影片與提示詞可沿用，但新寫稿需建立新任務重新分配。不能傳回完整設定補足。')
     def connected(text):
