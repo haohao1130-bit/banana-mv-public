@@ -236,3 +236,15 @@ class DirectorLibraryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ValidatedExampleTests(unittest.TestCase):
+    def test_style_picks_validated_martial_and_stage_variants(self):
+        from banana_mv.director_examples import select_example
+        self.assertIn('小小拳王', select_example('action', '拳擊擂台 uppercut')['source'])
+        self.assertIn('大乘蕉宗住持', select_example('action', 'wing chun push hands')['source'])
+        self.assertIn('大乘蕉宗住持', select_example('action', '')['source'])
+        self.assertIn('最大功率', select_example('performance', 'cabaret rap entrance')['source'])
+        # Latin keywords match whole words only.
+        self.assertIn('illustrative', select_example('performance', 'dynamic chorus')['source'])
+        self.assertIsNone(select_example('unknown', 'boxing'))

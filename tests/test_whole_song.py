@@ -141,6 +141,10 @@ class WholeSongTests(TestCase):
             'activity': 'dance', 'style': 'vogue, waacking',
             'formation': '<Picture 1> left, <Picture 2> right, facing camera'})
         self.assertNotIn('planned', second)  # unsupported activity is dropped, not fatal
+        first_system = calls[1].args[1]
+        self.assertIn('SHOT CRAFT', first_system)
+        self.assertIn('knee-height 24mm', first_system)  # planned dance -> Dangerous Contract example
+        self.assertEqual(first_system.count('REFERENCE EXAMPLE —'), 1)
         self.assertEqual(second['source_notes'][0]['title'], 'ACT 01')
         self.assertEqual(second['source_notes'][0]['start_s'], 0.0)
         self.assertEqual(second['source_notes'][0]['end_s'], 3.0)
