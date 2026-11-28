@@ -58,7 +58,7 @@ class Director35Tests(unittest.TestCase):
         self.assertTrue(system.startswith(original + '\n\n'))
         self.assertIn('DANGEROUS CONTRACT V2', system)
         self.assertIn('120–160', system)
-        self.assertIn('never a hard', system)
+        self.assertIn('not a hard maximum', system)
         self.assertIn('Quiet drama', system)
         self.assertIn('repair scope', system)
         # Transport does not attach the creative guide to unrelated calls.
