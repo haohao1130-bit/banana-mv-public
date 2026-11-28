@@ -17,7 +17,20 @@ class Director35Tests(unittest.TestCase):
         self.assertIsNone(director35.options({'director_engine':'9b'}))
     def test_default_mtp_and_experts(self):
         self.assertEqual(director35.options({'director_engine':'35b'}),
-                         {'ctx':16384,'moe':36,'kv':'q8_0','mtp':True,'max_tokens':4096})
+                         {'ctx':16384,'moe':36,'kv':'q8_0','mtp':True,'max_tokens':4096,'reasoning_budget':-1})
+    def test_thinking_defaults_and_reserve(self):
+        opts=director35.options({'director_engine':'35b','rewriter_thinking':True})
+        self.assertEqual((opts['ctx'],opts['max_tokens'],opts['reasoning_budget']),(32768,16384,-1))
+        base={'director_engine':'35b','rewriter_thinking':True,'director35_reasoning_budget':12288}
+        self.assertEqual(director35.options(base)['reasoning_budget'],12288)
+        with self.assertRaises(ValueError):
+            director35.options({**base,'director35_output':8192})
+        with self.assertRaises(ValueError):
+            director35.options({**base,'director35_reasoning_budget':True})
+        # Legacy saved jobs retain explicit settings.
+        opts=director35.options({'director_engine':'35b','rewriter_thinking':True,
+            'director35_context':16384,'director35_output':4096})
+        self.assertEqual((opts['ctx'],opts['max_tokens']),(16384,4096))
     def test_invalid_options(self):
         for override in ({'director35_mtp':'false'},{'director35_cpu_moe':23},
                          {'director35_context':8192,'director35_output':8192},
