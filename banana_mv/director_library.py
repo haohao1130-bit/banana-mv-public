@@ -6,7 +6,7 @@ No inference call, vector store, H3 trigger mutation, or acceptance gate.
 from banana_mv.director import MODES, RECIPES, _mentions
 from banana_mv.core import normalize_action_loras
 
-VERSION = 'banana-director-library-v2'
+VERSION = 'banana-director-library-v3'
 MODE_LIBRARY = {
     "dance": [
         ["Waacking","Rhythmic arm pathways circle around the head and shoulders; grounded weight shifts and sharp accents finish each arc.","waacking arm 手臂"],
@@ -197,12 +197,15 @@ def build_library(req, segment):
     if isinstance(raw, dict):
         loras = normalize_action_loras(raw)
         active = [key for key in LORA_HINTS if loras.get(key, {}).get('enabled')]
+    from banana_mv.dance_library import VERSION as DANCE_VERSION, DANCE_CATEGORIES, dance_prompt
+    movement = (dance_prompt(segment) if mode == 'dance' else
+                _format('MOVEMENT / STAGING INGREDIENTS', _rank(MODE_LIBRARY[mode], mode, event, index, 7)))
     sections = [
         'BANANA DIRECTOR LIBRARY ' + VERSION + ' | selected specialty: ' + mode,
         'CREATIVE METHOD: Read the current event and incoming physical state first. Expand the event into a coherent local performance: intention, body actions, partner responses, momentum, consequence. Then design the camera, lighting and editing that best reveal that performance. Commit those decisions to complete native H3 shot prose, not just reasoning.',
         'The following are optional creative ingredients, not a required sequence, vocabulary restriction, shot quota or permission to add unrelated events. Adapt, combine or invent better choices. Apply a specialty only to the activity actually occurring in this clip. Honor the current commission, continuity, timing, cast, wardrobe, audio and any locked camera choices. Do not replay completed action.',
         'SPECIALTY: ' + MODES[mode] + ' ' + RECIPES[mode],
-        _format('MOVEMENT / STAGING INGREDIENTS', _rank(MODE_LIBRARY[mode], mode, event, index, 7)),
+        movement,
         _format('CAMERA INGREDIENTS', _rank(CAMERA_LIBRARY, mode, event, index, 4, True)),
         _format('EDITING INGREDIENTS', _rank(EDIT_LIBRARY, mode, event, index, 3, True)),
         _format('PERFORMANCE INGREDIENTS', _rank(ACTING_LIBRARY, mode, event, index, 3, True)),
@@ -219,8 +222,13 @@ def build_library(req, segment):
     if float(segment.get('seconds', 10)) <= 5:
         sections.append('Short interval: prioritize a clear ongoing beat and its consequence; ingredients are alternatives, not a checklist.')
     text = '\n\n'.join(sections)
-    return text, {'version': VERSION, 'mode': mode, 'active_loras': active,
-                  'words': len(text.split())}
+    info = {'version': VERSION, 'mode': mode, 'active_loras': active,
+            'words': len(text.split())}
+    if mode == 'dance':
+        info.update(dance_version=DANCE_VERSION,
+                    dance_entries=sum(len(items) for items in DANCE_CATEGORIES.values()),
+                    dance_categories=len(DANCE_CATEGORIES))
+    return text, info
 
 
 def creative_prompt(system, req, segment):
